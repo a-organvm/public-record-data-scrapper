@@ -3,9 +3,34 @@ updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+    ignore:
+      # Workspace path dependencies — Dependabot cannot resolve these
+      # in its isolated environment and fails with
+      # "path_dependencies_not_reachable"
+      - dependency-name: "@public-records/*"
+    groups:
+      radix-ui:
+        patterns:
+          - "@radix-ui/*"
+      testing:
+        patterns:
+          - "@testing-library/*"
+          - "@vitest/*"
+          - "vitest"
+      typescript-eslint:
+        patterns:
+          - "typescript-eslint"
+          - "@eslint/*"
+          - "eslint"
+          - "eslint-*"
 
   - package-ecosystem: "devcontainers"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"

@@ -15,44 +15,32 @@ permissions:
 jobs:
   lint-and-upload:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Prepare workspace
-        env:
-          REPO: ${{ github.repository }}
-          REF: ${{ github.ref }}
-        run: |
-          set -euo pipefail
-          git init
-          git config --global --add safe.directory "$PWD"
-          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO}"
-          git fetch --no-tags --prune --depth=1 origin "$REF"
-          git checkout --force FETCH_HEAD
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
       - name: Install dependencies
-        run: |
-          set -euo pipefail
-          npm ci
+        run: npm ci
+
       - name: Run ESLint with SARIF output
-        run: |
-          set -euo pipefail
-          npx eslint . --ext .js,.jsx,.ts,.tsx --format sarif --output-file results.sarif || true
-      - name: Upload SARIF results via API
-        env:
-          REF: ${{ github.ref }}
-          SHA: ${{ github.sha }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          if [ ! -s results.sarif ]; then
-            echo "No SARIF results produced." >&2
-            exit 1
-          fi
-          SARIF_CONTENT=$(base64 -w 0 results.sarif)
-          jq -n --arg sarif "$SARIF_CONTENT" --arg ref "$REF" --arg sha "$SHA" '{commit_sha: $sha, ref: $ref, sarif: $sarif}' > payload.json
-          curl -sSf \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -H "Accept: application/vnd.github+json" \
-            -X POST "https://api.github.com/repos/${REPO}/code-scanning/sarifs" \
-            --data @payload.json
+        # ESLint v9 flat config — no --ext flag needed; file patterns
+        # come from eslint.config.js `files` globs.
+        # Always succeed so we can upload partial results.
+        run: >
+          npx eslint .
+          --format @microsoft/eslint-formatter-sarif
+          --output-file results.sarif
+          || true
+
+      - name: Upload SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
+          wait-for-processing: true
