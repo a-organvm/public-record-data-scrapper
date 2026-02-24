@@ -60,3 +60,9 @@ expo-debug.log*
 # Tauri
 src-tauri/target/
 src-tauri/bindings/
+
+# Sandbox env files
+.env.sandbox
+
+# Nested editor directories
+**/.vscode/
