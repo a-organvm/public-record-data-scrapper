@@ -67,3 +67,6 @@ src-tauri/bindings/
 
 # Nested editor directories
 **/.vscode/
+
+# Netlify
+.netlify
