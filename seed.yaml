@@ -13,7 +13,8 @@ metadata:
   implementation_status: PRODUCTION
   tier: flagship
   promotion_status: PUBLIC_PROCESS
-  last_validated: "2026-02-11"
+  deployment_url: "https://public-record-data-scrapper.netlify.app"
+  last_validated: "2026-02-28"
   generated: "2026-02-12"
   sprint: "AUTONOMY"
 
