@@ -30,7 +30,8 @@ coverage
 
 .env
 **/agent-eval-report*
-packages
+packages/ui
+packages/*/node_modules
 pids
 .file-manifest
 .devcontainer/
