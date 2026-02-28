@@ -28,6 +28,12 @@ produces:
     description: Consumed by organvm-v-logos/public-process
     consumers: [organvm-v-logos/public-process]
 
+  - type: community_signal
+    description: "Product milestones and releases generate community events"
+    consumers: [organvm-vi-koinonia/community-hub]
+  - type: distribution_signal
+    description: "Product updates trigger POSSE distribution via kerygma profile"
+    consumers: [organvm-vii-kerygma/social-automation]
 subscriptions:
   - event: governance.updated
     source: ORGAN-IV
@@ -35,3 +41,9 @@ subscriptions:
   - event: health-audit.completed
     source: ORGAN-IV
     action: Review audit findings for this repo
+  - event: community.event_created
+    source: ORGAN-VI
+    action: Community event registered for this product
+  - event: distribution.dispatched
+    source: ORGAN-VII
+    action: Announcement distributed via POSSE pipeline
