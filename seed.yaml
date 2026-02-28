@@ -14,6 +14,7 @@ metadata:
   tier: flagship
   promotion_status: PUBLIC_PROCESS
   deployment_url: "https://public-record-data-scrapper.netlify.app"
+  api_url: "https://ucc-mca-api.onrender.com"
   last_validated: "2026-02-28"
   generated: "2026-02-12"
   sprint: "AUTONOMY"
