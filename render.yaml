@@ -13,7 +13,7 @@ services:
     repo: https://github.com/organvm-iii-ergon/public-record-data-scrapper
     branch: fix/ci-dependabot-eslint-scanning
     buildCommand: npm install --legacy-peer-deps --ignore-scripts --production=false && npm install --no-save --ignore-scripts esbuild && node scripts/build-server.mjs
-    startCommand: node dist/server.js
+    startCommand: node dist/server.cjs
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV

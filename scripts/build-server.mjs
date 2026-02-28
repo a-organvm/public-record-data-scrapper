@@ -22,7 +22,7 @@ async function buildServer() {
     platform: 'node',
     target: 'node20',
     format: 'cjs',
-    outfile: join(root, 'dist/server.js'),
+    outfile: join(root, 'dist/server.cjs'),
     sourcemap: true,
     minify: false,
     // Externalize native node modules and packages that shouldn't be bundled
