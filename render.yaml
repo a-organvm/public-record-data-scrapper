@@ -1,0 +1,40 @@
+# render.yaml — Render Blueprint for UCC-MCA Intelligence API
+# Docs: https://docs.render.com/blueprint-spec
+#
+# Database: Neon PostgreSQL (project: winter-glitter-93544990)
+# Set DATABASE_URL manually in Render dashboard.
+
+services:
+  - type: web
+    name: ucc-mca-api
+    runtime: node
+    region: oregon
+    plan: free
+    repo: https://github.com/organvm-iii-ergon/public-record-data-scrapper
+    branch: fix/ci-dependabot-eslint-scanning
+    buildCommand: npm install --legacy-peer-deps && node scripts/build-server.mjs
+    startCommand: node dist/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: ucc-mca-redis
+          type: redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        value: https://public-record-data-scrapper.netlify.app
+
+  - type: redis
+    name: ucc-mca-redis
+    region: oregon
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
