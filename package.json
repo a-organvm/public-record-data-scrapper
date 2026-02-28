@@ -127,6 +127,7 @@
     "uuid": "^13.0.0",
     "vaul": "^1.1.2",
     "yamljs": "^0.3.0",
+    "jsonwebtoken": "^9.0.3",
     "zod": "^4.2.1"
   },
   "devDependencies": {
@@ -160,7 +161,6 @@
     "globals": "^16.0.0",
     "husky": "^9.1.7",
     "jsdom": "^27.4.0",
-    "jsonwebtoken": "^9.0.3",
     "lint-staged": "^16.2.7",
     "localtunnel": "^2.0.2",
     "prettier": "^3.6.2",
