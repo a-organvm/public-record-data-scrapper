@@ -1,0 +1,16 @@
+name: validate-dependencies
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  validate-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate dependency manifests exist
+        run: |
+          test -f package.json
+          echo "Dependency manifest validation passed"
