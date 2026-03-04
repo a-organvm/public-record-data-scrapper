@@ -10,6 +10,9 @@ jobs:
   validate-dependencies:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Validate dependency manifests exist
         run: |
           test -f package.json
