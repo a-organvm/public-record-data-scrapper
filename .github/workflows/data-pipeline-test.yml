@@ -30,10 +30,9 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Type check
         run: npx tsc --noEmit
@@ -48,10 +47,9 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Lint
         run: npm run lint --if-present
@@ -66,10 +64,9 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build
         run: npm run build
@@ -91,10 +88,9 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Validate data schemas
         run: |
@@ -113,10 +109,9 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Run pipeline demo
         run: npx tsx demo-data-pipeline.ts
@@ -133,10 +128,9 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Run security audit
         run: npm audit --production
