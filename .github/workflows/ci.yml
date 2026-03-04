@@ -18,11 +18,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Detect package manager
         id: detect
@@ -36,10 +39,6 @@ jobs:
           else
             echo "pm=none" >> $GITHUB_OUTPUT
           fi
-
-      - name: Install pnpm
-        if: steps.detect.outputs.pm == 'pnpm'
-        uses: pnpm/action-setup@v4
 
       - name: Install dependencies
         if: steps.detect.outputs.pm != 'none'
