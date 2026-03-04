@@ -39,7 +39,7 @@ jobs:
 
       - name: Install pnpm
         if: steps.detect.outputs.pm == 'pnpm'
-        run: npm install -g pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Install dependencies
         if: steps.detect.outputs.pm != 'none'
