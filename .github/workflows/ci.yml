@@ -45,31 +45,29 @@ jobs:
         if: steps.detect.outputs.pm != 'none'
         run: |
           if [ "${{ steps.detect.outputs.pm }}" == "pnpm" ]; then
-            pnpm install || true
+            pnpm install
           elif [ "${{ steps.detect.outputs.pm }}" == "yarn" ]; then
-            yarn install || true
+            yarn install
           else
-            npm install || true
+            npm install
           fi
 
       - name: Lint with ESLint
-        continue-on-error: true
         if: steps.detect.outputs.pm != 'none'
         run: |
           if [ "${{ steps.detect.outputs.pm }}" == "pnpm" ]; then
-            pnpm run lint || echo "::warning::ESLint found issues"
+            pnpm run lint || { echo "::error::ESLint found issues"; exit 1; }
           elif [ "${{ steps.detect.outputs.pm }}" == "yarn" ]; then
-            yarn lint || echo "::warning::ESLint found issues"
+            yarn lint || { echo "::error::ESLint found issues"; exit 1; }
           else
-            npm run lint || echo "::warning::ESLint found issues"
+            npm run lint || { echo "::error::ESLint found issues"; exit 1; }
           fi
 
       - name: Type check with tsc
-        continue-on-error: true
         if: steps.detect.outputs.pm != 'none' && hashFiles('tsconfig.json') != ''
         run: |
           if [ -f "tsconfig.json" ]; then
-            npx tsc --noEmit || echo "::warning::TypeScript found type errors"
+            npx tsc --noEmit || { echo "::error::TypeScript found type errors"; exit 1; }
           else
             echo "::notice::No tsconfig.json found, skipping type checking"
           fi
