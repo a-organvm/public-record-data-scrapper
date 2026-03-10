@@ -1,0 +1,13 @@
+schema_version: '1.0'
+repo: public-record-data-scrapper
+organ: III
+display_name: 50-state UCC public records aggregation platform. Live Vercel deployment,
+  tiered B2B subscriptions, Terraform AWS infrastructure, 60+ collection agents, 2,055
+  tests.
+delivery:
+- platform: web_app
+  status: not_started
+revenue:
+- platform: subscription
+  status: planned
+  priority: critical

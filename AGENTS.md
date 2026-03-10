@@ -44,3 +44,31 @@ Global policy: /Users/4jp/AGENTS.md applies and cannot be overridden.
 
 - Copy `.env.example` to `.env` for local development and keep secrets out of Git.
 - Prefer environment variables and secrets managers for production credentials.
+
+<!-- ORGANVM:AUTO:START -->
+
+## Agent Context (auto-generated — do not edit)
+
+This repo participates in the **ORGAN-III (Commerce)** swarm.
+
+### Active Subscriptions
+
+- Event: `governance.updated` → Action: Check compliance with updated governance rules
+- Event: `health-audit.completed` → Action: Review audit findings for this repo
+
+### Production Responsibilities
+
+- **Produce** `dependency` for organvm-v-logos/public-process
+
+### External Dependencies
+
+- _No external dependencies_
+
+### Governance Constraints
+
+- Adhere to unidirectional flow: I→II→III
+- Never commit secrets or credentials
+
+_Last synced: 2026-03-08T20:11:34Z_
+
+<!-- ORGANVM:AUTO:END -->
