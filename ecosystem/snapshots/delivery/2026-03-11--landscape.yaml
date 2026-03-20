@@ -1,0 +1,19 @@
+date: '2026-03-11'
+snapshot_type: landscape
+competitors:
+  - name: InforMEA / UCC Filing Pro
+    relevance: Existing UCC search aggregators with per-state coverage
+  - name: Dun & Bradstreet
+    relevance: Commercial credit and filing data with UCC coverage as a feature
+  - name: SORA (Secretary of State aggregators)
+    relevance: State-level filing aggregation tools used by legal professionals
+market_context: >-
+  50-state UCC records aggregation platform. Public record data access
+  remains fragmented across inconsistent state portals. Legal tech and
+  fintech firms increasingly need unified programmatic access to filing
+  data for due diligence, lien searches, and compliance workflows.
+trends:
+  - State portals slowly modernizing APIs but no federal standard
+  - AI-assisted document extraction reducing manual data entry costs
+  - Growing demand for real-time UCC monitoring in commercial lending
+notes: "Initial snapshot — baseline for staleness tracking"

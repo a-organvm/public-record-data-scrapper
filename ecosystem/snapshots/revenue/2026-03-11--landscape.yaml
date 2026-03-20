@@ -1,0 +1,17 @@
+date: '2026-03-11'
+snapshot_type: landscape
+competitors:
+  - name: UCC Filing Pro (subscription)
+    relevance: Monthly subscription for unlimited UCC searches across covered states
+  - name: LEXIS Filing Research
+    relevance: Enterprise subscription tier bundling UCC data with broader legal research
+market_context: >-
+  Subscription-based revenue model for 50-state UCC record access.
+  Legal data subscription pricing ranges from $50-500/month for
+  individual practitioners to $2K-10K/month for enterprise API access.
+  The market rewards completeness of state coverage and data freshness.
+trends:
+  - API-first pricing models replacing per-search fee structures
+  - Tiered subscriptions (individual / firm / enterprise API) becoming standard
+  - Bundled analytics (trend detection, lien monitoring) commanding premium tiers
+notes: "Initial snapshot — baseline for staleness tracking"

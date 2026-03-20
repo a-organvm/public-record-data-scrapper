@@ -1,13 +1,60 @@
 schema_version: '1.0'
 repo: public-record-data-scrapper
 organ: III
-display_name: 50-state UCC public records aggregation platform. Live Vercel deployment,
-  tiered B2B subscriptions, Terraform AWS infrastructure, 60+ collection agents, 2,055
-  tests.
+display_name: "BETA-SCRAPPER — 50-state UCC public records aggregation platform"
+
 delivery:
 - platform: web_app
-  status: not_started
+  status: in_progress
+  priority: critical
+  notes: "Next.js frontend on Vercel (not yet deployed to production)"
+  next_action: "Complete Vercel project setup, link Neon DB and Upstash Redis"
+- platform: api
+  status: in_progress
+  priority: critical
+  notes: "60+ collection agents, Terraform AWS infrastructure, 2,055 tests"
+  next_action: "Deploy API layer with database migrations"
+
 revenue:
 - platform: subscription
   status: planned
   priority: critical
+  notes: "B2B tiered subscriptions — title search, lien monitoring, bulk export"
+  next_action: "Implement Stripe billing integration and tier gating"
+
+marketing:
+- platform: seo
+  status: planned
+  priority: high
+  notes: "UCC filings, lien search, public records keywords"
+  next_action: "Create landing pages with state-specific UCC content"
+- platform: content_marketing
+  status: not_started
+  priority: medium
+  notes: "Blog: commercial lending, UCC filing guides, data transparency"
+  next_action: "Draft 3 foundational SEO articles on UCC filings"
+
+community:
+- platform: discord
+  status: not_started
+  priority: low
+  notes: "Beta testers and commercial lending professionals"
+  next_action: "Create Discord server after beta launch"
+
+content:
+- platform: docs_site
+  status: planned
+  priority: high
+  notes: "API documentation for B2B integrations"
+  next_action: "Generate OpenAPI docs from existing API routes"
+- platform: blog
+  status: not_started
+  priority: medium
+  next_action: "Set up blog infrastructure (part of marketing content)"
+
+listings:
+- platform: product_hunt
+  status: planned
+  priority: high
+  target_date: "2026-Q3"
+  next_action: "Prepare PH launch assets after beta stabilizes"
