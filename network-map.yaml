@@ -1,0 +1,65 @@
+schema_version: '1.0'
+repo: public-record-data-scrapper
+organ: ORGAN-III
+mirrors:
+  technical:
+  - project: facebook/react
+    platform: github
+    relevance: 'JS/TS dependency: react'
+    engagement:
+    - watch
+    tags:
+    - auto-discovered
+    - js-dep
+  - project: eslint/eslint
+    platform: github
+    relevance: 'JS/TS dependency: eslint'
+    engagement:
+    - watch
+    tags:
+    - auto-discovered
+    - js-dep
+  - project: prettier/prettier
+    platform: github
+    relevance: 'JS/TS dependency: prettier'
+    engagement:
+    - watch
+    tags:
+    - auto-discovered
+    - js-dep
+  - project: tailwindlabs/tailwindcss
+    platform: github
+    relevance: 'JS/TS dependency: tailwindcss'
+    engagement:
+    - watch
+    tags:
+    - auto-discovered
+    - js-dep
+  - project: microsoft/TypeScript
+    platform: github
+    relevance: 'JS/TS dependency: typescript'
+    engagement:
+    - watch
+    tags:
+    - auto-discovered
+    - js-dep
+  - project: vitejs/vite
+    platform: github
+    relevance: 'JS/TS dependency: vite'
+    engagement:
+    - watch
+    tags:
+    - auto-discovered
+    - js-dep
+  - project: vitest-dev/vitest
+    platform: github
+    relevance: 'JS/TS dependency: vitest'
+    engagement:
+    - watch
+    tags:
+    - auto-discovered
+    - js-dep
+  parallel: []
+  kinship: []
+ledger: ~/.organvm/network/ledger.jsonl
+last_scanned: '2026-03-20T11:55:26.335610+00:00'
