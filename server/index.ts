@@ -27,6 +27,7 @@ import contactsRouter from './routes/contacts'
 import dealsRouter from './routes/deals'
 import webhooksRouter from './routes/webhooks'
 import statusRouter from './routes/status'
+import competitiveRouter from './routes/competitive'
 
 // Import queue infrastructure
 import {
@@ -119,6 +120,7 @@ export class Server {
     this.app.use('/api/jobs', authMiddleware, jobsRouter)
     this.app.use('/api/contacts', authMiddleware, contactsRouter)
     this.app.use('/api/deals', authMiddleware, dealsRouter)
+    this.app.use('/api/competitive', authMiddleware, competitiveRouter)
 
     // Root endpoint
     this.app.get('/', (req, res) => {
@@ -136,6 +138,7 @@ export class Server {
           jobs: '/api/jobs',
           contacts: '/api/contacts',
           deals: '/api/deals',
+          competitive: '/api/competitive',
           webhooks: '/api/webhooks'
         }
       })
