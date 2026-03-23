@@ -2,6 +2,8 @@ import {
   getIngestionQueue,
   getEnrichmentQueue,
   getHealthScoreQueue,
+  getPortalProbeQueue,
+  getDigestQueue,
   getIngestionCircuitGate,
   recordIngestionQueued,
   resolvePrimaryIngestionStrategy,
@@ -29,6 +31,34 @@ export class JobScheduler {
     // Schedule health score updates - Every 12 hours
     this.scheduleInterval('health-scores', 12 * 60 * 60 * 1000, async () => {
       await this.scheduleHealthScoreUpdates()
+    })
+
+    // Portal probes: daily at 1:30 AM (30 min before ingestion)
+    this.scheduleDaily('portal-probes', 1, 30, async () => {
+      try {
+        const queue = getPortalProbeQueue()
+        await queue.add('probe-all', {
+          states: ['NY', 'CA', 'TX', 'FL', 'IL', 'PA', 'OH', 'GA', 'NC', 'MI'],
+          triggeredBy: 'scheduler'
+        })
+        console.log('[scheduler] Portal probe job queued')
+      } catch (err) {
+        console.error('[scheduler] Failed to queue portal probes:', (err as Error).message)
+      }
+    })
+
+    // Coverage digest: weekly Monday at 9:00 AM
+    this.scheduleWeekly('coverage-digest', 1, 9, 0, async () => {
+      try {
+        const queue = getDigestQueue()
+        await queue.add('weekly-digest', {
+          periodDays: 7,
+          recipients: [process.env.DIGEST_RECIPIENT_EMAIL || '']
+        })
+        console.log('[scheduler] Coverage digest job queued')
+      } catch (err) {
+        console.error('[scheduler] Failed to queue coverage digest:', (err as Error).message)
+      }
     })
 
     console.log('✓ Job scheduler started')
@@ -103,6 +133,34 @@ export class JobScheduler {
     this.scheduledJobs.set(name, timeout)
 
     console.log(`  ✓ Scheduled ${name} to run every ${Math.round(intervalMs / 1000 / 60)} minutes`)
+  }
+
+  private scheduleWeekly(
+    name: string,
+    dayOfWeek: number,
+    hour: number,
+    minute: number,
+    callback: () => void
+  ): void {
+    const schedule = () => {
+      const now = new Date()
+      const target = new Date(now)
+      target.setDate(target.getDate() + ((dayOfWeek + 7 - target.getDay()) % 7 || 7))
+      target.setHours(hour, minute, 0, 0)
+      if (target <= now) {
+        target.setDate(target.getDate() + 7)
+      }
+      const delay = target.getTime() - now.getTime()
+      const timeout = setTimeout(() => {
+        callback()
+        schedule()
+      }, delay)
+      this.scheduledJobs.set(name, timeout)
+    }
+    schedule()
+    console.log(
+      `[scheduler] Registered weekly job: ${name} (${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dayOfWeek]} ${hour}:${String(minute).padStart(2, '0')})`
+    )
   }
 
   private async scheduleUCCIngestion() {

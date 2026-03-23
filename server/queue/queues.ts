@@ -3,6 +3,8 @@ import type { ResolvedDataTier } from '../middleware/dataTier'
 import type { UccProvider } from '../config/tieredIntegrations'
 import { redisConnection } from './connection'
 import { TelemetryPersistenceService } from '../services/TelemetryPersistenceService'
+import type { PortalProbeJobData } from './workers/portalProbeWorker'
+import type { DigestJobData } from './workers/digestWorker'
 
 export type IngestionStrategy = 'api' | 'bulk' | 'vendor' | 'scrape'
 export type IngestionCircuitState = 'closed' | 'open' | 'half-open'
@@ -128,6 +130,8 @@ export interface IngestionRecoveryAction {
 let ingestionQueue: Queue<IngestionJobData> | null = null
 let enrichmentQueue: Queue<EnrichmentJobData> | null = null
 let healthScoreQueue: Queue<HealthScoreJobData> | null = null
+let portalProbeQueue: Queue<PortalProbeJobData> | null = null
+let digestQueue: Queue<DigestJobData> | null = null
 const ingestionCoverageTelemetry = new Map<string, IngestionCoverageTelemetry>()
 
 // Persistence layer — initialized at server startup
@@ -557,13 +561,17 @@ export function initializeQueues() {
   ingestionQueue = new Queue<IngestionJobData>('ucc-ingestion', queueConfig)
   enrichmentQueue = new Queue<EnrichmentJobData>('data-enrichment', queueConfig)
   healthScoreQueue = new Queue<HealthScoreJobData>('health-scores', queueConfig)
+  portalProbeQueue = new Queue<PortalProbeJobData>('portal-health-probes', queueConfig)
+  digestQueue = new Queue<DigestJobData>('coverage-digest', queueConfig)
 
   console.log('✓ Job queues initialized')
 
   return {
     ingestionQueue,
     enrichmentQueue,
-    healthScoreQueue
+    healthScoreQueue,
+    portalProbeQueue,
+    digestQueue
   }
 }
 
@@ -588,8 +596,22 @@ export function getHealthScoreQueue(): Queue<HealthScoreJobData> {
   return healthScoreQueue
 }
 
+export function getPortalProbeQueue(): Queue<PortalProbeJobData> {
+  if (!portalProbeQueue) throw new Error('Portal probe queue not initialized')
+  return portalProbeQueue
+}
+
+export function getDigestQueue(): Queue<DigestJobData> {
+  if (!digestQueue) throw new Error('Digest queue not initialized')
+  return digestQueue
+}
+
 export async function closeQueues(): Promise<void> {
   const queues = [ingestionQueue, enrichmentQueue, healthScoreQueue]
   await Promise.all(queues.map((q) => q?.close()))
+  await portalProbeQueue?.close()
+  await digestQueue?.close()
+  portalProbeQueue = null
+  digestQueue = null
   console.log('✓ Job queues closed')
 }

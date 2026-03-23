@@ -67,15 +67,17 @@ describeConditional('Queue Initialization', () => {
   })
 
   describe('initializeQueues', () => {
-    it('should create three queues with correct names', async () => {
+    it('should create five queues with correct names', async () => {
       const { initializeQueues } = await import('../../queue/queues')
 
       const queues = initializeQueues()
 
-      expect(mocks.instances.length).toBe(3)
+      expect(mocks.instances.length).toBe(5)
       expect(queues.ingestionQueue.name).toBe('ucc-ingestion')
       expect(queues.enrichmentQueue.name).toBe('data-enrichment')
       expect(queues.healthScoreQueue.name).toBe('health-scores')
+      expect(queues.portalProbeQueue.name).toBe('portal-health-probes')
+      expect(queues.digestQueue.name).toBe('coverage-digest')
     })
 
     it('should configure queues with default job options', async () => {
@@ -188,7 +190,7 @@ describeConditional('Queue Initialization', () => {
       initializeQueues()
       await closeQueues()
 
-      expect(mocks.mockQueueClose).toHaveBeenCalledTimes(3)
+      expect(mocks.mockQueueClose).toHaveBeenCalledTimes(5)
     })
 
     it('should handle closing uninitialized queues gracefully', async () => {
