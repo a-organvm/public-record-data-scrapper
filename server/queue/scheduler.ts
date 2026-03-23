@@ -4,6 +4,8 @@ import {
   getHealthScoreQueue,
   getPortalProbeQueue,
   getDigestQueue,
+  getTerminationDetectionQueue,
+  getVelocityAnalysisQueue,
   getIngestionCircuitGate,
   recordIngestionQueued,
   resolvePrimaryIngestionStrategy,
@@ -58,6 +60,28 @@ export class JobScheduler {
         console.log('[scheduler] Coverage digest job queued')
       } catch (err) {
         console.error('[scheduler] Failed to queue coverage digest:', (err as Error).message)
+      }
+    })
+
+    // Termination detection: daily at 2:30 AM (after ingestion at 2:00 AM)
+    this.scheduleDaily('termination-detection', 2, 30, async () => {
+      try {
+        const queue = getTerminationDetectionQueue()
+        await queue.add('detect-terminations', { triggeredBy: 'scheduler' })
+        console.log('[scheduler] Termination detection job queued')
+      } catch (err) {
+        console.error('[scheduler] Failed to queue termination detection:', (err as Error).message)
+      }
+    })
+
+    // Velocity analysis: daily at 3:00 AM (after termination detection)
+    this.scheduleDaily('velocity-analysis', 3, 0, async () => {
+      try {
+        const queue = getVelocityAnalysisQueue()
+        await queue.add('compute-velocity', { triggeredBy: 'scheduler' })
+        console.log('[scheduler] Velocity analysis job queued')
+      } catch (err) {
+        console.error('[scheduler] Failed to queue velocity analysis:', (err as Error).message)
       }
     })
 

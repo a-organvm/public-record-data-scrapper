@@ -126,12 +126,23 @@ export interface IngestionRecoveryAction {
   reason: string
 }
 
+export interface TerminationDetectionJobData {
+  triggeredBy: 'scheduler' | 'manual'
+}
+
+export interface VelocityAnalysisJobData {
+  triggeredBy: 'scheduler' | 'manual'
+  limit?: number
+}
+
 // Queue instances
 let ingestionQueue: Queue<IngestionJobData> | null = null
 let enrichmentQueue: Queue<EnrichmentJobData> | null = null
 let healthScoreQueue: Queue<HealthScoreJobData> | null = null
 let portalProbeQueue: Queue<PortalProbeJobData> | null = null
 let digestQueue: Queue<DigestJobData> | null = null
+let terminationDetectionQueue: Queue<TerminationDetectionJobData> | null = null
+let velocityAnalysisQueue: Queue<VelocityAnalysisJobData> | null = null
 const ingestionCoverageTelemetry = new Map<string, IngestionCoverageTelemetry>()
 
 // Persistence layer — initialized at server startup
@@ -563,6 +574,11 @@ export function initializeQueues() {
   healthScoreQueue = new Queue<HealthScoreJobData>('health-scores', queueConfig)
   portalProbeQueue = new Queue<PortalProbeJobData>('portal-health-probes', queueConfig)
   digestQueue = new Queue<DigestJobData>('coverage-digest', queueConfig)
+  terminationDetectionQueue = new Queue<TerminationDetectionJobData>(
+    'termination-detection',
+    queueConfig
+  )
+  velocityAnalysisQueue = new Queue<VelocityAnalysisJobData>('velocity-analysis', queueConfig)
 
   console.log('✓ Job queues initialized')
 
@@ -571,7 +587,9 @@ export function initializeQueues() {
     enrichmentQueue,
     healthScoreQueue,
     portalProbeQueue,
-    digestQueue
+    digestQueue,
+    terminationDetectionQueue,
+    velocityAnalysisQueue
   }
 }
 
@@ -606,12 +624,26 @@ export function getDigestQueue(): Queue<DigestJobData> {
   return digestQueue
 }
 
+export function getTerminationDetectionQueue(): Queue<TerminationDetectionJobData> {
+  if (!terminationDetectionQueue) throw new Error('Termination detection queue not initialized')
+  return terminationDetectionQueue
+}
+
+export function getVelocityAnalysisQueue(): Queue<VelocityAnalysisJobData> {
+  if (!velocityAnalysisQueue) throw new Error('Velocity analysis queue not initialized')
+  return velocityAnalysisQueue
+}
+
 export async function closeQueues(): Promise<void> {
   const queues = [ingestionQueue, enrichmentQueue, healthScoreQueue]
   await Promise.all(queues.map((q) => q?.close()))
   await portalProbeQueue?.close()
   await digestQueue?.close()
+  await terminationDetectionQueue?.close()
+  await velocityAnalysisQueue?.close()
   portalProbeQueue = null
   digestQueue = null
+  terminationDetectionQueue = null
+  velocityAnalysisQueue = null
   console.log('✓ Job queues closed')
 }

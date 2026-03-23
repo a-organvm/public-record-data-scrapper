@@ -55,7 +55,11 @@ afterEach(async () => {
     'competitors',
     'ucc_filings',
     'users',
-    'data_sources'
+    'data_sources',
+    'competitor_market_positions',
+    'filing_velocity_metrics',
+    'filing_events',
+    'ucc_amendments'
   ]
 
   for (const table of tables) {
