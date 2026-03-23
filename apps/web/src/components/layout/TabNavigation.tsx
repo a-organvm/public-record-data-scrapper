@@ -1,9 +1,17 @@
 import { TabsList, TabsTrigger } from '@public-records/ui/tabs'
-import { Target, ChartBar, Heart, ArrowClockwise, Robot, ChartLineUp } from '@phosphor-icons/react'
+import {
+  Target,
+  ChartBar,
+  Heart,
+  ArrowClockwise,
+  Robot,
+  ChartLineUp,
+  Broadcast
+} from '@phosphor-icons/react'
 
 export function TabNavigation() {
   return (
-    <TabsList className="glass-effect hidden md:grid w-full grid-cols-6 mb-4 sm:mb-6 gap-0 h-10 p-1">
+    <TabsList className="glass-effect hidden md:grid w-full grid-cols-7 mb-4 sm:mb-6 gap-0 h-10 p-1">
       <TabsTrigger
         value="prospects"
         data-tour="prospects-tab"
@@ -31,6 +39,10 @@ export function TabNavigation() {
       >
         <ChartLineUp size={18} weight="fill" />
         <span>Analytics</span>
+      </TabsTrigger>
+      <TabsTrigger value="coverage" className="flex items-center gap-2 text-sm">
+        <Broadcast size={18} weight="fill" />
+        <span>Coverage</span>
       </TabsTrigger>
       <TabsTrigger value="requalification" className="flex items-center gap-2 text-sm">
         <ArrowClockwise size={18} weight="fill" />

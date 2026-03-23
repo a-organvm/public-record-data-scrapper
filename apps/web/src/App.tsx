@@ -17,6 +17,7 @@ import { IntelligenceTab } from '@/features/intelligence'
 import { AnalyticsTab } from '@/features/analytics'
 import { RequalificationTab } from '@/features/requalification'
 import { AgenticTab } from '@/features/agentic'
+import { CoverageTab } from '@/features/coverage/CoverageTab'
 
 // Hooks
 import { useProspectFilters } from '@/hooks/useProspectFilters'
@@ -239,6 +240,10 @@ function App() {
 
             <TabsContent value="requalification" className="space-y-4 sm:space-y-6">
               <RequalificationTab />
+            </TabsContent>
+
+            <TabsContent value="coverage" className="space-y-4 sm:space-y-6">
+              <CoverageTab />
             </TabsContent>
 
             <TabsContent value="agentic" className="space-y-4 sm:space-y-6">
