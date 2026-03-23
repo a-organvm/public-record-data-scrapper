@@ -31,7 +31,7 @@ Processes state-by-state UCC filing ingestion from public records portals.
   endDate?: string        // Optional end date for date range
   batchSize?: number      // Records per batch (default: 1000)
   dataTier?: 'free-tier' | 'starter-tier'
-  uccProvider?: 'csc' | 'ctcorp' | 'lexisnexis' | 'mock'
+  uccProvider?: 'csc' | 'ctcorp' | 'lexisnexis' | 'unconfigured'
 }
 ```
 
@@ -39,7 +39,7 @@ UCC provider selection is resolved per tier when the job is enqueued using
 `FREE_TIER_*` / `STARTER_TIER_*` credentials. The resolved `uccProvider` is
 stored with the job payload for debugging.
 
-**Schedule:** Daily at 2:00 AM for all configured states
+**Schedule:** Daily at 2:00 AM for the production-backed states that currently have a real ingestion strategy wired
 
 **Concurrency:** 2 (processes 2 states simultaneously)
 
@@ -355,7 +355,7 @@ DEBUG=bull:* npm run dev:worker
 
 In Phase 2, workers will be enhanced with:
 
-- Real UCC portal scrapers (replacing mock ingestion)
+- Real UCC portal scrapers (replacing simulated ingestion)
 - External API integrations for enrichment:
   - SEC API for company filings
   - OSHA API for safety violations

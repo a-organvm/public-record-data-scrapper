@@ -4,111 +4,145 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-UCC-MCA Intelligence Platform - An AI-powered lead generation system for Merchant Cash Advance providers that analyzes Uniform Commercial Code (UCC) filings to identify businesses with active financing and predict MCA likelihood.
+UCC-MCA Intelligence Platform — AI-powered lead generation for Merchant Cash Advance providers. Analyzes Uniform Commercial Code (UCC) filings to identify businesses with active financing and predict MCA likelihood. Features an autonomous agentic system for self-improving analytics.
 
 ## Commands
 
 ```bash
 # Development
-npm run dev                    # Start Vite dev server (port 5000)
-npm run kill                   # Kill process on port 5000
+npm run dev                    # Frontend only (Vite on port 5173)
+npm run dev:server             # API server only (Express on port 3000)
+npm run dev:worker             # BullMQ worker process only
+npm run dev:full               # All three concurrently (web + api + worker)
 
 # Building
-npm run build                  # TypeScript check + Vite build
+npm run build                  # TypeScript check + Vite build → dist/
 
-# Testing
-npm test                       # Run all tests (watch mode)
-npm test -- AgenticEngine      # Run focused test
+# Testing — Frontend (Vitest + jsdom)
+npm test                       # All frontend tests (watch mode)
+npm test -- AgenticEngine      # Run focused test by name
 npm run test:ui                # Vitest UI dashboard
-npm run test:coverage          # Generate coverage report
+npm run test:coverage          # Coverage report
 
-# Scraper Testing
-npm run test:scrapers          # Test all state scrapers
-npm run test:scrapers:ca       # Test CA scraper only
-npm run test:scrapers:headed   # Test with visible browser
+# Testing — Server (Vitest + Node)
+npm run test:server            # Server tests (single fork, 10s timeout)
+npm run test:server:strict     # Enforce 80% coverage thresholds
+npm run test:server:coverage   # Server coverage report
+
+# Testing — E2E (Playwright)
+npm run test:e2e               # Headless (5 browsers: Chrome, Firefox, Safari, Mobile Chrome/Safari)
+npm run test:e2e:headed        # Visible browser
+npm run test:e2e:ui            # Interactive Playwright UI
+npm run test:e2e:debug         # Playwright debugger
+
+# Testing — Scrapers (Puppeteer)
+npm run test:scrapers          # All state scrapers
+npm run test:scrapers:ca       # Single state (also :tx, :fl, :ny)
+npm run test:scrapers:headed   # Visible browser
 
 # Database
-npm run db:migrate             # Run database migrations
-npm run db:test                # Test database connection
+npm run db:migrate             # Run migrations
+npm run db:test                # Test connection
+npm run db:test:start          # Start test Postgres container
+npm run db:test:stop           # Stop test Postgres container
+npm run seed                   # Seed database
 
 # CLI Scraper
 npm run scrape -- scrape-ucc -c "Company Name" -s CA -o results.json
 
+# Docker (local full-stack)
+docker-compose up -d           # App (3000) + Postgres (5432) + Redis (6379) + Worker
+docker-compose --profile development up -d  # Above + Vite frontend (5000)
+
 # Linting
-npm run lint                   # Run ESLint
+npm run lint                   # ESLint (ts-eslint + react-hooks + react-refresh)
 ```
 
 ## Architecture
 
-### Frontend (`src/`)
+### Monorepo Structure (npm workspaces)
 
-**Entry point**: `src/App.tsx` orchestrates dashboard tabs, wires `StatsOverview`, `AdvancedFilters`, and `AgenticDashboard`. View state persists via `useKV` (keep KV keys stable).
+```
+apps/
+  web/       → React 19 + Vite 7 SPA (primary dashboard)
+  desktop/   → Tauri + React 19 native desktop client
+  mobile/    → Expo + React Native
+packages/
+  core/      → @public-records/core — canonical database client, identity, types
+  ui/        → @public-records/ui — 60+ ShadCN/Radix component exports
+server/      → Express.js REST API + BullMQ queue workers
+database/    → PostgreSQL schema (uuid-ossp, pg_trgm, btree_gin extensions)
+terraform/   → AWS infrastructure (VPC, RDS, ElastiCache)
+```
 
-**Agentic System** (`src/lib/agentic/`):
+**Path alias trap**: `@` resolves to different roots depending on context:
 
-- `AgenticEngine.ts` - Autonomous loop with safety gates (`autonomousExecutionEnabled`, category-based review)
-- `AgenticCouncil.ts` - Sequences agents: DataAnalyzer → Optimizer → Security → UXEnhancer
-- `BaseAgent.ts` - Base class for new agents (extend and push suggestions into handoff)
-- React bridge: `src/hooks/use-agentic-engine.ts` - Caches engine, persists improvements via `useKV`
+- Frontend (vite.config.ts): `@` → `apps/web/src/`
+- Server tests (vitest.config.server.ts): `@` → `server/`
+- tsconfig.json also maps `@public-records/core` and `@public-records/ui` to `packages/`
+
+### Frontend (`apps/web/src/`)
+
+**Entry point**: `App.tsx` orchestrates dashboard tabs (Prospects, Portfolio, Intelligence, Analytics, Requalification, Agentic). View state persists via `useKV` — keep KV keys stable.
+
+**Agentic System** (`lib/agentic/`):
+
+- `AgenticEngine.ts` — Autonomous loop with safety gates: `autonomousExecutionEnabled` defaults to `false`, `safetyThreshold: 80`, categories like `security` and `data-quality` always require manual review
+- `AgenticCouncil.ts` — Sequences agents: DataAnalyzer → Optimizer → Security → UXEnhancer
+- `BaseAgent.ts` — Extend this and push suggestions into the handoff to add new agents
+- React bridge: `hooks/use-agentic-engine.ts` — Caches engine, persists improvements via `useKV`. Always call `setImprovements(engine.getImprovements())` after mutating engine state
 
 **Data Flow**:
 
-- Mock data: `src/lib/mockData.ts` (shapes match `src/lib/types.ts`)
-- Type definitions: `src/lib/types.ts` (canonical source - update before UI changes)
+- Types: `lib/types.ts` is canonical — update before UI changes
+- Mock data: `lib/mockData.ts` (shapes match types.ts, toggle via `VITE_USE_MOCK_DATA`)
 - Filtering: `filteredAndSortedProspects` memo in `App.tsx`
 - User events: Route through `trackAction()` for agentic analytics
+- Batch ops: `selectedProspectIds` syncs with `BatchOperations` + checkbox overlay in `ProspectCard`
 
-**UI Components** (`src/components/ui/`):
+**UI**:
 
-- ShadCN pattern with Tailwind; reuse these wrappers instead of raw Radix
-- Theme: CSS variables in `styles/theme.css` and `theme.json`
-- Icons: `@phosphor-icons/react` (proxied via Vite plugin)
-- Theme switching: `ThemeToggle` + `ThemeProvider` (next-themes)
+- ShadCN wrappers in `components/ui/` — reuse these, don't import raw Radix
+- Theme: CSS variables in `styles/theme.css` + `theme.json`, dark mode via `next-themes` (`data-appearance` selector)
+- Icons: `@phosphor-icons/react` proxied via `createIconImportProxy` in vite.config.ts — **do not remove that plugin or the Spark plugin**
 
 ### Backend (`server/`)
 
-Express.js REST API with:
+Express.js REST API (port 3000) with Swagger at `/api/docs`.
 
-- **Routes**: `prospects.ts`, `competitors.ts`, `portfolio.ts`, `enrichment.ts`, `jobs.ts`, `health.ts`
-- **Services**: Business logic layer (ProspectsService, CompetitorsService, etc.)
-- **Queue**: BullMQ + Redis job system with workers for ingestion, enrichment, health scoring
-- **Middleware**: Error handling, request logging, rate limiting, Zod validation
+**Routes** (10): health, prospects, competitors, portfolio, enrichment, jobs, contacts, deals, billing, webhooks. All except health and webhooks require JWT auth.
 
-API server: `server/index.ts` | Worker process: `server/worker.ts`
+**Services** (19): ProspectsService, CompetitorsService, PortfolioService, EnrichmentService, ScoringService, StackAnalysisService, SuppressionService (TCPA/DNC), UnderwritingService, ComplianceReportService, AlertService, ContactsService, DealsService, CommunicationsService, QualificationService, NarrativeService, ConsentService, DisclosureService, AuditService, DisclosureCalculator.
 
-### Data Collection (`src/lib/collectors/`)
+**Integrations** (7): ACH payments, AWS (S3/SQS/CloudWatch), Plaid (bank linking), SendGrid (email), Stripe (payments + webhooks), Twilio (SMS/voice).
 
-- `StateCollectorFactory.ts` - Factory for state-specific collectors
-- `state-collectors/` - Individual state implementations
-- `RateLimiter.ts` - Rate limiting for external APIs
+**Queue** (BullMQ + Redis): 3 queues — `ucc-ingestion` (daily 2AM, concurrency 2), `data-enrichment` (every 6h, concurrency 5), `health-scores` (every 12h, concurrency 3). Worker runs as separate process (`server/worker.ts`) with graceful 30s shutdown.
 
-### Scrapers (`src/lib/scrapers/`)
+### Data Collection (`apps/web/src/lib/collectors/`)
 
-- Puppeteer-based scrapers for state UCC portals (CA, TX, FL, NY)
-- Test with `npm run test:scrapers`
+- `StateCollectorFactory.ts` — Factory pattern, selects by state code
+- Collectors: CA (state portal), NY (state portal), TX (bulk download), FL (CSC/CT Corp vendor)
+- `RateLimiter.ts` — Rate limiting for external APIs
 
-## Key Files
+### Database (`database/schema.sql`)
 
-| File                        | Purpose                                    |
-| --------------------------- | ------------------------------------------ |
-| `src/lib/types.ts`          | Canonical type definitions - update first  |
-| `src/lib/mlScoring.ts`      | ML scoring helpers - keep pure for testing |
-| `src/lib/exportUtils.ts`    | JSON/CSV exports with `escapeCsvValue`     |
-| `src/lib/utils/sanitize.ts` | XSS prevention with DOMPurify              |
-| `database/schema.sql`       | PostgreSQL schema                          |
-| `terraform/`                | AWS infrastructure (VPC, RDS, ElastiCache) |
+PostgreSQL 14+ with extensions: `uuid-ossp`, `pg_trgm` (fuzzy text search), `btree_gin`.
+
+Core tables: `ucc_filings` (UUID PK, filing data, debtor/secured party, JSONB raw_data), `prospects` (priority_score 0-100, status enum, enrichment_confidence 0-1), `prospect_ucc_filings` (junction), `growth_signals`.
 
 ## Testing Notes
 
-- 526 tests total, Vitest with jsdom environment
-- Setup file: `src/test/setup.ts` (add DOM helpers here)
-- Agentic tests: `src/lib/agentic/AgenticEngine.test.ts` - assert safety thresholds and feedback loops
+- Frontend: 526 tests, Vitest + jsdom, setup in `apps/web/src/test/setup.ts`
+- Server: Vitest + Node, setup in `server/__tests__/setup.ts`, 80% coverage thresholds in CI
+- E2E: Playwright, 5 browser projects, base URL `http://127.0.0.1:5173`
+- Agentic tests: `apps/web/src/lib/agentic/AgenticEngine.test.ts` — assert safety thresholds and feedback loops
 
 ## Git Workflow
 
+- Build skips diagnostics (`tsc -b --noCheck`); rely on IDE type checking
 - Merge sibling branches before opening PRs
 - Stage only files you touched
-- Build skips diagnostics (`tsc -b --noCheck`), rely on IDE type checking
+- Husky + lint-staged runs ESLint fix + Prettier on staged `.{js,jsx,ts,tsx}` files
 
 ## ⚡ Conductor OS Integration
 

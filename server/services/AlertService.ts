@@ -328,7 +328,7 @@ export class AlertService {
     const id = crypto.randomUUID()
     const now = new Date().toISOString()
 
-    // STUB: In production, this would insert into database
+    // TODO: Persist alerts once the alerts table is wired.
     // const query = `
     //   INSERT INTO alerts (id, org_id, prospect_id, rule_id, type, severity, status, title, message, data, created_at)
     //   VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $8, $9, $10)
@@ -360,7 +360,7 @@ export class AlertService {
    * @returns Array of active alerts
    */
   async getActiveAlerts(orgId: string): Promise<Alert[]> {
-    // STUB: In production, this would query the database
+    // TODO: Query persisted alerts once storage is wired.
     // const query = `
     //   SELECT *
     //   FROM alerts
@@ -372,7 +372,6 @@ export class AlertService {
 
     console.log(`[AlertService] Getting active alerts for org: ${orgId}`)
 
-    // Return empty array for stub
     return []
   }
 
@@ -385,7 +384,7 @@ export class AlertService {
   async acknowledgeAlert(alertId: string, userId?: string): Promise<void> {
     const now = new Date().toISOString()
 
-    // STUB: In production, this would update the database
+    // TODO: Persist alert acknowledgements once storage is wired.
     // const query = `
     //   UPDATE alerts
     //   SET status = 'acknowledged', acknowledged_at = $2, acknowledged_by = $3
@@ -407,7 +406,7 @@ export class AlertService {
   async resolveAlert(alertId: string, userId?: string, notes?: string): Promise<void> {
     const now = new Date().toISOString()
 
-    // STUB: In production, this would update the database
+    // TODO: Persist alert resolutions once storage is wired.
     // const query = `
     //   UPDATE alerts
     //   SET status = 'resolved', resolved_at = $2, resolved_by = $3, resolution_notes = $4
@@ -427,7 +426,7 @@ export class AlertService {
    * @param userId - The user dismissing the alert
    */
   async dismissAlert(alertId: string, userId?: string): Promise<void> {
-    // STUB: In production, this would update the database
+    // TODO: Persist alert dismissals once storage is wired.
     // const query = `
     //   UPDATE alerts
     //   SET status = 'dismissed', resolved_at = NOW(), resolved_by = $2, resolution_notes = 'Dismissed'
@@ -445,7 +444,7 @@ export class AlertService {
    * @returns Array of historical alerts
    */
   async getAlertHistory(prospectId: string, limit: number = 50): Promise<Alert[]> {
-    // STUB: In production, this would query the database
+    // TODO: Query alert history once storage is wired.
     // const query = `
     //   SELECT *
     //   FROM alerts
@@ -456,7 +455,6 @@ export class AlertService {
 
     console.log(`[AlertService] Getting alert history for prospect: ${prospectId}, limit: ${limit}`)
 
-    // Return empty array for stub
     return []
   }
 
@@ -469,7 +467,7 @@ export class AlertService {
   async listAlerts(params: ListAlertsParams): Promise<{ alerts: Alert[]; total: number }> {
     const { orgId, status, type, severity, prospectId, limit = 50, offset = 0 } = params
 
-    // STUB: In production, this would build and execute a dynamic query
+    // TODO: Build and execute the persisted alert query once storage is wired.
     console.log(`[AlertService] Listing alerts for org: ${orgId}`, {
       status,
       type,
@@ -494,7 +492,6 @@ export class AlertService {
     const now = new Date().toISOString()
     const id = rule.id || crypto.randomUUID()
 
-    // STUB: In production, this would upsert into the database
     const savedRule: AlertRule = {
       ...rule,
       id,
@@ -513,7 +510,7 @@ export class AlertService {
    * @returns Array of enabled alert rules
    */
   async getEnabledRules(orgId: string): Promise<AlertRule[]> {
-    // STUB: In production, this would query the database
+    // TODO: Query persisted rules once storage is wired.
     // const query = `
     //   SELECT *
     //   FROM alert_rules
@@ -523,32 +520,7 @@ export class AlertService {
 
     console.log(`[AlertService] Getting enabled rules for org: ${orgId}`)
 
-    // Return default rules for stub implementation
-    const now = new Date().toISOString()
-    return [
-      {
-        id: 'default-health-drop',
-        orgId,
-        type: 'health_drop',
-        threshold: 15,
-        action: 'in_app',
-        severity: 'high',
-        enabled: true,
-        createdAt: now,
-        updatedAt: now
-      },
-      {
-        id: 'default-score-critical',
-        orgId,
-        type: 'score_critical',
-        threshold: 40,
-        action: 'email',
-        severity: 'critical',
-        enabled: true,
-        createdAt: now,
-        updatedAt: now
-      }
-    ]
+    return []
   }
 
   /**
@@ -557,7 +529,7 @@ export class AlertService {
    * @param ruleId - The rule's unique identifier
    */
   async deleteRule(ruleId: string): Promise<void> {
-    // STUB: In production, this would delete from the database
+    // TODO: Delete persisted rules once storage is wired.
     console.log(`[AlertService] Deleted rule: ${ruleId}`)
   }
 
@@ -577,7 +549,7 @@ export class AlertService {
   ): Promise<AlertRule[]> {
     const now = new Date().toISOString()
 
-    // STUB: In production, this would:
+    // TODO: Replace with transactional persistence once rule storage is wired.
     // 1. Begin a transaction
     // 2. Delete all existing rules for the org
     // 3. Insert the new rules
@@ -611,19 +583,19 @@ export class AlertService {
   private async executeAlertAction(alert: Alert, rule: AlertRule): Promise<void> {
     switch (rule.action) {
       case 'email':
-        console.log(`[AlertService] STUB: Would send email for alert: ${alert.title}`)
+        console.log(`[AlertService] Email transport is not wired for alert: ${alert.title}`)
         // In production: await sendGridClient.send({ ... })
         break
 
       case 'sms':
-        console.log(`[AlertService] STUB: Would send SMS for alert: ${alert.title}`)
+        console.log(`[AlertService] SMS transport is not wired for alert: ${alert.title}`)
         // In production: await twilioClient.sendSms({ ... })
         break
 
       case 'webhook':
         if (rule.webhookUrl) {
           console.log(
-            `[AlertService] STUB: Would POST to webhook ${rule.webhookUrl} for alert: ${alert.title}`
+            `[AlertService] Webhook transport is not wired for ${rule.webhookUrl} on alert: ${alert.title}`
           )
           // In production: await fetch(rule.webhookUrl, { method: 'POST', body: JSON.stringify(alert) })
         }

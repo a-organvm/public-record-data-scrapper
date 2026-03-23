@@ -30,10 +30,6 @@ export interface SendGridResponse<T> {
 
 /**
  * SendGridClient provides authenticated access to SendGrid APIs.
- *
- * This is a stub implementation that returns mock responses.
- * In production, this would use the official SendGrid SDK:
- * import sgMail from '@sendgrid/mail'
  */
 export class SendGridClient {
   private config: SendGridConfig
@@ -42,10 +38,11 @@ export class SendGridClient {
   constructor(customConfig?: Partial<SendGridConfig>) {
     this.config = {
       apiKey: customConfig?.apiKey || process.env.SENDGRID_API_KEY || '',
-      fromEmail: customConfig?.fromEmail || process.env.SENDGRID_FROM_EMAIL || 'noreply@example.com',
+      fromEmail:
+        customConfig?.fromEmail || process.env.SENDGRID_FROM_EMAIL || 'noreply@example.com',
       fromName: customConfig?.fromName || process.env.SENDGRID_FROM_NAME || 'MCA Platform',
       webhookBaseUrl: customConfig?.webhookBaseUrl || process.env.SENDGRID_WEBHOOK_BASE_URL,
-      sandboxMode: customConfig?.sandboxMode ?? (process.env.NODE_ENV !== 'production')
+      sandboxMode: customConfig?.sandboxMode ?? process.env.NODE_ENV !== 'production'
     }
   }
 
@@ -55,9 +52,8 @@ export class SendGridClient {
   async initialize(): Promise<void> {
     if (this.initialized) return
 
-    // Validate configuration
     if (!this.config.apiKey) {
-      console.warn('[SendGridClient] Missing API key - running in stub mode')
+      console.warn('[SendGridClient] Missing API key - email delivery is disabled')
     }
 
     this.initialized = true
@@ -104,8 +100,6 @@ export class SendGridClient {
 
   /**
    * Make an authenticated request to SendGrid API
-   *
-   * STUB: This method simulates API calls. In production, use the SendGrid SDK.
    */
   async request<T>(
     method: 'GET' | 'POST' | 'DELETE' | 'PATCH',
@@ -113,85 +107,69 @@ export class SendGridClient {
     data?: Record<string, unknown>
   ): Promise<SendGridResponse<T>> {
     if (!this.isConfigured()) {
-      // Return stub response when not configured
-      console.log(`[SendGridClient] STUB ${method} ${endpoint}`, data)
-
       return {
-        success: true,
-        data: this.generateStubResponse<T>(endpoint, data)
+        success: false,
+        error: {
+          code: 401,
+          message: 'SendGrid client is not configured'
+        }
       }
     }
 
-    // In production, this would make actual API calls:
-    /*
-    const client = require('@sendgrid/client')
-    client.setApiKey(this.config.apiKey)
-    // ... make actual API call
-    */
+    const url = new URL(`https://api.sendgrid.com${endpoint}`)
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.config.apiKey}`,
+      Accept: 'application/json'
+    }
 
-    // For now, return stub response
-    console.log(`[SendGridClient] ${method} ${endpoint}`, data)
+    let body: string | undefined
+    if (method === 'GET' && data) {
+      Object.entries(data).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          url.searchParams.append(key, String(value))
+        }
+      })
+    } else if (method !== 'DELETE' && data) {
+      headers['Content-Type'] = 'application/json'
+      body = JSON.stringify(data)
+    }
+
+    const response = await fetch(url, { method, headers, body })
+    const rawText = await response.text()
+    const parsed = rawText ? this.tryParseJson(rawText) : undefined
+
+    if (!response.ok) {
+      const apiErrors = (parsed as { errors?: Array<{ message?: string }> } | undefined)?.errors
+      return {
+        success: false,
+        error: {
+          code: response.status,
+          message:
+            apiErrors
+              ?.map((entry) => entry.message)
+              .filter(Boolean)
+              .join('; ') ||
+            rawText ||
+            `SendGrid request failed with status ${response.status}`,
+          errors: apiErrors
+        }
+      }
+    }
+
+    if (endpoint === '/v3/mail/send') {
+      return {
+        success: true,
+        data: {
+          messageId: response.headers.get('x-message-id') || '',
+          status: 'accepted'
+        } as T
+      }
+    }
 
     return {
       success: true,
-      data: this.generateStubResponse<T>(endpoint, data)
+      data: (parsed ?? {}) as T
     }
-  }
-
-  /**
-   * Generate stub responses for testing/development
-   */
-  private generateStubResponse<T>(endpoint: string, data?: Record<string, unknown>): T {
-    const messageId = this.generateMessageId()
-
-    if (endpoint.includes('/mail/send')) {
-      return {
-        messageId,
-        status: 'accepted'
-      } as T
-    }
-
-    if (endpoint.includes('/templates')) {
-      return {
-        id: `d-${this.generateId()}`,
-        name: data?.name || 'Template',
-        generation: 'dynamic',
-        versions: []
-      } as T
-    }
-
-    if (endpoint.includes('/suppression')) {
-      return {
-        suppressed: false
-      } as T
-    }
-
-    // Default stub response
-    return { messageId } as T
-  }
-
-  /**
-   * Generate a SendGrid-style message ID
-   */
-  private generateMessageId(): string {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
-    let id = ''
-    for (let i = 0; i < 22; i++) {
-      id += chars.charAt(Math.floor(Math.random() * chars.length))
-    }
-    return `${id}@sendgrid.net`
-  }
-
-  /**
-   * Generate a random ID
-   */
-  private generateId(): string {
-    const chars = 'abcdef0123456789'
-    let id = ''
-    for (let i = 0; i < 36; i++) {
-      id += chars.charAt(Math.floor(Math.random() * chars.length))
-    }
-    return id
   }
 
   /**
@@ -227,6 +205,14 @@ export class SendGridClient {
       eventWebhook: `${baseUrl}/api/webhooks/sendgrid/events`,
       bounceWebhook: `${baseUrl}/api/webhooks/sendgrid/bounce`,
       unsubscribeWebhook: `${baseUrl}/api/webhooks/sendgrid/unsubscribe`
+    }
+  }
+
+  private tryParseJson(payload: string): unknown {
+    try {
+      return JSON.parse(payload)
+    } catch {
+      return undefined
     }
   }
 }

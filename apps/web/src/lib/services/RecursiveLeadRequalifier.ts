@@ -131,7 +131,7 @@ export class RecursiveLeadRequalifier {
       }
     }
 
-    // Detect new signals (mock - would call real detection service)
+    // Detect newly sourced signals if live enrichment is wired.
     const newSignals = await this.detectNewSignals(prospect)
 
     // Calculate net score
@@ -156,37 +156,8 @@ export class RecursiveLeadRequalifier {
    * Detect new signals for a prospect
    */
   private async detectNewSignals(prospect: Prospect): Promise<GrowthSignal[]> {
-    const newSignals: GrowthSignal[] = []
-    const existingTypes = new Set(prospect.growthSignals.map((s) => s.type))
-
-    // Mock detection - in production would call external services
-    const timeSinceDefault = prospect.timeSinceDefault
-
-    // If default was recent, check for recovery signals
-    if (timeSinceDefault < 180 && !existingTypes.has('hiring')) {
-      newSignals.push({
-        id: `signal-new-hiring-${Date.now()}`,
-        type: 'hiring',
-        description: 'Recent job postings detected',
-        detectedDate: new Date().toISOString(),
-        score: 70,
-        confidence: 0.7
-      })
-    }
-
-    // Check for health improvement
-    if (prospect.healthScore.sentimentTrend === 'improving' && !existingTypes.has('expansion')) {
-      newSignals.push({
-        id: `signal-new-expansion-${Date.now()}`,
-        type: 'expansion',
-        description: 'Improving business metrics indicate expansion',
-        detectedDate: new Date().toISOString(),
-        score: 65,
-        confidence: 0.65
-      })
-    }
-
-    return newSignals
+    void prospect
+    return []
   }
 
   /**

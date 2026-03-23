@@ -59,12 +59,12 @@ export function listEnabledIntegrations(dataTier: ResolvedDataTier): string[] {
     .map(([name]) => name)
 }
 
-export type UccProvider = 'csc' | 'ctcorp' | 'lexisnexis' | 'mock'
+export type UccProvider = 'csc' | 'ctcorp' | 'lexisnexis' | 'unconfigured'
 
 export function resolveUccProvider(dataTier: ResolvedDataTier): UccProvider {
   const config = getTieredIntegrationConfig(dataTier)
   if (config.uccCsc?.apiKey && config.uccCsc?.username) return 'csc'
   if (config.uccCtCorp?.apiKey) return 'ctcorp'
   if (config.uccLexisNexis?.apiKey && config.uccLexisNexis?.customerId) return 'lexisnexis'
-  return 'mock'
+  return 'unconfigured'
 }

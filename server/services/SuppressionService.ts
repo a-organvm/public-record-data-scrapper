@@ -7,12 +7,12 @@
  * Features:
  * - Check phone numbers against internal and federal DNC lists
  * - Add/remove numbers from suppression lists
- * - Sync with FTC National DNC Registry (stub for integration)
+ * - Sync with FTC National DNC Registry (subscription-gated integration)
  * - Support for multiple channels (call, sms, email)
  */
 
 import { database } from '../database/connection'
-import { NotFoundError, ValidationError, DatabaseError } from '../errors'
+import { ValidationError, DatabaseError } from '../errors'
 
 // DNC source types
 export type DNCSource = 'federal_dnc' | 'state_dnc' | 'internal' | 'complaint' | 'imported'
@@ -283,13 +283,7 @@ export class SuppressionService {
               expires_at = $5
           WHERE id = $1
           RETURNING *`,
-          [
-            existing[0].id,
-            input.source || 'internal',
-            input.reason,
-            input.addedBy,
-            expiresAt
-          ]
+          [existing[0].id, input.source || 'internal', input.reason, input.addedBy, expiresAt]
         )
         return this.transformEntry(results[0])
       }
@@ -330,9 +324,7 @@ export class SuppressionService {
   ): Promise<boolean> {
     // Determine if identifier is phone or email
     const isEmail = identifier.includes('@')
-    const normalized = isEmail
-      ? this.normalizeEmail(identifier)
-      : this.normalizePhone(identifier)
+    const normalized = isEmail ? this.normalizeEmail(identifier) : this.normalizePhone(identifier)
 
     try {
       let query = `DELETE FROM dnc_list WHERE org_id = $1`
@@ -433,7 +425,7 @@ export class SuppressionService {
 
   /**
    * Sync with FTC National DNC Registry
-   * This is a stub - actual implementation requires FTC subscription
+   * Requires an FTC subscription and download pipeline.
    */
   async syncFTCList(orgId: string): Promise<{
     status: 'success' | 'not_configured' | 'error'
@@ -447,7 +439,6 @@ export class SuppressionService {
 
     console.log(`[SuppressionService] FTC sync requested for org: ${orgId}`)
 
-    // Stub response - FTC integration not configured
     return {
       status: 'not_configured',
       message:

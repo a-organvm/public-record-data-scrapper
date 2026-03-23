@@ -223,25 +223,15 @@ CTA: [improved call to action]`
    */
   async abTestTemplates(templates: OutreachTemplate[]): Promise<ABTestResult> {
     const testId = `abtest_${Date.now()}`
-
-    // In a real implementation, this would track actual sends and responses
-    // For now, return mock results
     const results: Record<string, TemplatePerformance> = {}
 
     for (const template of templates) {
-      const performance = this.performanceData.get(template.templateId) || {
-        openRate: Math.random() * 0.4 + 0.2, // 20-60%
-        responseRate: Math.random() * 0.2 + 0.05, // 5-25%
-        conversionRate: Math.random() * 0.1 + 0.02, // 2-12%
-        averageResponseTime: Math.random() * 48 * 3600 * 1000, // 0-48 hours in ms
-        sentimentScore: Math.random() * 0.3 + 0.6, // 0.6-0.9
-        totalSent: 100,
-        totalResponses: 0,
-        totalConversions: 0
+      const performance = this.performanceData.get(template.templateId)
+      if (!performance || performance.totalSent === 0) {
+        throw new Error(
+          `A/B testing requires recorded performance for template ${template.templateId}`
+        )
       }
-
-      performance.totalResponses = Math.floor(performance.totalSent * performance.responseRate)
-      performance.totalConversions = Math.floor(performance.totalSent * performance.conversionRate)
 
       results[template.templateId] = performance
     }
@@ -256,8 +246,8 @@ CTA: [improved call to action]`
       return currentScore > bestScore ? current : best
     })
 
-    // Calculate statistical significance (mock)
-    const statisticalSignificance = 0.95
+    const totalObservations = Object.values(results).reduce((sum, item) => sum + item.totalSent, 0)
+    const statisticalSignificance = Math.min(totalObservations / 500, 0.99)
 
     return {
       testId,
@@ -307,7 +297,6 @@ CTA: [improved call to action]`
     tonality?: string,
     lengthPreference?: string
   ): string {
-    // In a real implementation, fetch actual prospect data
     const prospectData = this.getProspectData(prospectId)
 
     const prompt = `Generate a ${channel} outreach template for this prospect:
@@ -423,22 +412,12 @@ TOKENS: [list personalization tokens used, e.g., {companyName}, {industry}]`
   }
 
   /**
-   * Get prospect data (mock)
+   * Get prospect data.
    */
   private getProspectData(prospectId: string): Partial<Prospect> {
-    // In real implementation, fetch from database
-    return {
-      id: prospectId,
-      companyName: 'Acme Construction',
-      industry: 'Construction',
-      state: 'NY',
-      healthGrade: 'B',
-      estimatedRevenue: 5000000,
-      growthSignals: [
-        { type: 'hiring', description: '3 new positions posted this month' },
-        { type: 'permit', description: '$2M renovation permit filed' }
-      ]
-    } as any
+    throw new Error(
+      `OutreachTemplateGenerator is not wired to a prospect repository for ${prospectId}`
+    )
   }
 
   /**

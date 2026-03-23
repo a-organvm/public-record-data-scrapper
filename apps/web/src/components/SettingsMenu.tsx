@@ -24,15 +24,15 @@ const DATA_TIER_LABELS: Record<DataTier, { title: string; description: string }>
   }
 }
 
-const DATA_TIER_MOCK_SUMMARY: Record<DataTier, string> = {
-  oss: 'Mock caps: signals 0-3, revenue <= $2M, competitor filings <= 250.',
-  paid: 'Mock caps: signals 1-6, revenue <= $3M, competitor filings <= 500.'
+const DATA_TIER_PREVIEW_SUMMARY: Record<DataTier, string> = {
+  oss: 'Preview caps: signals 0-3, revenue <= $2M, competitor filings <= 250.',
+  paid: 'Preview caps: signals 1-6, revenue <= $3M, competitor filings <= 500.'
 }
 
 export function SettingsMenu() {
   const { dataTier, setDataTier } = useDataTier()
 
-  const isDemoMode = useMemo(() => {
+  const isPreviewMode = useMemo(() => {
     return (
       import.meta.env.DEV ||
       ['1', 'true', 'yes'].includes(String(import.meta.env.VITE_USE_MOCK_DATA ?? '').toLowerCase())
@@ -77,11 +77,13 @@ export function SettingsMenu() {
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator className="bg-white/10" />
         <div className="px-3 py-2 text-xs text-white/60">
-          {isDemoMode
-            ? 'Mock data is active. Tier selection will tune demo outputs.'
+          {isPreviewMode
+            ? 'Preview data is active. Tier selection will tune preview outputs.'
             : 'Tier selection is forwarded to API requests for routing.'}
-          {isDemoMode ? (
-            <div className="mt-1 text-[11px] text-white/50">{DATA_TIER_MOCK_SUMMARY[dataTier]}</div>
+          {isPreviewMode ? (
+            <div className="mt-1 text-[11px] text-white/50">
+              {DATA_TIER_PREVIEW_SUMMARY[dataTier]}
+            </div>
           ) : null}
         </div>
       </DropdownMenuContent>

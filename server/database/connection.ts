@@ -12,7 +12,7 @@ import {
   initDatabase,
   closeDatabase as closeDatabaseCore,
   type DatabaseConfig
-} from '@public-records/core/database'
+} from '../../packages/core/src/database'
 import { config } from '../config'
 
 // Re-export types for convenience

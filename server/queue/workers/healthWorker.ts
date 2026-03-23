@@ -159,8 +159,8 @@ async function calculateHealthScore(companyId: string) {
     else if (score < avgPrevious - 5) trend = 'declining'
   }
 
-  // Calculate sentiment (mock for now - Phase 2 will add real sentiment analysis)
-  const sentiment = 0.5 + Math.random() * 0.5
+  // Use a deterministic proxy until review- and feedback-based sentiment is wired.
+  const sentiment = Math.max(0, Math.min(1, score / 100 - violationsCount * 0.05))
 
   return {
     score,

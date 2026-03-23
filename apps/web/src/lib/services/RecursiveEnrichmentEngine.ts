@@ -421,35 +421,8 @@ export class RecursiveEnrichmentEngine {
    * Detect growth signals (implementation)
    */
   private async detectGrowthSignals(prospect: Prospect): Promise<GrowthSignal[]> {
-    const signals: GrowthSignal[] = []
-
-    // Mock detection - in production, would call external APIs or web scrapers
-
-    // Hiring signal based on revenue growth estimate
-    if (prospect.estimatedRevenue && prospect.estimatedRevenue > 2000000) {
-      signals.push({
-        id: `signal-hiring-${Date.now()}`,
-        type: 'hiring',
-        description: 'Estimated hiring activity based on revenue size',
-        detectedDate: new Date().toISOString(),
-        score: 65,
-        confidence: 0.6
-      })
-    }
-
-    // Expansion signal for growing companies
-    if (prospect.healthScore.sentimentTrend === 'improving') {
-      signals.push({
-        id: `signal-expansion-${Date.now()}`,
-        type: 'expansion',
-        description: 'Improving health trend suggests expansion',
-        detectedDate: new Date().toISOString(),
-        score: 70,
-        confidence: 0.65
-      })
-    }
-
-    return signals
+    void prospect
+    return []
   }
 
   /**

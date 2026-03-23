@@ -1,4 +1,12 @@
-import { getIngestionQueue, getEnrichmentQueue, getHealthScoreQueue } from './queues'
+import {
+  getIngestionQueue,
+  getEnrichmentQueue,
+  getHealthScoreQueue,
+  getIngestionCircuitGate,
+  recordIngestionQueued,
+  resolvePrimaryIngestionStrategy,
+  resolveStateIngestionStrategyChain
+} from './queues'
 import { database } from '../database/connection'
 import { resolveUccProvider } from '../config/tieredIntegrations'
 
@@ -104,27 +112,61 @@ export class JobScheduler {
     const states = ['NY', 'CA', 'TX', 'FL', 'IL', 'PA', 'OH', 'GA', 'NC', 'MI']
     const dataTier = 'free-tier'
     const uccProvider = resolveUccProvider(dataTier)
+    let queuedStates = 0
 
     console.log(`[Scheduler] Queueing UCC ingestion for ${states.length} states`)
 
     for (const state of states) {
-      await ingestionQueue.add(
+      const gate = getIngestionCircuitGate(state)
+
+      if (!gate.allowed) {
+        console.log(
+          `[Scheduler] Skipping ${state} because circuit is open until ${gate.backoffUntil}`
+        )
+        continue
+      }
+
+      const strategy = resolvePrimaryIngestionStrategy(state)
+      const availableStrategies = resolveStateIngestionStrategyChain(state)
+
+      if (!strategy) {
+        console.log(
+          `[Scheduler] Skipping ${state} because no production ingestion strategy is configured`
+        )
+        continue
+      }
+
+      const job = await ingestionQueue.add(
         `ingest-${state}`,
         {
           state,
           batchSize: 1000,
           dataTier,
-          uccProvider
+          uccProvider,
+          strategy,
+          fallbackDepth: 0
         },
         {
           priority: 1,
+          attempts: 1,
           removeOnComplete: true,
           removeOnFail: false
         }
       )
+      queuedStates += 1
+
+      recordIngestionQueued({
+        state,
+        jobId: job.id?.toString() ?? null,
+        dataTier,
+        uccProvider,
+        strategy,
+        availableStrategies,
+        queuedBy: 'scheduler'
+      })
     }
 
-    console.log(`[Scheduler] Queued ${states.length} ingestion jobs`)
+    console.log(`[Scheduler] Queued ${queuedStates} ingestion jobs`)
   }
 
   private async scheduleEnrichmentRefresh() {

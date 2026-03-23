@@ -10,8 +10,6 @@
  * - TWILIO_PHONE_NUMBER: Default outbound phone number
  */
 
-import { config } from '../../config'
-
 export interface TwilioConfig {
   accountSid: string
   authToken: string
@@ -30,10 +28,6 @@ export interface TwilioResponse<T> {
 
 /**
  * TwilioClient provides authenticated access to Twilio APIs.
- *
- * This is a stub implementation that returns mock responses.
- * In production, this would use the official Twilio SDK:
- * import twilio from 'twilio'
  */
 export class TwilioClient {
   private config: TwilioConfig
@@ -54,9 +48,8 @@ export class TwilioClient {
   async initialize(): Promise<void> {
     if (this.initialized) return
 
-    // Validate configuration
     if (!this.config.accountSid || !this.config.authToken) {
-      console.warn('[TwilioClient] Missing credentials - running in stub mode')
+      console.warn('[TwilioClient] Missing credentials - Twilio delivery is disabled')
     }
 
     this.initialized = true
@@ -92,9 +85,14 @@ export class TwilioClient {
   }
 
   /**
+   * Get auth token (used for webhook validation).
+   */
+  getAuthToken(): string {
+    return this.config.authToken
+  }
+
+  /**
    * Make an authenticated request to Twilio API
-   *
-   * STUB: This method simulates API calls. In production, use the Twilio SDK.
    */
   async request<T>(
     method: 'GET' | 'POST' | 'DELETE',
@@ -102,87 +100,56 @@ export class TwilioClient {
     data?: Record<string, unknown>
   ): Promise<TwilioResponse<T>> {
     if (!this.isConfigured()) {
-      // Return stub response when not configured
-      console.log(`[TwilioClient] STUB ${method} ${endpoint}`, data)
-
       return {
-        success: true,
-        data: this.generateStubResponse<T>(endpoint, data)
+        success: false,
+        error: {
+          code: 401,
+          message: 'Twilio client is not configured'
+        }
       }
     }
 
-    // In production, this would make actual API calls:
-    /*
-    const client = twilio(this.config.accountSid, this.config.authToken)
-    // ... make actual API call
-    */
+    const url = new URL(
+      `https://api.twilio.com/2010-04-01/Accounts/${this.config.accountSid}${endpoint}`
+    )
 
-    // For now, return stub response
-    console.log(`[TwilioClient] ${method} ${endpoint}`, data)
+    const headers: Record<string, string> = {
+      Authorization: `Basic ${Buffer.from(
+        `${this.config.accountSid}:${this.config.authToken}`
+      ).toString('base64')}`
+    }
+
+    let body: string | undefined
+    if (method === 'GET' && data) {
+      this.appendFormData(url.searchParams, data)
+    } else if (method !== 'DELETE' && data) {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded'
+      const params = new URLSearchParams()
+      this.appendFormData(params, data)
+      body = params.toString()
+    }
+
+    const response = await fetch(url, { method, headers, body })
+    const payload = await response.text()
+    const parsed = payload ? this.tryParseJson(payload) : undefined
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: {
+          code: response.status,
+          message:
+            (parsed as { message?: string } | undefined)?.message ||
+            payload ||
+            `Twilio request failed with status ${response.status}`
+        }
+      }
+    }
 
     return {
       success: true,
-      data: this.generateStubResponse<T>(endpoint, data)
+      data: (parsed ?? {}) as T
     }
-  }
-
-  /**
-   * Generate stub responses for testing/development
-   */
-  private generateStubResponse<T>(endpoint: string, data?: Record<string, unknown>): T {
-    const sid = this.generateSid()
-
-    if (endpoint.includes('Messages')) {
-      return {
-        sid,
-        accountSid: this.config.accountSid,
-        to: data?.to,
-        from: this.config.phoneNumber,
-        body: data?.body,
-        status: 'queued',
-        dateCreated: new Date().toISOString(),
-        dateUpdated: new Date().toISOString(),
-        direction: 'outbound-api',
-        errorCode: null,
-        errorMessage: null,
-        numSegments: '1',
-        price: null,
-        priceUnit: 'USD'
-      } as T
-    }
-
-    if (endpoint.includes('Calls')) {
-      return {
-        sid,
-        accountSid: this.config.accountSid,
-        to: data?.to,
-        from: this.config.phoneNumber,
-        status: 'queued',
-        dateCreated: new Date().toISOString(),
-        dateUpdated: new Date().toISOString(),
-        direction: 'outbound-api',
-        duration: null,
-        startTime: null,
-        endTime: null,
-        answeredBy: null,
-        forwardedFrom: null
-      } as T
-    }
-
-    // Default stub response
-    return { sid } as T
-  }
-
-  /**
-   * Generate a Twilio-style SID
-   */
-  private generateSid(): string {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
-    let sid = 'SM' // Message SID prefix
-    for (let i = 0; i < 32; i++) {
-      sid += chars.charAt(Math.floor(Math.random() * chars.length))
-    }
-    return sid
   }
 
   /**
@@ -247,6 +214,33 @@ export class TwilioClient {
     }
 
     return {}
+  }
+
+  private appendFormData(params: URLSearchParams, data: Record<string, unknown>): void {
+    for (const [key, value] of Object.entries(data)) {
+      if (value === undefined || value === null) {
+        continue
+      }
+
+      if (Array.isArray(value)) {
+        value.forEach((item) => {
+          if (item !== undefined && item !== null) {
+            params.append(key, String(item))
+          }
+        })
+        continue
+      }
+
+      params.append(key, String(value))
+    }
+  }
+
+  private tryParseJson(payload: string): unknown {
+    try {
+      return JSON.parse(payload)
+    } catch {
+      return undefined
+    }
   }
 }
 

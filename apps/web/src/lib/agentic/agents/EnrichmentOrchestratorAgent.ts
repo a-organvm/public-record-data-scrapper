@@ -284,17 +284,15 @@ export class EnrichmentOrchestratorAgent extends BaseAgent {
   }
 
   /**
-   * Get enrichment status (placeholder for async operations)
+   * Get enrichment status for async operations.
    */
   private getEnrichmentStatus(enrichmentId: string): AgentTaskResult {
-    // This would be used for tracking long-running enrichments
-    // For now, return a simple response
     return {
-      success: true,
+      success: false,
       data: {
         enrichmentId,
-        status: 'completed',
-        message: 'Enrichment status tracking not yet implemented'
+        status: 'unsupported',
+        message: 'Enrichment status tracking is not implemented'
       },
       timestamp: new Date().toISOString()
     }

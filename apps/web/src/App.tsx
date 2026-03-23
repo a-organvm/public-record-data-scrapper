@@ -30,7 +30,7 @@ import { useSystemContext } from '@/hooks/useSystemContext'
 import { useDataTier } from '@/hooks/useDataTier'
 
 // Utils and types
-import { generateDashboardStats } from '@/lib/mockData'
+import { generateDashboardStats } from '@/lib/demoData'
 import { Prospect } from '@public-records/core'
 import { ExportFormat } from '@/lib/exportUtils'
 import { UserAction } from '@/lib/agentic/types'
@@ -44,12 +44,12 @@ function App() {
   const [tourOpen, setTourOpen] = useState(false)
   const { dataTier } = useDataTier()
 
-  const useMockData =
+  const useDemoData =
     import.meta.env.DEV &&
     ['1', 'true', 'yes'].includes(String(import.meta.env.VITE_USE_MOCK_DATA ?? '').toLowerCase())
 
   // Data fetching
-  const data = useDataFetching({ useMockData, dataTier })
+  const data = useDataFetching({ useMockData: useDemoData, dataTier })
 
   // Filtering, sorting, and selection
   const filters = useProspectFilters(data.prospects)
@@ -70,7 +70,7 @@ function App() {
 
       data.setUserActions((current) => [...(current ?? []), newAction].slice(-100))
 
-      if (!useMockData) {
+      if (!useDemoData) {
         try {
           await logUserAction(newAction)
         } catch (error) {
@@ -78,12 +78,12 @@ function App() {
         }
       }
     },
-    [data, useMockData]
+    [data, useDemoData]
   )
 
   // Prospect actions (claim, unclaim, export, delete)
   const prospectActions = useProspectActions({
-    useMockData,
+    useMockData: useDemoData,
     prospects: data.prospects,
     setProspects: data.setProspects,
     trackAction,
@@ -128,8 +128,8 @@ function App() {
     if (success) {
       void trackAction('refresh-data')
       toast.success('Data refreshed', {
-        description: useMockData
-          ? 'Mock data regenerated for offline demo mode.'
+        description: useDemoData
+          ? 'Demo data regenerated for offline preview mode.'
           : 'Latest datasets synchronized from ingestion services.'
       })
     } else {
@@ -137,7 +137,7 @@ function App() {
         description: data.loadError ?? 'Unable to refresh data from the server.'
       })
     }
-  }, [data, trackAction, useMockData])
+  }, [data, trackAction, useDemoData])
 
   const handleProspectSelect = useCallback(
     (prospect: Prospect) => {
@@ -229,7 +229,12 @@ function App() {
             </TabsContent>
 
             <TabsContent value="analytics" className="space-y-4 sm:space-y-6">
-              <AnalyticsTab prospects={data.prospects} portfolio={data.portfolio} />
+              <AnalyticsTab
+                prospects={data.prospects}
+                portfolio={data.portfolio}
+                dataTier={dataTier}
+                usePreviewData={useDemoData}
+              />
             </TabsContent>
 
             <TabsContent value="requalification" className="space-y-4 sm:space-y-6">

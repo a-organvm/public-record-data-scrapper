@@ -29,7 +29,7 @@ const mockFetchProspects = vi.fn(() => Promise.resolve([createMockProspect()]))
 const mockHasDatabaseData = vi.fn(() => Promise.resolve(true))
 
 // Mock all dependencies at module level
-vi.mock('@/lib/mockData', () => ({
+vi.mock('@/lib/demoData', () => ({
   generateProspects: () => mockGenerateProspects()
 }))
 
@@ -54,10 +54,11 @@ vi.mock('@/hooks/useDataTier', () => ({
   useDataTier: () => ({ dataTier: 'oss', setDataTier: vi.fn() })
 }))
 
-// Mock feature flags as useMockData: true by default for simpler tests
+// Mock feature flags as useDemoData: true by default for simpler tests
 vi.mock('@/lib/config/dataPipeline', () => ({
   getDataPipelineConfig: vi.fn().mockReturnValue({}),
   featureFlags: {
+    useDemoData: true,
     useMockData: true
   }
 }))

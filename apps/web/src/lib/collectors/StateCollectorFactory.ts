@@ -11,11 +11,9 @@
  * 4. Scrape - Web scraping fallback (slowest, most fragile)
  */
 
-import type { StateCollector, UCCFiling, SearchResult, CollectionOptions } from './types'
-import { NYStateCollector } from './state-collectors/NYStateCollector'
-import { CAStateCollector } from './state-collectors/CAStateCollector'
-import { CAApiCollector, createCAApiCollector } from './state-collectors/CAApiCollector'
-import { TXBulkCollector, createTXBulkCollector } from './state-collectors/TXBulkCollector'
+import type { StateCollector } from './types'
+import { createCAApiCollector } from './state-collectors/CAApiCollector'
+import { createTXBulkCollector } from './state-collectors/TXBulkCollector'
 import { FLVendorCollector, createFLVendorCollector } from './state-collectors/FLVendorCollector'
 
 /**
@@ -94,13 +92,13 @@ const STATE_CONFIGS: Record<string, StateConfig> = {
   CA: {
     code: 'CA',
     name: 'California',
-    accessMethods: ['api', 'scrape'],
+    accessMethods: ['api'],
     activeMethod: 'api',
     hasApi: true,
     hasBulk: false,
     requiresVendor: false,
     costPer1000Queries: {
-      api: 10.00, // $0.01 per query
+      api: 10.0, // $0.01 per query
       bulk: null,
       vendor: null,
       scrape: 0
@@ -110,14 +108,14 @@ const STATE_CONFIGS: Record<string, StateConfig> = {
   TX: {
     code: 'TX',
     name: 'Texas',
-    accessMethods: ['bulk', 'scrape'],
+    accessMethods: ['bulk'],
     activeMethod: 'bulk',
     hasApi: false,
     hasBulk: true,
     requiresVendor: false,
     costPer1000Queries: {
       api: null,
-      bulk: 5.00, // Amortized from subscription
+      bulk: 5.0, // Amortized from subscription
       vendor: null,
       scrape: 0
     },
@@ -134,7 +132,7 @@ const STATE_CONFIGS: Record<string, StateConfig> = {
     costPer1000Queries: {
       api: null,
       bulk: null,
-      vendor: 25.00, // Higher cost for vendor data
+      vendor: 25.0, // Higher cost for vendor data
       scrape: null // Not available
     },
     notes: 'FL UCC is privatized via Image API, LLC. Commercial agreement required.'
@@ -142,8 +140,7 @@ const STATE_CONFIGS: Record<string, StateConfig> = {
   NY: {
     code: 'NY',
     name: 'New York',
-    accessMethods: ['scrape'],
-    activeMethod: 'scrape',
+    accessMethods: [],
     hasApi: false,
     hasBulk: false,
     requiresVendor: false,
@@ -153,7 +150,7 @@ const STATE_CONFIGS: Record<string, StateConfig> = {
       vendor: null,
       scrape: 0
     },
-    notes: 'NY uses web scraping via DOS portal'
+    notes: 'NY portal ingestion is not wired to a production collector yet'
   }
 }
 
@@ -228,10 +225,14 @@ export class StateCollectorFactory {
    */
   private getRegistryForMethod(method: AccessMethod): Map<string, StateCollector> {
     switch (method) {
-      case 'api': return this.apiRegistry
-      case 'bulk': return this.bulkRegistry
-      case 'vendor': return this.vendorRegistry
-      case 'scrape': return this.scraperRegistry
+      case 'api':
+        return this.apiRegistry
+      case 'bulk':
+        return this.bulkRegistry
+      case 'vendor':
+        return this.vendorRegistry
+      case 'scrape':
+        return this.scraperRegistry
     }
   }
 
@@ -241,8 +242,7 @@ export class StateCollectorFactory {
   private createCollectorWithFallback(stateCode: string): StateCollector | undefined {
     const stateConfig = STATE_CONFIGS[stateCode]
     if (!stateConfig) {
-      // Fall back to legacy behavior for unconfigured states
-      return this.createLegacyCollector(stateCode)
+      return undefined
     }
 
     // Try each access method in order
@@ -261,7 +261,10 @@ export class StateCollectorFactory {
   /**
    * Create collector for a specific access method
    */
-  private createCollectorForMethod(stateCode: string, method: AccessMethod): StateCollector | undefined {
+  private createCollectorForMethod(
+    stateCode: string,
+    method: AccessMethod
+  ): StateCollector | undefined {
     switch (method) {
       case 'api':
         return this.createApiCollector(stateCode)
@@ -303,13 +306,14 @@ export class StateCollectorFactory {
    */
   private createVendorCollector(stateCode: string): StateCollector | undefined {
     switch (stateCode) {
-      case 'FL':
+      case 'FL': {
         const collector = createFLVendorCollector()
         // Only return if contract is active
         if (collector && (collector as FLVendorCollector).isReady()) {
           return collector
         }
         return undefined
+      }
       default:
         return undefined
     }
@@ -319,21 +323,8 @@ export class StateCollectorFactory {
    * Create scraper-based collector
    */
   private createScraperCollector(stateCode: string): StateCollector | undefined {
-    return this.createLegacyCollector(stateCode)
-  }
-
-  /**
-   * Create legacy collector (backward compatibility)
-   */
-  private createLegacyCollector(stateCode: string): StateCollector | undefined {
-    switch (stateCode) {
-      case 'NY':
-        return new NYStateCollector()
-      case 'CA':
-        return new CAStateCollector()
-      default:
-        return undefined
-    }
+    void stateCode
+    return undefined
   }
 
   /**
@@ -348,45 +339,73 @@ export class StateCollectorFactory {
       return collector
     }
 
-    const factory = this
     const stateConfig = STATE_CONFIGS[stateCode]
 
     // Create a proxy that falls back on failure
     return new Proxy(collector, {
-      get(target, prop) {
+      get: (target, prop) => {
         const value = target[prop as keyof StateCollector]
 
         // Wrap async methods with fallback logic
-        if (typeof value === 'function' && ['searchByBusinessName', 'searchByFilingNumber', 'collectNewFilings'].includes(prop as string)) {
+        if (
+          typeof value === 'function' &&
+          ['searchByBusinessName', 'searchByFilingNumber', 'collectNewFilings'].includes(
+            prop as string
+          )
+        ) {
           return async (...args: unknown[]) => {
             const startTime = Date.now()
             try {
-              const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(target, args)
-              factory.recordAttempt(primaryMethod, true, undefined, Date.now() - startTime)
-              factory.trackQueryCost(stateCode, primaryMethod)
+              const result = await (value as (...args: unknown[]) => Promise<unknown>).apply(
+                target,
+                args
+              )
+              this.recordAttempt(primaryMethod, true, undefined, Date.now() - startTime)
+              this.trackQueryCost(stateCode, primaryMethod)
               return result
             } catch (error) {
-              factory.recordAttempt(primaryMethod, false, (error as Error).message, Date.now() - startTime)
+              this.recordAttempt(
+                primaryMethod,
+                false,
+                (error as Error).message,
+                Date.now() - startTime
+              )
 
               // Try fallback methods
               if (stateConfig) {
                 const methodIndex = stateConfig.accessMethods.indexOf(primaryMethod)
-                for (let i = methodIndex + 1; i < stateConfig.accessMethods.length && i < factory.config.maxFallbackAttempts; i++) {
+                for (
+                  let i = methodIndex + 1;
+                  i < stateConfig.accessMethods.length && i < this.config.maxFallbackAttempts;
+                  i++
+                ) {
                   const fallbackMethod = stateConfig.accessMethods[i]
-                  const fallbackCollector = factory.createCollectorForMethod(stateCode, fallbackMethod)
+                  const fallbackCollector = this.createCollectorForMethod(stateCode, fallbackMethod)
 
                   if (fallbackCollector) {
                     const fallbackStartTime = Date.now()
                     try {
                       const fallbackValue = fallbackCollector[prop as keyof StateCollector]
                       if (typeof fallbackValue === 'function') {
-                        const result = await (fallbackValue as (...args: unknown[]) => Promise<unknown>).apply(fallbackCollector, args)
-                        factory.recordAttempt(fallbackMethod, true, undefined, Date.now() - fallbackStartTime)
-                        factory.trackQueryCost(stateCode, fallbackMethod)
+                        const result = await (
+                          fallbackValue as (...args: unknown[]) => Promise<unknown>
+                        ).apply(fallbackCollector, args)
+                        this.recordAttempt(
+                          fallbackMethod,
+                          true,
+                          undefined,
+                          Date.now() - fallbackStartTime
+                        )
+                        this.trackQueryCost(stateCode, fallbackMethod)
                         return result
                       }
                     } catch (fallbackError) {
-                      factory.recordAttempt(fallbackMethod, false, (fallbackError as Error).message, Date.now() - fallbackStartTime)
+                      this.recordAttempt(
+                        fallbackMethod,
+                        false,
+                        (fallbackError as Error).message,
+                        Date.now() - fallbackStartTime
+                      )
                     }
                   }
                 }
@@ -406,7 +425,12 @@ export class StateCollectorFactory {
   /**
    * Record an access attempt for analytics
    */
-  private recordAttempt(method: AccessMethod, success: boolean, error: string | undefined, duration: number): void {
+  private recordAttempt(
+    method: AccessMethod,
+    success: boolean,
+    error: string | undefined,
+    duration: number
+  ): void {
     this.accessAttempts.push({
       method,
       success,
@@ -496,7 +520,7 @@ export class StateCollectorFactory {
       'NY', // New York - Scraper
       'CA', // California - API + Scraper fallback
       'TX', // Texas - Bulk
-      'FL'  // Florida - Vendor (requires contract)
+      'FL' // Florida - Vendor (requires contract)
     ]
   }
 
@@ -528,7 +552,7 @@ export class StateCollectorFactory {
    */
   getCostTracking(stateCode?: string): CostTracking[] {
     const results: CostTracking[] = []
-    for (const [key, tracking] of this.costTracking.entries()) {
+    for (const [, tracking] of this.costTracking.entries()) {
       if (!stateCode || tracking.stateCode === stateCode.toUpperCase()) {
         results.push(tracking)
       }
@@ -598,7 +622,7 @@ export class StateCollectorFactory {
       pendingStates: pending,
       cachedStates: cached,
       successRates,
-      stateConfigs: Object.values(STATE_CONFIGS).map(c => ({
+      stateConfigs: Object.values(STATE_CONFIGS).map((c) => ({
         code: c.code,
         name: c.name,
         activeMethod: c.activeMethod,
@@ -613,11 +637,56 @@ export class StateCollectorFactory {
    */
   private getAllStatesCodes(): string[] {
     return [
-      'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
-      'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
-      'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
-      'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
-      'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
+      'AL',
+      'AK',
+      'AZ',
+      'AR',
+      'CA',
+      'CO',
+      'CT',
+      'DE',
+      'FL',
+      'GA',
+      'HI',
+      'ID',
+      'IL',
+      'IN',
+      'IA',
+      'KS',
+      'KY',
+      'LA',
+      'ME',
+      'MD',
+      'MA',
+      'MI',
+      'MN',
+      'MS',
+      'MO',
+      'MT',
+      'NE',
+      'NV',
+      'NH',
+      'NJ',
+      'NM',
+      'NY',
+      'NC',
+      'ND',
+      'OH',
+      'OK',
+      'OR',
+      'PA',
+      'RI',
+      'SC',
+      'SD',
+      'TN',
+      'TX',
+      'UT',
+      'VT',
+      'VA',
+      'WA',
+      'WV',
+      'WI',
+      'WY',
       'DC'
     ]
   }
@@ -638,7 +707,10 @@ export function getCollectorForState(stateCode: string): StateCollector | undefi
 /**
  * Helper function to get a collector for a state with specific method
  */
-export function getCollectorByMethod(stateCode: string, method: AccessMethod): StateCollector | undefined {
+export function getCollectorByMethod(
+  stateCode: string,
+  method: AccessMethod
+): StateCollector | undefined {
   return stateCollectorFactory.getCollectorByMethod(stateCode, method)
 }
 

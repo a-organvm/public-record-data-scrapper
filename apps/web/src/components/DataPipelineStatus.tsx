@@ -83,11 +83,11 @@ export function DataPipelineStatus({
       )
     }
 
-    if (featureFlags.useMockData) {
+    if (featureFlags.useDemoData) {
       return (
         <Badge variant="secondary" className="gap-1.5">
           <Database className="h-3.5 w-3.5" />
-          Mock Data
+          Demo Data
         </Badge>
       )
     }
@@ -121,8 +121,8 @@ export function DataPipelineStatus({
               Data Pipeline Status
             </CardTitle>
             <CardDescription>
-              {featureFlags.useMockData
-                ? 'Using mock data for development'
+              {featureFlags.useDemoData
+                ? 'Using preview data for development'
                 : 'Real-time data ingestion and enrichment'}
             </CardDescription>
           </div>
@@ -151,7 +151,7 @@ export function DataPipelineStatus({
             <span className="font-medium">{formatRelativeTime(lastUpdate || undefined)}</span>
           </div>
 
-          {!featureFlags.useMockData && schedulerStatus && (
+          {!featureFlags.useDemoData && schedulerStatus && (
             <>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Last Ingestion</span>
@@ -178,7 +178,7 @@ export function DataPipelineStatus({
         </div>
 
         {/* Statistics */}
-        {!featureFlags.useMockData && schedulerStatus && (
+        {!featureFlags.useDemoData && schedulerStatus && (
           <div className="space-y-2 pt-2 border-t">
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Prospects Processed</span>
@@ -223,7 +223,7 @@ export function DataPipelineStatus({
             Refresh
           </Button>
 
-          {!featureFlags.useMockData && (
+          {!featureFlags.useDemoData && (
             <>
               {schedulerStatus?.running ? (
                 <Button size="sm" variant="outline" onClick={onStopScheduler} disabled={loading}>
@@ -246,14 +246,13 @@ export function DataPipelineStatus({
         </div>
 
         {/* Mode Indicator */}
-        {featureFlags.useMockData && (
+        {featureFlags.useDemoData && (
           <div className="text-xs text-muted-foreground pt-2 border-t">
             <div className="flex items-center gap-1">
               <Database className="h-3 w-3" />
               <span>
-                Development mode with mock data. Set{' '}
-                <code className="px-1 py-0.5 bg-muted rounded">VITE_USE_MOCK_DATA=false</code> to
-                use real pipeline.
+                Development mode with preview data. Disable the preview-data environment flag to use
+                the real pipeline.
               </span>
             </div>
           </div>

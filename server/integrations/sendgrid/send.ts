@@ -13,7 +13,7 @@
  * - POST /api/webhooks/sendgrid/unsubscribe - Unsubscribe handling
  */
 
-import { SendGridClient, SendGridResponse } from './client'
+import { SendGridClient } from './client'
 
 export interface EmailRecipient {
   email: string
@@ -113,9 +113,6 @@ export type SendGridEventType =
 
 /**
  * SendGridSend provides email sending capabilities.
- *
- * STUB IMPLEMENTATION: Returns mock responses for development.
- * In production, this would use the SendGrid SDK.
  */
 export class SendGridSend {
   private client: SendGridClient
@@ -141,11 +138,13 @@ export class SendGridSend {
 
     // Build mail data
     const mailData = {
-      personalizations: [{
-        to: toRecipients,
-        cc: options.cc ? this.normalizeRecipients(options.cc) : undefined,
-        bcc: options.bcc ? this.normalizeRecipients(options.bcc) : undefined
-      }],
+      personalizations: [
+        {
+          to: toRecipients,
+          cc: options.cc ? this.normalizeRecipients(options.cc) : undefined,
+          bcc: options.bcc ? this.normalizeRecipients(options.bcc) : undefined
+        }
+      ],
       from: this.client.buildSender(options.from),
       reply_to: options.replyTo,
       subject: options.subject,
@@ -154,11 +153,17 @@ export class SendGridSend {
       categories: options.categories,
       custom_args: options.customArgs,
       send_at: options.sendAt ? Math.floor(options.sendAt.getTime() / 1000) : undefined,
-      tracking_settings: options.trackingSettings ? {
-        click_tracking: options.trackingSettings.clickTracking !== false ? { enable: true } : undefined,
-        open_tracking: options.trackingSettings.openTracking !== false ? { enable: true } : undefined,
-        subscription_tracking: options.trackingSettings.subscriptionTracking ? { enable: true } : undefined
-      } : undefined,
+      tracking_settings: options.trackingSettings
+        ? {
+            click_tracking:
+              options.trackingSettings.clickTracking !== false ? { enable: true } : undefined,
+            open_tracking:
+              options.trackingSettings.openTracking !== false ? { enable: true } : undefined,
+            subscription_tracking: options.trackingSettings.subscriptionTracking
+              ? { enable: true }
+              : undefined
+          }
+        : undefined,
       mail_settings: this.client.isSandboxMode() ? { sandbox_mode: { enable: true } } : undefined
     }
 
@@ -195,12 +200,14 @@ export class SendGridSend {
 
     // Build mail data
     const mailData = {
-      personalizations: [{
-        to: toRecipients,
-        cc: options.cc ? this.normalizeRecipients(options.cc) : undefined,
-        bcc: options.bcc ? this.normalizeRecipients(options.bcc) : undefined,
-        dynamic_template_data: options.dynamicTemplateData
-      }],
+      personalizations: [
+        {
+          to: toRecipients,
+          cc: options.cc ? this.normalizeRecipients(options.cc) : undefined,
+          bcc: options.bcc ? this.normalizeRecipients(options.bcc) : undefined,
+          dynamic_template_data: options.dynamicTemplateData
+        }
+      ],
       from: this.client.buildSender(options.from),
       reply_to: options.replyTo,
       template_id: options.templateId,
@@ -247,7 +254,7 @@ export class SendGridSend {
 
     // Build mail data
     const mailData = {
-      personalizations: options.personalizations.map(p => ({
+      personalizations: options.personalizations.map((p) => ({
         to: p.to,
         cc: p.cc,
         bcc: p.bcc,
@@ -310,7 +317,7 @@ export class SendGridSend {
       return []
     }
 
-    return body.map(event => ({
+    return body.map((event) => ({
       email: event.email,
       timestamp: event.timestamp,
       event: event.event as SendGridEventType,
@@ -397,9 +404,7 @@ export class SendGridSend {
     }
 
     if (Array.isArray(recipients)) {
-      return recipients.map(r =>
-        typeof r === 'string' ? { email: r } : r
-      )
+      return recipients.map((r) => (typeof r === 'string' ? { email: r } : r))
     }
 
     return [recipients]
@@ -408,10 +413,7 @@ export class SendGridSend {
   /**
    * Build content array for SendGrid
    */
-  private buildContent(
-    text?: string,
-    html?: string
-  ): Array<{ type: string; value: string }> {
+  private buildContent(text?: string, html?: string): Array<{ type: string; value: string }> {
     const content: Array<{ type: string; value: string }> = []
 
     if (text) {
@@ -435,8 +437,8 @@ export class SendGridSend {
     disposition?: string
   }> {
     return attachments
-      .filter(a => a.content || a.url)
-      .map(a => ({
+      .filter((a) => a.content || a.url)
+      .map((a) => ({
         content: a.content || '', // Base64 encoded
         filename: a.name,
         type: a.mimeType || a.type,
@@ -456,10 +458,14 @@ export class SendGridSend {
     payload: string,
     verificationKey: string
   ): boolean {
-    // STUB: Always returns true in development
-    // In production, use @sendgrid/eventwebhook to verify
-    console.log('[SendGridSend] Validating webhook signature (stub)')
-    return true
+    void signature
+    void timestamp
+    void payload
+    void verificationKey
+    console.warn(
+      '[SendGridSend] Webhook signature verification is not implemented in this adapter yet'
+    )
+    return false
   }
 }
 

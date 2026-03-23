@@ -14,7 +14,8 @@
  * - POST /api/webhooks/twilio/voice/fallback - Error fallback
  */
 
-import { TwilioClient, TwilioResponse } from './client'
+import { TwilioClient } from './client'
+import { createHmac, timingSafeEqual } from 'crypto'
 
 export interface InitiateCallOptions {
   to: string
@@ -123,9 +124,6 @@ export interface TwiMLOptions {
 
 /**
  * TwilioVoice provides voice calling capabilities.
- *
- * STUB IMPLEMENTATION: Returns mock responses for development.
- * In production, this would use the Twilio SDK's calls API.
  */
 export class TwilioVoice {
   private client: TwilioClient
@@ -221,10 +219,7 @@ export class TwilioVoice {
    * Get call details by SID
    */
   async getCall(callSid: string): Promise<CallRecord | null> {
-    const response = await this.client.request<CallRecord>(
-      'GET',
-      `/Calls/${callSid}.json`
-    )
+    const response = await this.client.request<CallRecord>('GET', `/Calls/${callSid}.json`)
 
     if (!response.success) {
       return null
@@ -256,11 +251,7 @@ export class TwilioVoice {
       requestData.Status = updates.status
     }
 
-    const response = await this.client.request(
-      'POST',
-      `/Calls/${callSid}.json`,
-      requestData
-    )
+    const response = await this.client.request('POST', `/Calls/${callSid}.json`, requestData)
 
     return response.success
   }
@@ -361,7 +352,9 @@ export class TwilioVoice {
       I'm reaching out regarding a business financing opportunity.
       If you're interested in learning more, please call us back at ${options.callbackNumber}.
       Thank you and have a great day.
-    `.trim().replace(/\s+/g, ' ')
+    `
+      .trim()
+      .replace(/\s+/g, ' ')
 
     return this.generateTwiML([
       { say: { text: script, voice: 'Polly.Matthew' } },
@@ -450,10 +443,27 @@ export class TwilioVoice {
     url: string,
     params: Record<string, string>
   ): boolean {
-    // STUB: Always returns true in development
-    // In production, use twilio.validateRequest()
-    console.log('[TwilioVoice] Validating webhook signature (stub)')
-    return true
+    const authToken = this.client.getAuthToken()
+    if (!authToken || !signature) {
+      return false
+    }
+
+    const data =
+      url +
+      Object.keys(params)
+        .sort()
+        .map((key) => `${key}${params[key]}`)
+        .join('')
+
+    const expectedSignature = createHmac('sha1', authToken).update(data).digest('base64')
+
+    const expectedBuffer = Buffer.from(expectedSignature)
+    const receivedBuffer = Buffer.from(signature)
+
+    return (
+      expectedBuffer.length === receivedBuffer.length &&
+      timingSafeEqual(expectedBuffer, receivedBuffer)
+    )
   }
 
   /**
