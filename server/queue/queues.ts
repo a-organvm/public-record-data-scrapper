@@ -2,6 +2,7 @@ import { Queue } from 'bullmq'
 import type { ResolvedDataTier } from '../middleware/dataTier'
 import type { UccProvider } from '../config/tieredIntegrations'
 import { redisConnection } from './connection'
+import { TelemetryPersistenceService } from '../services/TelemetryPersistenceService'
 
 export type IngestionStrategy = 'api' | 'bulk' | 'vendor' | 'scrape'
 export type IngestionCircuitState = 'closed' | 'open' | 'half-open'
@@ -128,6 +129,33 @@ let ingestionQueue: Queue<IngestionJobData> | null = null
 let enrichmentQueue: Queue<EnrichmentJobData> | null = null
 let healthScoreQueue: Queue<HealthScoreJobData> | null = null
 const ingestionCoverageTelemetry = new Map<string, IngestionCoverageTelemetry>()
+
+// Persistence layer — initialized at server startup
+let persistenceService: TelemetryPersistenceService | null = null
+
+export function initTelemetryPersistence(db: {
+  query: <T>(sql: string, params?: unknown[]) => Promise<T[]>
+}): void {
+  persistenceService = new TelemetryPersistenceService(db)
+}
+
+export async function hydrateTelemetryFromDatabase(): Promise<number> {
+  if (!persistenceService) return 0
+  try {
+    const persisted = await persistenceService.hydrateAll()
+    let hydrated = 0
+    for (const [state, telemetry] of persisted) {
+      if (!ingestionCoverageTelemetry.has(state)) {
+        ingestionCoverageTelemetry.set(state, telemetry)
+        hydrated++
+      }
+    }
+    return hydrated
+  } catch (err) {
+    console.error('[telemetry] Failed to hydrate from database:', (err as Error).message)
+    return 0
+  }
+}
 
 const STATE_STRATEGY_PROFILES: Partial<Record<string, IngestionStrategy[]>> = {
   CA: ['api'],
@@ -301,6 +329,23 @@ export function recordIngestionCompleted(context: CompletionContext): void {
   })
   ensureStrategyMetadata(telemetry, context)
   pruneTelemetryHistory(telemetry, timestamp)
+
+  // Persist to database (fire-and-forget)
+  if (persistenceService) {
+    persistenceService
+      .persistState(context.state, telemetry)
+      .catch((err) =>
+        console.error(`[telemetry] persist ${context.state}:`, (err as Error).message)
+      )
+    persistenceService
+      .recordSuccess(
+        context.state,
+        timestamp,
+        context.recordsProcessed,
+        telemetry.currentStrategy ?? undefined
+      )
+      .catch((err) => console.error(`[telemetry] record success:`, (err as Error).message))
+  }
 }
 
 export function recordIngestionFailed(context: FailureContext): void {
@@ -321,6 +366,23 @@ export function recordIngestionFailed(context: FailureContext): void {
     error: context.error
   })
   pruneTelemetryHistory(telemetry, timestamp)
+
+  // Persist to database (fire-and-forget)
+  if (persistenceService) {
+    persistenceService
+      .persistState(context.state, telemetry)
+      .catch((err) =>
+        console.error(`[telemetry] persist ${context.state}:`, (err as Error).message)
+      )
+    persistenceService
+      .recordFailure(
+        context.state,
+        timestamp,
+        context.error,
+        telemetry.currentStrategy ?? undefined
+      )
+      .catch((err) => console.error(`[telemetry] record failure:`, (err as Error).message))
+  }
 }
 
 export function recordIngestionFallbackEscalated(context: FallbackEscalationContext): void {
@@ -339,6 +401,25 @@ export function recordIngestionFallbackEscalated(context: FallbackEscalationCont
     delayMs: context.delayMs
   })
   pruneTelemetryHistory(telemetry, timestamp)
+
+  // Persist to database (fire-and-forget)
+  if (persistenceService) {
+    persistenceService
+      .persistState(context.state, telemetry)
+      .catch((err) =>
+        console.error(`[telemetry] persist ${context.state}:`, (err as Error).message)
+      )
+    persistenceService
+      .recordFallback(
+        context.state,
+        timestamp,
+        context.fromStrategy ?? 'unknown',
+        context.toStrategy,
+        context.reason,
+        context.delayMs
+      )
+      .catch((err) => console.error(`[telemetry] record fallback:`, (err as Error).message))
+  }
 }
 
 export function getIngestionCircuitGate(state: string, timestamp?: string): IngestionCircuitGate {

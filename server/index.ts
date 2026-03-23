@@ -28,7 +28,12 @@ import dealsRouter from './routes/deals'
 import webhooksRouter from './routes/webhooks'
 
 // Import queue infrastructure
-import { initializeQueues, closeQueues } from './queue/queues'
+import {
+  initializeQueues,
+  closeQueues,
+  initTelemetryPersistence,
+  hydrateTelemetryFromDatabase
+} from './queue/queues'
 import { jobScheduler } from './queue/scheduler'
 import { redisConnection } from './queue/connection'
 
@@ -219,6 +224,11 @@ export class Server {
       console.error('Failed to connect to database:', error)
       process.exit(1)
     }
+
+    // Initialize telemetry persistence and hydrate from database
+    initTelemetryPersistence(database)
+    const hydratedCount = await hydrateTelemetryFromDatabase()
+    console.log(`[telemetry] Hydrated ${hydratedCount} states from database`)
 
     // Initialize job queues
     try {
