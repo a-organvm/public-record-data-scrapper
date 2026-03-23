@@ -287,13 +287,29 @@ function resolveCollectorForJob(
   }
 }
 
+function resolveLastAmendmentDate(amendments: CollectedUCCFiling['amendments']): string | null {
+  if (!amendments || amendments.length === 0) return null
+  const sorted = [...amendments].sort((a, b) => b.filingDate.localeCompare(a.filingDate))
+  return sorted[0].filingDate
+}
+
+function resolveTerminationDate(filing: CollectedUCCFiling): string | null {
+  if (filing.status !== 'terminated') return null
+  const terminationAmendment = filing.amendments?.find((a) => a.amendmentType === 'termination')
+  return terminationAmendment?.filingDate ?? filing.filingDate
+}
+
 async function persistCollectedFilings(
   state: string,
   strategy: IngestionJobData['strategy'],
   filings: CollectedUCCFiling[]
 ): Promise<void> {
   for (const filing of filings) {
-    await database.query(
+    const amendmentCount = filing.amendments?.length ?? 0
+    const lastAmendmentDate = resolveLastAmendmentDate(filing.amendments)
+    const terminationDate = resolveTerminationDate(filing)
+
+    const result = await database.query(
       `INSERT INTO ucc_filings (
          external_id,
          filing_date,
@@ -304,8 +320,12 @@ async function persistCollectedFilings(
          status,
          filing_type,
          source,
-         raw_data
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         raw_data,
+         expiration_date,
+         amendment_count,
+         last_amendment_date,
+         termination_date
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       ON CONFLICT (external_id) DO UPDATE SET
          filing_date = EXCLUDED.filing_date,
          debtor_name = EXCLUDED.debtor_name,
@@ -316,7 +336,12 @@ async function persistCollectedFilings(
          filing_type = EXCLUDED.filing_type,
          source = EXCLUDED.source,
          raw_data = EXCLUDED.raw_data,
-         updated_at = NOW()`,
+         expiration_date = EXCLUDED.expiration_date,
+         amendment_count = EXCLUDED.amendment_count,
+         last_amendment_date = EXCLUDED.last_amendment_date,
+         termination_date = EXCLUDED.termination_date,
+         updated_at = NOW()
+      RETURNING id`,
       [
         `${state}:${filingSafeId(filing.filingNumber)}`,
         filing.filingDate,
@@ -327,9 +352,44 @@ async function persistCollectedFilings(
         normalizeDbStatus(filing.status),
         normalizeDbFilingType(filing.filingType),
         buildIngestionSource(state, strategy),
-        JSON.stringify(filing)
+        JSON.stringify(filing),
+        filing.expirationDate ?? null,
+        amendmentCount,
+        lastAmendmentDate,
+        terminationDate
       ]
     )
+
+    const filingId: string | undefined = (result as { rows?: { id: string }[] })?.rows?.[0]?.id
+
+    if (filingId && filing.amendments && filing.amendments.length > 0) {
+      for (let i = 0; i < filing.amendments.length; i++) {
+        const amendment = filing.amendments[i]
+        const externalId = `${filing.filingNumber}:${amendment.filingNumber || i}`
+
+        await database.query(
+          `INSERT INTO ucc_amendments (
+             filing_id,
+             external_id,
+             amendment_type,
+             amendment_date,
+             description,
+             raw_data
+           ) VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (external_id) DO UPDATE SET
+             amendment_date = EXCLUDED.amendment_date,
+             raw_data = EXCLUDED.raw_data`,
+          [
+            filingId,
+            externalId,
+            amendment.amendmentType,
+            amendment.filingDate,
+            amendment.description ?? null,
+            JSON.stringify(amendment)
+          ]
+        )
+      }
+    }
   }
 }
 
