@@ -26,6 +26,7 @@ import jobsRouter from './routes/jobs'
 import contactsRouter from './routes/contacts'
 import dealsRouter from './routes/deals'
 import webhooksRouter from './routes/webhooks'
+import statusRouter from './routes/status'
 
 // Import queue infrastructure
 import {
@@ -100,6 +101,9 @@ export class Server {
   private setupRoutes(): void {
     // Swagger UI documentation
     this.setupSwaggerDocs()
+
+    // Public status page (no auth, bookmarkable)
+    this.app.use(statusRouter)
 
     // Public routes (no authentication required)
     this.app.use('/api/health', healthRouter)
