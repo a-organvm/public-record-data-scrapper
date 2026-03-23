@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => {
     mockDigestQueue: { add: mockQueueAdd, name: 'coverage-digest' },
     mockTerminationDetectionQueue: { add: mockQueueAdd, name: 'termination-detection' },
     mockVelocityAnalysisQueue: { add: mockQueueAdd, name: 'velocity-analysis' },
+    mockOutreachQueue: { add: mockQueueAdd, name: 'outreach' },
     mockDatabaseQuery: vi.fn(),
     mockRecordIngestionQueued: vi.fn(),
     mockGetIngestionCircuitGate: vi.fn(() => ({
@@ -56,6 +57,7 @@ vi.mock('../../queue/queues', () => ({
   getDigestQueue: vi.fn(() => mocks.mockDigestQueue),
   getTerminationDetectionQueue: vi.fn(() => mocks.mockTerminationDetectionQueue),
   getVelocityAnalysisQueue: vi.fn(() => mocks.mockVelocityAnalysisQueue),
+  getOutreachQueue: vi.fn(() => mocks.mockOutreachQueue),
   getIngestionCircuitGate: mocks.mockGetIngestionCircuitGate,
   recordIngestionQueued: mocks.mockRecordIngestionQueued,
   resolvePrimaryIngestionStrategy: mocks.mockResolvePrimaryIngestionStrategy,

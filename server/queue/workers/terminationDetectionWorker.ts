@@ -1,3 +1,5 @@
+import { getOutreachQueue } from '../queues'
+
 export interface TerminationDetectionResult {
   detected: number
   eventsCreated: number
@@ -61,6 +63,22 @@ export async function processTerminationDetection(db: {
     await db.query(`UPDATE prospects SET updated_at = NOW() WHERE id = $1`, [prospects[0].id])
 
     eventsCreated++
+
+    // Queue outreach job for this termination
+    try {
+      const outreachQueue = getOutreachQueue()
+      await outreachQueue.add('termination-outreach', {
+        filingEventId: filing.id,
+        prospectId: prospects[0].id,
+        triggerType: 'termination',
+        triggeredBy: 'event'
+      })
+    } catch (err) {
+      console.error(
+        `[termination] Failed to queue outreach for ${prospects[0].id}:`,
+        (err as Error).message
+      )
+    }
   }
 
   return { detected: terminated.length, eventsCreated }

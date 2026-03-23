@@ -59,7 +59,10 @@ afterEach(async () => {
     'competitor_market_positions',
     'filing_velocity_metrics',
     'filing_events',
-    'ucc_amendments'
+    'ucc_amendments',
+    'pre_call_briefings',
+    'outreach_steps',
+    'outreach_sequences'
   ]
 
   for (const table of tables) {

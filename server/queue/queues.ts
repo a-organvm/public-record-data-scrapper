@@ -5,6 +5,7 @@ import { redisConnection } from './connection'
 import { TelemetryPersistenceService } from '../services/TelemetryPersistenceService'
 import type { PortalProbeJobData } from './workers/portalProbeWorker'
 import type { DigestJobData } from './workers/digestWorker'
+import type { OutreachJobData } from './workers/outreachWorker'
 
 export type IngestionStrategy = 'api' | 'bulk' | 'vendor' | 'scrape'
 export type IngestionCircuitState = 'closed' | 'open' | 'half-open'
@@ -143,6 +144,7 @@ let portalProbeQueue: Queue<PortalProbeJobData> | null = null
 let digestQueue: Queue<DigestJobData> | null = null
 let terminationDetectionQueue: Queue<TerminationDetectionJobData> | null = null
 let velocityAnalysisQueue: Queue<VelocityAnalysisJobData> | null = null
+let outreachQueue: Queue<OutreachJobData> | null = null
 const ingestionCoverageTelemetry = new Map<string, IngestionCoverageTelemetry>()
 
 // Persistence layer — initialized at server startup
@@ -579,6 +581,7 @@ export function initializeQueues() {
     queueConfig
   )
   velocityAnalysisQueue = new Queue<VelocityAnalysisJobData>('velocity-analysis', queueConfig)
+  outreachQueue = new Queue<OutreachJobData>('outreach', queueConfig)
 
   console.log('✓ Job queues initialized')
 
@@ -589,7 +592,8 @@ export function initializeQueues() {
     portalProbeQueue,
     digestQueue,
     terminationDetectionQueue,
-    velocityAnalysisQueue
+    velocityAnalysisQueue,
+    outreachQueue
   }
 }
 
@@ -634,6 +638,11 @@ export function getVelocityAnalysisQueue(): Queue<VelocityAnalysisJobData> {
   return velocityAnalysisQueue
 }
 
+export function getOutreachQueue(): Queue<OutreachJobData> {
+  if (!outreachQueue) throw new Error('Outreach queue not initialized')
+  return outreachQueue
+}
+
 export async function closeQueues(): Promise<void> {
   const queues = [ingestionQueue, enrichmentQueue, healthScoreQueue]
   await Promise.all(queues.map((q) => q?.close()))
@@ -641,9 +650,11 @@ export async function closeQueues(): Promise<void> {
   await digestQueue?.close()
   await terminationDetectionQueue?.close()
   await velocityAnalysisQueue?.close()
+  await outreachQueue?.close()
   portalProbeQueue = null
   digestQueue = null
   terminationDetectionQueue = null
   velocityAnalysisQueue = null
+  outreachQueue = null
   console.log('✓ Job queues closed')
 }

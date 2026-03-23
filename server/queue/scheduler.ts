@@ -6,6 +6,7 @@ import {
   getDigestQueue,
   getTerminationDetectionQueue,
   getVelocityAnalysisQueue,
+  getOutreachQueue,
   getIngestionCircuitGate,
   recordIngestionQueued,
   resolvePrimaryIngestionStrategy,
@@ -82,6 +83,33 @@ export class JobScheduler {
         console.log('[scheduler] Velocity analysis job queued')
       } catch (err) {
         console.error('[scheduler] Failed to queue velocity analysis:', (err as Error).message)
+      }
+    })
+
+    // Process scheduled outreach steps every 15 minutes
+    this.scheduleInterval('outreach-processor', 15 * 60 * 1000, async () => {
+      try {
+        const queue = getOutreachQueue()
+        // Find sequences with scheduled steps that are due
+        const dueSteps = await database.query<{ sequence_id: string; prospect_id: string }>(
+          `SELECT DISTINCT os.sequence_id, oq.prospect_id
+           FROM outreach_steps os
+           JOIN outreach_sequences oq ON os.sequence_id = oq.id
+           WHERE os.status = 'scheduled' AND os.scheduled_for <= NOW()
+           LIMIT 50`
+        )
+        for (const step of dueSteps) {
+          await queue.add('process-scheduled', {
+            prospectId: step.prospect_id,
+            triggerType: 'scheduled_step',
+            triggeredBy: 'event'
+          })
+        }
+        if (dueSteps.length > 0) {
+          console.log(`[scheduler] Queued ${dueSteps.length} outreach jobs for due steps`)
+        }
+      } catch (err) {
+        console.error('[scheduler] Outreach processor error:', (err as Error).message)
       }
     })
 
