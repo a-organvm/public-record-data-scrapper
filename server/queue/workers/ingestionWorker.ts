@@ -2,6 +2,7 @@ import { Worker, Job } from 'bullmq'
 import { redisConnection } from '../connection'
 import { IngestionJobData } from '../queues'
 import { database } from '../../database/connection'
+import { DataQualityService } from '../../services/DataQualityService'
 import { listEnabledIntegrations, resolveUccProvider } from '../../config/tieredIntegrations'
 import type {
   StateCollector,
@@ -71,6 +72,19 @@ async function processIngestion(job: Job<IngestionJobData>): Promise<void> {
     console.log(`[Ingestion Worker] Persisting ${filings.length} live filings to database...`)
     await persistCollectedFilings(state, currentStrategy, filings)
     await job.updateProgress(85)
+
+    const dqService = new DataQualityService(database)
+    const dqReport = dqService.validateBatch(job.data.state, job.id ?? 'unknown', filings)
+
+    if (!dqReport.passed) {
+      console.warn(`[ingestion] Data quality warnings for ${job.data.state}:`, dqReport.warnings)
+    }
+
+    dqService
+      .persistReport(dqReport)
+      .catch((err) =>
+        console.error(`[ingestion] Failed to persist DQ report:`, (err as Error).message)
+      )
 
     await database.query(
       `INSERT INTO data_ingestion_logs (source, status, records_processed, started_at, completed_at, metadata)
