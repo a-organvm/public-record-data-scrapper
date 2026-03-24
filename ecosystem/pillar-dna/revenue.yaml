@@ -1,0 +1,47 @@
+schema_version: '1.0'
+pillar: revenue
+product_type: saas
+lifecycle_stage: planning
+research:
+  scan_scope:
+  - subscription
+  - freemium
+  - enterprise_license
+  - api_usage
+  competitors: []
+  cadence: monthly
+artifacts:
+- name: pricing-comparison
+  cadence: monthly
+  staleness_days: 45
+- name: churn-analysis
+  cadence: quarterly
+  staleness_days: 120
+- name: revenue-model-landscape
+  cadence: quarterly
+  staleness_days: 120
+gen_prompts:
+- id: pricing_landscape
+  trigger: quarterly
+  prompt: 'Survey pricing models across {product_type} competitors. Document: tiers,
+    feature gates, trial structures, and conversion tactics.'
+crit_prompts:
+- id: model_fit
+  prompt: Evaluate our revenue model against the competitive landscape. Are there
+    untapped monetization opportunities?
+gates:
+  research_to_planning:
+  - At least one landscape snapshot exists
+  - 3+ competitors profiled
+  planning_to_building:
+  - Channel strategy artifact exists
+  - Priority arms identified with next_actions
+  building_to_live:
+  - 'At least one arm has status: live'
+signals:
+  emits:
+  - signal:pillar-stage-change
+  - signal:new-competitor-found
+  listens:
+  - signal:ecosystem-arm-live
+  - signal:market-shift-detected

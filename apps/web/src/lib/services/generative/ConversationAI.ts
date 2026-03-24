@@ -520,120 +520,71 @@ Provide a clear explanation of:
   }
 
   /**
-   * Find prospects (mock implementation)
+   * Find prospects.
    */
   private async findProspects(
-    parameters: Record<string, unknown>
+    _parameters: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    return {
-      count: 42,
-      prospects: [
-        {
-          id: '1',
-          companyName: 'Acme Construction',
-          industry: parameters.industry || 'Construction',
-          state: parameters.state || 'NY'
-        }
-        // ... more prospects
-      ],
-      filters: parameters
-    }
+    void _parameters
+    throw new Error('ConversationAI prospect search is not wired to a live query service')
   }
 
   /**
-   * Analyze competitor (mock implementation)
+   * Analyze competitor.
    */
   private async analyzeCompetitor(
-    parameters: Record<string, unknown>
+    _parameters: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    return {
-      competitor: parameters.competitor || 'Top Lender XYZ',
-      marketShare: 15.3,
-      filingVolume: 1250,
-      trend: 'growing',
-      opportunities: ['White space in construction sector', 'Pricing gap in NY market']
-    }
+    void _parameters
+    throw new Error('ConversationAI competitor analysis is not wired to live intelligence data')
   }
 
   /**
-   * Generate report (mock implementation)
+   * Generate report.
    */
   private async generateReport(
-    parameters: Record<string, unknown>
+    _parameters: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    return {
-      reportType: parameters.reportType || 'executive_summary',
-      generated: true,
-      sections: ['Overview', 'Key Metrics', 'Insights', 'Recommendations'],
-      downloadUrl: '/reports/executive-summary-2024-01.pdf'
-    }
+    void _parameters
+    throw new Error('ConversationAI report generation is not wired to a report backend')
   }
 
   /**
-   * Export data (mock implementation)
+   * Export data.
    */
-  private async exportData(parameters: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return {
-      format: parameters.format || 'csv',
-      records: parameters.count || 50,
-      downloadUrl: '/exports/prospects-2024-01.csv'
-    }
+  private async exportData(_parameters: Record<string, unknown>): Promise<Record<string, unknown>> {
+    void _parameters
+    throw new Error('ConversationAI export is not wired to a file export service')
   }
 
   /**
-   * Get statistics (mock implementation)
+   * Get statistics.
    */
   private async getStatistics(
-    parameters: Record<string, unknown>
+    _parameters: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    void parameters
-    return {
-      totalProspects: 1543,
-      conversionRate: 0.28,
-      averageDealSize: 125000,
-      pipelineValue: 5400000
-    }
+    void _parameters
+    throw new Error('ConversationAI statistics are not wired to live analytics')
   }
 
   /**
-   * Analyze data (mock implementation)
+   * Analyze data.
    */
-  private async analyzeData(parameters: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return {
-      analysisType: parameters.type || 'trend',
-      insights: [
-        'Construction industry shows 15% YoY growth in UCC filings',
-        'Average deal size increased by $12,000 this quarter',
-        'Health grade A prospects convert 2.3x better than grade C'
-      ],
-      recommendations: [
-        'Focus outreach on construction and retail sectors',
-        'Prioritize prospects with 3+ growth signals',
-        'Consider expanding into Texas market'
-      ],
-      dataPoints: 1543,
-      timeRange: 'Last 90 days'
-    }
+  private async analyzeData(
+    _parameters: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    void _parameters
+    throw new Error('ConversationAI data analysis is not wired to a live analytics engine')
   }
 
   /**
-   * Handle general query (mock implementation)
+   * Handle general query.
    */
   private async handleGeneralQuery(
-    parameters: Record<string, unknown>
+    _parameters: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    void parameters
-    return {
-      type: 'general_response',
-      message:
-        'I can help you with prospect searches, competitor analysis, report generation, and data exports. What would you like to explore?',
-      suggestions: [
-        'Show me high-value prospects in construction',
-        'Analyze competitor activity this month',
-        'Generate an executive summary report',
-        'Export top 50 prospects to CSV'
-      ]
-    }
+    void _parameters
+    throw new Error('ConversationAI general-query handling requires a wired backend action layer')
   }
 }
 

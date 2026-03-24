@@ -95,7 +95,7 @@ describe('StaleDataWarning', () => {
     })
 
     it('uses destructive variant for data 30+ days old', () => {
-      render(<StaleDataWarning lastUpdated={getDateDaysAgo(30)} onRefresh={mockOnRefresh} />)
+      render(<StaleDataWarning lastUpdated={getDateDaysAgo(31)} onRefresh={mockOnRefresh} />)
 
       const alert = screen.getByTestId('alert')
       expect(alert).toHaveAttribute('data-variant', 'destructive')

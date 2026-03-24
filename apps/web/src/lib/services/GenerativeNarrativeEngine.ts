@@ -261,83 +261,44 @@ Format as plain text with markdown section headers.
   }
 
   /**
-   * Call LLM API (with fallback to mock for development)
+   * Call the configured LLM API.
    */
   private async callLLM(prompt: string): Promise<string> {
-    // If no API key, use mock response
-    if (!this.apiKey || import.meta.env.VITE_USE_MOCK_DATA === 'true') {
-      return this.generateMockResponse(prompt)
+    if (!this.apiKey) {
+      throw new Error('GenerativeNarrativeEngine requires a live LLM API key')
     }
 
-    try {
-      const response = await fetch(this.apiEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': this.apiKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: this.model,
-          max_tokens: 4096,
-          messages: [
-            {
-              role: 'user',
-              content: prompt
-            }
-          ]
-        })
+    const response = await fetch(this.apiEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': this.apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: this.model,
+        max_tokens: 4096,
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ]
       })
+    })
 
-      if (!response.ok) {
-        console.error('LLM API error:', response.status, response.statusText)
-        return this.generateMockResponse(prompt)
-      }
-
-      const data = await response.json()
-      return data.content[0].text
-    } catch (error) {
-      console.error('Error calling LLM:', error)
-      return this.generateMockResponse(prompt)
+    if (!response.ok) {
+      throw new Error(`LLM API error: ${response.status} ${response.statusText}`)
     }
-  }
 
-  /**
-   * Generate mock response for development/testing
-   */
-  private generateMockResponse(prompt: string): string {
-    return `## SUMMARY
-This prospect shows moderate potential with mixed signals. The company has been in default for an extended period but shows recent growth indicators that warrant investigation.
+    const data = await response.json()
+    const text = data.content?.[0]?.text
 
-## KEY_FINDINGS
-- Recent hiring activity suggests business expansion
-- Health score is declining, indicating operational challenges
-- Industry trends are favorable with 15% growth projected
-- Network analysis reveals connections to 12 related entities
-- Estimated revenue of $2.5M provides adequate deal sizing
+    if (typeof text !== 'string' || text.length === 0) {
+      throw new Error('LLM API returned an empty narrative payload')
+    }
 
-## OPPORTUNITY_ANALYSIS
-The prospect presents a potential turnaround opportunity. Despite the default status, multiple growth signals indicate renewed business activity. The hiring signal (confidence: 0.85) combined with permit activity suggests the company is investing in expansion. The industry is experiencing strong tailwinds, which could support recovery. Network analysis reveals the company is part of a larger corporate family, which may provide additional support or cross-collateralization opportunities.
-
-## RISK_FACTORS
-- Extended time in default (18+ months) increases complexity
-- Declining health score trend requires investigation
-- Limited visibility into current cash flow
-- Violation history suggests operational inconsistencies
-- Network concentration could amplify systemic risk
-
-## RECOMMENDED_ACTIONS
-- Schedule site visit to verify hiring and expansion claims
-- Request updated financials and business plan
-- Investigate relationship with parent company or affiliates
-- Assess collateral value and position
-- Review competitive landscape for market validation
-
-## MARKET_CONTEXT
-The ${prompt.includes('restaurant') ? 'restaurant' : 'industry'} sector is experiencing moderate growth with increasing consolidation. Market leaders are expanding through acquisition, creating opportunities for smaller players to fill niches. Economic conditions are favorable with strong consumer spending supporting revenue growth.
-
-## COMPETITIVE_LANDSCAPE
-Analysis shows moderate competition in this segment with 5 major lenders active. Average deal size of $1.8M aligns well with this prospect's profile. The secured party concentration suggests a few dominant players, but opportunities exist for relationship-focused lenders who can provide flexible terms and industry expertise.`
+    return text
   }
 
   /**

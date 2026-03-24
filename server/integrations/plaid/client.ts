@@ -4,14 +4,9 @@
  * Base client for Plaid integration with environment configuration.
  * Supports sandbox, development, and production environments.
  *
- * Note: This is a stub implementation. Replace with actual Plaid SDK
- * calls when integrating with the Plaid API.
- *
  * @see https://plaid.com/docs/
  * @module server/integrations/plaid/client
  */
-
-import { config } from '../../config'
 
 /**
  * Plaid environment types
@@ -136,12 +131,11 @@ export class PlaidClient {
    * @returns API response
    * @throws {PlaidError} If the API returns an error
    *
-   * @remarks
-   * This is a stub implementation. In production, this would make actual
-   * HTTP requests to the Plaid API.
    */
-  async makeRequest<T>(endpoint: string, body: Record<string, unknown>): Promise<PlaidApiResponse<T>> {
-    // Validate configuration
+  async makeRequest<T>(
+    endpoint: string,
+    body: Record<string, unknown>
+  ): Promise<PlaidApiResponse<T>> {
     if (!this.isConfigured()) {
       throw this.createError(
         'INVALID_CONFIGURATION',
@@ -150,20 +144,33 @@ export class PlaidClient {
       )
     }
 
-    // In production, this would be an actual HTTP request:
-    // const response = await fetch(`${this.baseUrl}${endpoint}`, {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json',
-    //     'PLAID-CLIENT-ID': this.clientId,
-    //     'PLAID-SECRET': this.secret
-    //   },
-    //   body: JSON.stringify(body)
-    // })
+    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'PLAID-CLIENT-ID': this.clientId,
+        'PLAID-SECRET': this.secret,
+        'Plaid-Version': '2020-09-14'
+      },
+      body: JSON.stringify(body)
+    })
 
-    // Stub implementation - return mock response based on endpoint
-    const mockResponse = this.getMockResponse<T>(endpoint, body)
-    return mockResponse
+    const payload = await response.json().catch(() => ({}))
+
+    if (!response.ok) {
+      throw this.createError(
+        typeof payload.error_type === 'string' ? payload.error_type : 'API_ERROR',
+        typeof payload.error_code === 'string' ? payload.error_code : 'PLAID_REQUEST_FAILED',
+        typeof payload.error_message === 'string'
+          ? payload.error_message
+          : `Plaid request failed with status ${response.status}`
+      )
+    }
+
+    return {
+      data: payload as T,
+      requestId: typeof payload.request_id === 'string' ? payload.request_id : `plaid-${Date.now()}`
+    }
   }
 
   /**
@@ -174,91 +181,7 @@ export class PlaidClient {
       errorType,
       errorCode,
       errorMessage,
-      requestId: `stub-${Date.now()}`
-    }
-  }
-
-  /**
-   * Get mock response for stub implementation.
-   *
-   * This method simulates Plaid API responses for development and testing.
-   * Replace with actual API calls in production.
-   */
-  private getMockResponse<T>(endpoint: string, body: Record<string, unknown>): PlaidApiResponse<T> {
-    const requestId = `stub-request-${Date.now()}`
-
-    // Mock responses based on endpoint
-    switch (endpoint) {
-      case '/link/token/create':
-        return {
-          data: {
-            link_token: `link-sandbox-${Date.now()}`,
-            expiration: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
-            request_id: requestId
-          } as unknown as T,
-          requestId
-        }
-
-      case '/item/public_token/exchange':
-        return {
-          data: {
-            access_token: `access-sandbox-${Date.now()}`,
-            item_id: `item-sandbox-${Date.now()}`,
-            request_id: requestId
-          } as unknown as T,
-          requestId
-        }
-
-      case '/transactions/get':
-        return {
-          data: {
-            accounts: [],
-            transactions: [],
-            item: {},
-            total_transactions: 0,
-            request_id: requestId
-          } as unknown as T,
-          requestId
-        }
-
-      case '/transactions/sync':
-        return {
-          data: {
-            added: [],
-            modified: [],
-            removed: [],
-            next_cursor: '',
-            has_more: false,
-            request_id: requestId
-          } as unknown as T,
-          requestId
-        }
-
-      case '/accounts/get':
-        return {
-          data: {
-            accounts: [],
-            item: {},
-            request_id: requestId
-          } as unknown as T,
-          requestId
-        }
-
-      case '/accounts/balance/get':
-        return {
-          data: {
-            accounts: [],
-            item: {},
-            request_id: requestId
-          } as unknown as T,
-          requestId
-        }
-
-      default:
-        return {
-          data: { request_id: requestId } as unknown as T,
-          requestId
-        }
+      requestId: `plaid-${Date.now()}`
     }
   }
 }

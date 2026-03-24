@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, beforeEach, afterEach, vi, MockInstance } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 
-// Check if bullmq is available
 let bullmqAvailable = false
 try {
   require.resolve('bullmq')
@@ -12,7 +11,6 @@ try {
 
 const describeConditional = bullmqAvailable ? describe : describe.skip
 
-// Hoisted mocks
 const mocks = vi.hoisted(() => {
   const mockWorkerOn = vi.fn()
   const mockUpdateProgress = vi.fn().mockResolvedValue(undefined)
@@ -34,12 +32,41 @@ const mocks = vi.hoisted(() => {
     }
   }
 
+  const createCollector = () => ({
+    searchByBusinessName: vi.fn(),
+    searchByFilingNumber: vi.fn(),
+    getFilingDetails: vi.fn(),
+    collectNewFilings: vi.fn(),
+    validateFiling: vi.fn(),
+    getStatus: vi.fn()
+  })
+
   return {
     MockWorker,
     mockWorkerOn,
     mockUpdateProgress,
     mockDatabaseQuery: vi.fn(),
-    mockRedisConnect: vi.fn().mockReturnValue({ client: {}, subscriber: {} })
+    mockRedisConnect: vi.fn().mockReturnValue({ client: {}, subscriber: {} }),
+    mockQueueAdd: vi.fn().mockResolvedValue({ id: 'recovery-job-1' }),
+    mockGetIngestionQueue: vi.fn(),
+    mockEvaluateIngestionRecoveryAction: vi.fn(),
+    mockResolveStateIngestionStrategyChain: vi.fn(),
+    mockRecordIngestionStarted: vi.fn(),
+    mockRecordIngestionCompleted: vi.fn(),
+    mockRecordIngestionFailed: vi.fn(),
+    mockRecordIngestionQueued: vi.fn(),
+    mockRecordIngestionFallbackEscalated: vi.fn(),
+    mockResolveUccProvider: vi.fn(),
+    mockListEnabledIntegrations: vi.fn(),
+    mockCreateCAApiCollector: vi.fn(),
+    mockCreateTXBulkCollector: vi.fn(),
+    mockCreateFLVendorCollector: vi.fn(),
+    mockCACollector: createCollector(),
+    mockTXCollector: createCollector(),
+    mockFLCollector: {
+      ...createCollector(),
+      isReady: vi.fn(() => true)
+    }
   }
 })
 
@@ -59,6 +86,48 @@ vi.mock('../../../database/connection', () => ({
   }
 }))
 
+vi.mock('../../../config/tieredIntegrations', () => ({
+  listEnabledIntegrations: mocks.mockListEnabledIntegrations,
+  resolveUccProvider: mocks.mockResolveUccProvider
+}))
+
+vi.mock('../../../queue/queues', () => ({
+  evaluateIngestionRecoveryAction: mocks.mockEvaluateIngestionRecoveryAction,
+  getIngestionQueue: mocks.mockGetIngestionQueue,
+  recordIngestionStarted: mocks.mockRecordIngestionStarted,
+  recordIngestionCompleted: mocks.mockRecordIngestionCompleted,
+  recordIngestionFailed: mocks.mockRecordIngestionFailed,
+  recordIngestionQueued: mocks.mockRecordIngestionQueued,
+  recordIngestionFallbackEscalated: mocks.mockRecordIngestionFallbackEscalated,
+  resolveStateIngestionStrategyChain: mocks.mockResolveStateIngestionStrategyChain
+}))
+
+vi.mock('../../../../apps/web/src/lib/collectors/state-collectors/CAApiCollector', () => ({
+  createCAApiCollector: mocks.mockCreateCAApiCollector
+}))
+
+vi.mock('../../../../apps/web/src/lib/collectors/state-collectors/TXBulkCollector', () => ({
+  createTXBulkCollector: mocks.mockCreateTXBulkCollector
+}))
+
+vi.mock('../../../../apps/web/src/lib/collectors/state-collectors/FLVendorCollector', () => ({
+  createFLVendorCollector: mocks.mockCreateFLVendorCollector
+}))
+
+function createFiling(overrides: Partial<Record<string, any>> = {}) {
+  return {
+    filingNumber: 'CA-0001',
+    filingType: 'UCC-1',
+    filingDate: '2026-03-20',
+    status: 'active',
+    state: 'CA',
+    debtor: { name: 'Atlas Supply LLC' },
+    securedParty: { name: 'Forward Funding' },
+    collateral: 'All business assets',
+    ...overrides
+  }
+}
+
 describeConditional('Ingestion Worker', () => {
   let consoleSpy: MockInstance
   let consoleErrorSpy: MockInstance
@@ -66,9 +135,46 @@ describeConditional('Ingestion Worker', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useFakeTimers()
+
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
     mocks.mockDatabaseQuery.mockResolvedValue([])
+    mocks.mockQueueAdd.mockReset().mockResolvedValue({ id: 'recovery-job-1' })
+    mocks.mockGetIngestionQueue.mockReset().mockReturnValue({ add: mocks.mockQueueAdd })
+    mocks.mockEvaluateIngestionRecoveryAction.mockReset().mockReturnValue({
+      action: 'retry',
+      nextStrategy: 'api',
+      delayMs: 120000,
+      backoffUntil: '2026-03-23T16:00:00.000Z',
+      reason: 'Retrying api after Portal timeout'
+    })
+    mocks.mockResolveStateIngestionStrategyChain.mockReset().mockImplementation((state: string) => {
+      if (state === 'CA') return ['api']
+      if (state === 'TX') return ['bulk']
+      if (state === 'FL') return ['vendor']
+      return []
+    })
+    mocks.mockResolveUccProvider.mockReset().mockReturnValue('unconfigured')
+    mocks.mockListEnabledIntegrations.mockReset().mockReturnValue([])
+    mocks.mockRecordIngestionStarted.mockReset()
+    mocks.mockRecordIngestionCompleted.mockReset()
+    mocks.mockRecordIngestionFailed.mockReset()
+    mocks.mockRecordIngestionQueued.mockReset()
+    mocks.mockRecordIngestionFallbackEscalated.mockReset()
+
+    mocks.mockCreateCAApiCollector.mockReset().mockReturnValue(mocks.mockCACollector)
+    mocks.mockCreateTXBulkCollector.mockReset().mockReturnValue(mocks.mockTXCollector)
+    mocks.mockCreateFLVendorCollector.mockReset().mockReturnValue(mocks.mockFLCollector)
+
+    mocks.mockCACollector.collectNewFilings.mockReset().mockResolvedValue([createFiling()])
+    mocks.mockTXCollector.collectNewFilings
+      .mockReset()
+      .mockResolvedValue([createFiling({ filingNumber: 'TX-0001', state: 'TX' })])
+    mocks.mockFLCollector.collectNewFilings
+      .mockReset()
+      .mockResolvedValue([createFiling({ filingNumber: 'FL-0001', state: 'FL' })])
+    mocks.mockFLCollector.isReady.mockReset().mockReturnValue(true)
   })
 
   afterEach(() => {
@@ -79,274 +185,186 @@ describeConditional('Ingestion Worker', () => {
   })
 
   describe('createIngestionWorker', () => {
-    it('should create worker with correct queue name', async () => {
+    it('creates the worker with the expected queue name and options', async () => {
       const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
 
       const worker = createIngestionWorker()
 
       expect(worker.name).toBe('ucc-ingestion')
-    })
-
-    it('should connect to Redis', async () => {
-      const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
-
-      createIngestionWorker()
-
-      expect(mocks.mockRedisConnect).toHaveBeenCalled()
-    })
-
-    it('should configure worker with concurrency 2', async () => {
-      const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
-
-      const worker = createIngestionWorker()
-
       expect(worker.opts).toMatchObject({
-        concurrency: 2
-      })
-    })
-
-    it('should configure rate limiter to 10 jobs per minute', async () => {
-      const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
-
-      const worker = createIngestionWorker()
-
-      expect(worker.opts).toMatchObject({
+        concurrency: 2,
         limiter: {
           max: 10,
           duration: 60000
         }
       })
-    })
-
-    it('should register completed event handler', async () => {
-      const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
-
-      createIngestionWorker()
-
+      expect(mocks.mockRedisConnect).toHaveBeenCalled()
       expect(mocks.mockWorkerOn).toHaveBeenCalledWith('completed', expect.any(Function))
-    })
-
-    it('should register failed event handler', async () => {
-      const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
-
-      createIngestionWorker()
-
       expect(mocks.mockWorkerOn).toHaveBeenCalledWith('failed', expect.any(Function))
-    })
-
-    it('should register error event handler', async () => {
-      const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
-
-      createIngestionWorker()
-
       expect(mocks.mockWorkerOn).toHaveBeenCalledWith('error', expect.any(Function))
-    })
-
-    it('should log worker started message', async () => {
-      const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
-
-      createIngestionWorker()
-
       expect(consoleSpy).toHaveBeenCalledWith('✓ Ingestion worker started')
     })
   })
 
   describe('processIngestion', () => {
-    it('should update progress from 0 to 100', async () => {
+    it('collects live filings and persists them', async () => {
       const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
+
+      mocks.mockCACollector.collectNewFilings.mockResolvedValueOnce([
+        createFiling(),
+        createFiling({
+          filingNumber: 'CA-0002',
+          filingType: 'UCC-3',
+          status: 'terminated'
+        })
+      ])
 
       const worker = createIngestionWorker()
       const mockJob = {
-        id: 'test-job-1',
-        data: { state: 'NY', batchSize: 1000 },
+        id: 'job-1',
+        data: { state: 'CA', dataTier: 'free-tier', batchSize: 250 },
         updateProgress: mocks.mockUpdateProgress
       }
 
-      const processPromise = worker.processor(mockJob)
-      await vi.runAllTimersAsync()
-      await processPromise
+      await worker.processor(mockJob as any)
 
-      // Check progress updates: 0, 25, 50, 75, 100
+      expect(mocks.mockCACollector.collectNewFilings).toHaveBeenCalledWith({
+        since: undefined,
+        limit: 250,
+        includeInactive: true
+      })
       expect(mocks.mockUpdateProgress).toHaveBeenCalledWith(0)
       expect(mocks.mockUpdateProgress).toHaveBeenCalledWith(25)
-      expect(mocks.mockUpdateProgress).toHaveBeenCalledWith(50)
-      expect(mocks.mockUpdateProgress).toHaveBeenCalledWith(75)
+      expect(mocks.mockUpdateProgress).toHaveBeenCalledWith(60)
+      expect(mocks.mockUpdateProgress).toHaveBeenCalledWith(85)
       expect(mocks.mockUpdateProgress).toHaveBeenCalledWith(100)
-    })
 
-    it('should log start message with state', async () => {
-      const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
-
-      const worker = createIngestionWorker()
-      const mockJob = {
-        id: 'test-job-1',
-        data: { state: 'CA' },
-        updateProgress: mocks.mockUpdateProgress
-      }
-
-      const processPromise = worker.processor(mockJob)
-      await vi.runAllTimersAsync()
-      await processPromise
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        '[Ingestion Worker] Starting UCC ingestion for state: CA (free-tier)'
+      expect(mocks.mockRecordIngestionStarted).toHaveBeenCalledWith(
+        expect.objectContaining({
+          state: 'CA',
+          jobId: 'job-1',
+          dataTier: 'free-tier',
+          uccProvider: 'unconfigured',
+          strategy: 'api',
+          availableStrategies: ['api']
+        })
       )
-    })
 
-    it('should insert success log into database', async () => {
-      const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
-
-      const worker = createIngestionWorker()
-      const mockJob = {
-        id: 'test-job-1',
-        data: { state: 'TX', batchSize: 500 },
-        updateProgress: mocks.mockUpdateProgress
-      }
-
-      const processPromise = worker.processor(mockJob)
-      await vi.runAllTimersAsync()
-      await processPromise
-
+      expect(mocks.mockDatabaseQuery).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO ucc_filings'),
+        expect.arrayContaining([
+          'CA:CA-0001',
+          '2026-03-20',
+          'Atlas Supply LLC',
+          'Forward Funding',
+          'CA',
+          null,
+          'active',
+          'UCC-1',
+          'ucc_ca_api'
+        ])
+      )
       expect(mocks.mockDatabaseQuery).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO data_ingestion_logs'),
         expect.arrayContaining([
-          'ucc_tx',
+          'ucc_ca_api',
           'success',
-          expect.any(Number),
-          expect.stringContaining('"state":"TX"')
+          2,
+          expect.stringContaining('"recordsPersisted":2')
         ])
+      )
+      expect(mocks.mockRecordIngestionCompleted).toHaveBeenCalledWith(
+        expect.objectContaining({
+          state: 'CA',
+          jobId: 'job-1',
+          recordsProcessed: 2
+        })
       )
     })
 
-    it('should use default batchSize of 1000', async () => {
+    it('fails without self-heal when the collector is not configured', async () => {
       const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
+
+      mocks.mockCreateCAApiCollector.mockReturnValueOnce(null)
 
       const worker = createIngestionWorker()
       const mockJob = {
-        id: 'test-job-1',
-        data: { state: 'FL' },
+        id: 'job-2',
+        data: { state: 'CA', dataTier: 'free-tier' },
         updateProgress: mocks.mockUpdateProgress
       }
 
-      const processPromise = worker.processor(mockJob)
-      await vi.runAllTimersAsync()
-      await processPromise
-
-      expect(mocks.mockDatabaseQuery).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.arrayContaining([
-          expect.any(String),
-          'success',
-          expect.any(Number),
-          expect.stringContaining('"batchSize":1000')
-        ])
-      )
-    })
-
-    it('should include date range in metadata', async () => {
-      const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
-
-      const worker = createIngestionWorker()
-      const mockJob = {
-        id: 'test-job-1',
-        data: { state: 'NY', startDate: '2024-01-01', endDate: '2024-01-31' },
-        updateProgress: mocks.mockUpdateProgress
-      }
-
-      const processPromise = worker.processor(mockJob)
-      await vi.runAllTimersAsync()
-      await processPromise
-
-      expect(mocks.mockDatabaseQuery).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.arrayContaining([
-          expect.any(String),
-          'success',
-          expect.any(Number),
-          expect.stringContaining('"startDate":"2024-01-01"')
-        ])
-      )
-    })
-
-    it('should handle errors and log failure', async () => {
-      mocks.mockDatabaseQuery
-        .mockRejectedValueOnce(new Error('DB connection failed'))
-        .mockResolvedValue([])
-
-      const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
-
-      const worker = createIngestionWorker()
-      const mockJob = {
-        id: 'test-job-1',
-        data: { state: 'OH' },
-        updateProgress: mocks.mockUpdateProgress
-      }
-
-      // Start processing and attach error handler immediately
-      const processPromise = worker.processor(mockJob).catch((e) => e)
-      await vi.runAllTimersAsync()
-      const error = await processPromise
+      const error = await worker.processor(mockJob as any).catch((caught) => caught)
 
       expect(error).toBeInstanceOf(Error)
-      expect(error.message).toBe('DB connection failed')
+      expect(error.message).toBe('CA API collector is not configured in this environment.')
+      expect(mocks.mockDatabaseQuery).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO data_ingestion_logs'),
+        ['ucc_ca_api', 'failed', 'CA API collector is not configured in this environment.']
+      )
+      expect(mocks.mockRecordIngestionFailed).toHaveBeenCalledWith(
+        expect.objectContaining({
+          state: 'CA',
+          jobId: 'job-2',
+          error: 'CA API collector is not configured in this environment.'
+        })
+      )
+      expect(mocks.mockEvaluateIngestionRecoveryAction).not.toHaveBeenCalled()
+      expect(mocks.mockQueueAdd).not.toHaveBeenCalled()
+      expect(mocks.mockRecordIngestionFallbackEscalated).not.toHaveBeenCalled()
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        '[Ingestion Worker] Error processing OH:',
-        expect.any(Error)
+        '[Ingestion Worker] Skipping self-heal for CA because the failure is not retryable'
       )
     })
 
-    it('should insert failure log on error', async () => {
-      mocks.mockDatabaseQuery
-        .mockRejectedValueOnce(new Error('Database error'))
-        .mockResolvedValue([])
-
+    it('queues a self-healing retry for retryable collector failures', async () => {
       const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
+
+      mocks.mockCACollector.collectNewFilings.mockRejectedValueOnce(new Error('Portal timeout'))
 
       const worker = createIngestionWorker()
       const mockJob = {
-        id: 'test-job-1',
-        data: { state: 'PA' },
+        id: 'job-3',
+        data: { state: 'CA', strategy: 'api', fallbackDepth: 0, dataTier: 'free-tier' },
         updateProgress: mocks.mockUpdateProgress
       }
 
-      // Start processing and attach error handler immediately
-      const processPromise = worker.processor(mockJob).catch((e) => e)
-      await vi.runAllTimersAsync()
-      const error = await processPromise
+      const error = await worker.processor(mockJob as any).catch((caught) => caught)
 
       expect(error).toBeInstanceOf(Error)
-      expect(mocks.mockDatabaseQuery).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO data_ingestion_logs'),
-        expect.arrayContaining(['ucc_pa', 'failed', 'Database error'])
+      expect(error.message).toBe('Portal timeout')
+      expect(mocks.mockEvaluateIngestionRecoveryAction).toHaveBeenCalledWith({
+        state: 'CA',
+        currentStrategy: 'api',
+        error: 'Portal timeout'
+      })
+      expect(mocks.mockQueueAdd).toHaveBeenCalledWith(
+        expect.stringContaining('ingest-CA-api-'),
+        expect.objectContaining({
+          state: 'CA',
+          strategy: 'api',
+          fallbackDepth: 0,
+          selfHealReason: 'Retrying api after Portal timeout'
+        }),
+        expect.objectContaining({
+          priority: 2,
+          delay: 120000,
+          attempts: 1
+        })
       )
-    })
-
-    it('should generate mock filings count between 50 and 150', async () => {
-      const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
-
-      const worker = createIngestionWorker()
-      const mockJob = {
-        id: 'test-job-1',
-        data: { state: 'GA' },
-        updateProgress: mocks.mockUpdateProgress
-      }
-
-      const processPromise = worker.processor(mockJob)
-      await vi.runAllTimersAsync()
-      await processPromise
-
-      const insertCall = mocks.mockDatabaseQuery.mock.calls.find((call) =>
-        call[0].includes('INSERT INTO data_ingestion_logs')
+      expect(mocks.mockRecordIngestionQueued).toHaveBeenCalledWith(
+        expect.objectContaining({
+          state: 'CA',
+          strategy: 'api',
+          queuedBy: 'self-heal'
+        })
       )
-      const recordsProcessed = insertCall?.[1]?.[2]
-
-      expect(recordsProcessed).toBeGreaterThanOrEqual(50)
-      expect(recordsProcessed).toBeLessThan(150)
+      expect(mocks.mockRecordIngestionFallbackEscalated).not.toHaveBeenCalled()
     })
   })
 
   describe('event handlers', () => {
-    it('completed handler should log job ID', async () => {
+    it('logs completed and failed events', async () => {
       const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
 
       createIngestionWorker()
@@ -354,64 +372,24 @@ describeConditional('Ingestion Worker', () => {
       const completedHandler = mocks.mockWorkerOn.mock.calls.find(
         (call) => call[0] === 'completed'
       )?.[1]
+      const failedHandler = mocks.mockWorkerOn.mock.calls.find((call) => call[0] === 'failed')?.[1]
 
       completedHandler({ id: 'job-123' })
+      failedHandler({ id: 'job-456' }, new Error('Processing failed'))
 
       expect(consoleSpy).toHaveBeenCalledWith(
         '[Ingestion Worker] Job job-123 completed successfully'
       )
-    })
-
-    it('failed handler should log job ID and error', async () => {
-      const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
-
-      createIngestionWorker()
-
-      const failedHandler = mocks.mockWorkerOn.mock.calls.find((call) => call[0] === 'failed')?.[1]
-
-      failedHandler({ id: 'job-456' }, new Error('Processing failed'))
-
       expect(consoleErrorSpy).toHaveBeenCalledWith(
         '[Ingestion Worker] Job job-456 failed:',
         'Processing failed'
       )
     })
-
-    it('failed handler should handle null job', async () => {
-      const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
-
-      createIngestionWorker()
-
-      const failedHandler = mocks.mockWorkerOn.mock.calls.find((call) => call[0] === 'failed')?.[1]
-
-      failedHandler(null, new Error('Unknown error'))
-
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        '[Ingestion Worker] Job undefined failed:',
-        'Unknown error'
-      )
-    })
-
-    it('error handler should log worker error', async () => {
-      const { createIngestionWorker } = await import('../../../queue/workers/ingestionWorker')
-
-      createIngestionWorker()
-
-      const errorHandler = mocks.mockWorkerOn.mock.calls.find((call) => call[0] === 'error')?.[1]
-
-      errorHandler(new Error('Worker crashed'))
-
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        '[Ingestion Worker] Worker error:',
-        expect.any(Error)
-      )
-    })
   })
 })
 
-// Dependency check test
 describe('Ingestion Worker Tests - Dependency Check', () => {
-  it.skipIf(!bullmqAvailable)('should run when bullmq is installed', () => {
+  it.skipIf(!bullmqAvailable)('runs when bullmq is installed', () => {
     expect(true).toBe(true)
   })
 

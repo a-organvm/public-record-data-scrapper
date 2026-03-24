@@ -3,7 +3,15 @@ import { z } from 'zod'
 import { validateRequest } from '../middleware/validateRequest'
 import { asyncHandler } from '../middleware/errorHandler'
 import { getResolvedDataTier } from '../middleware/dataTier'
-import { getIngestionQueue, getEnrichmentQueue, getHealthScoreQueue } from '../queue/queues'
+import {
+  getIngestionCircuitGate,
+  getIngestionQueue,
+  getEnrichmentQueue,
+  getHealthScoreQueue,
+  recordIngestionQueued,
+  resolvePrimaryIngestionStrategy,
+  resolveStateIngestionStrategyChain
+} from '../queue/queues'
 import { resolveUccProvider } from '../config/tieredIntegrations'
 
 const router = Router()
@@ -13,7 +21,8 @@ const triggerIngestionSchema = z.object({
   state: z.string().length(2).toUpperCase(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
-  batchSize: z.number().min(100).max(10000).default(1000)
+  batchSize: z.number().min(100).max(10000).default(1000),
+  force: z.boolean().optional().default(false)
 })
 
 const triggerEnrichmentSchema = z.object({
@@ -38,10 +47,57 @@ router.post(
     const ingestionQueue = getIngestionQueue()
     const dataTier = getResolvedDataTier(req)
     const uccProvider = resolveUccProvider(dataTier)
-    const job = await ingestionQueue.add(`ingest-${req.body.state}`, {
-      ...req.body,
+    const { force, ...jobPayload } = req.body
+    const strategy = resolvePrimaryIngestionStrategy(req.body.state)
+    const availableStrategies = resolveStateIngestionStrategyChain(req.body.state)
+    const gate = getIngestionCircuitGate(req.body.state)
+
+    if (!strategy) {
+      res.status(409).json({
+        error: {
+          code: 'INGESTION_NOT_IMPLEMENTED',
+          message: `No production ingestion strategy is configured for ${req.body.state}`,
+          availableStrategies
+        }
+      })
+      return
+    }
+
+    if (!force && !gate.allowed) {
+      res.status(409).json({
+        error: {
+          code: 'INGESTION_CIRCUIT_OPEN',
+          message: `Ingestion circuit is open for ${req.body.state}`,
+          backoffUntil: gate.backoffUntil,
+          reason: gate.reason
+        }
+      })
+      return
+    }
+
+    const job = await ingestionQueue.add(
+      `ingest-${req.body.state}`,
+      {
+        ...jobPayload,
+        dataTier,
+        uccProvider,
+        strategy,
+        fallbackDepth: 0,
+        manualOverride: force
+      },
+      {
+        attempts: 1
+      }
+    )
+
+    recordIngestionQueued({
+      state: req.body.state,
+      jobId: job.id?.toString() ?? null,
       dataTier,
-      uccProvider
+      uccProvider,
+      strategy,
+      availableStrategies,
+      queuedBy: 'manual'
     })
 
     res.status(201).json({

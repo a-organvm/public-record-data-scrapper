@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react'
-import { Prospect, PortfolioCompany } from '@public-records/core'
+import { Prospect, PortfolioCompany, type DataTier } from '@public-records/core'
 import { Card } from '@public-records/ui/card'
 import { Button } from '@public-records/ui/button'
 import { Input } from '@public-records/ui/input'
 import { Label } from '@public-records/ui/label'
+import { CoverageDashboard } from '@/components/CoverageDashboard'
 import {
   Select,
   SelectContent,
@@ -31,11 +32,18 @@ import {
 interface AnalyticsDashboardProps {
   prospects: Prospect[]
   portfolio: PortfolioCompany[]
+  dataTier?: DataTier
+  usePreviewData?: boolean
 }
 
 type DateRangeOption = '7d' | '30d' | '90d' | 'custom'
 
-export function AnalyticsDashboard({ prospects, portfolio }: AnalyticsDashboardProps) {
+export function AnalyticsDashboard({
+  prospects,
+  portfolio,
+  dataTier = 'oss',
+  usePreviewData = false
+}: AnalyticsDashboardProps) {
   const [dateRange, setDateRange] = useState<DateRangeOption>('30d')
   const [customStartDate, setCustomStartDate] = useState('')
   const [customEndDate, setCustomEndDate] = useState('')
@@ -212,6 +220,8 @@ export function AnalyticsDashboard({ prospects, portfolio }: AnalyticsDashboardP
 
   return (
     <div className="space-y-6">
+      <CoverageDashboard dataTier={dataTier} usePreviewData={usePreviewData} />
+
       {/* Filters */}
       <Card className="p-6 glass-effect">
         <div className="flex items-center gap-2 mb-4">

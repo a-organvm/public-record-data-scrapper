@@ -46,11 +46,6 @@ export interface PresignedUrlResult {
 
 /**
  * S3Client provides document storage operations.
- *
- * This is a stub implementation that returns mock responses.
- * In production, this would use the official AWS SDK:
- * import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
- * import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
  */
 export class S3Client {
   private config: S3Config
@@ -72,9 +67,8 @@ export class S3Client {
   async initialize(): Promise<void> {
     if (this.initialized) return
 
-    // Validate configuration
     if (!this.config.accessKeyId || !this.config.secretAccessKey) {
-      console.warn('[S3Client] Missing AWS credentials - running in stub mode')
+      console.warn('[S3Client] Missing AWS credentials - S3 storage is disabled')
     }
 
     if (!this.config.bucketName) {
@@ -85,7 +79,7 @@ export class S3Client {
     console.log('[S3Client] Initialized', {
       region: this.config.region,
       bucket: this.config.bucketName,
-      stubMode: !this.isConfigured()
+      storageReady: this.isConfigured()
     })
   }
 
@@ -123,43 +117,10 @@ export class S3Client {
     const documentId = randomUUID()
     const key = `prospects/${prospectId}/${documentId}${extension}`
 
-    if (!this.isConfigured()) {
-      console.log('[S3Client] STUB uploadDocument:', {
-        key,
-        size: buffer.length,
-        mimetype
-      })
-
-      return key
-    }
-
-    // In production, this would use the AWS SDK:
-    /*
-    const client = new S3Client({
-      region: this.config.region,
-      credentials: {
-        accessKeyId: this.config.accessKeyId,
-        secretAccessKey: this.config.secretAccessKey
-      }
-    })
-
-    const command = new PutObjectCommand({
-      Bucket: this.config.bucketName,
-      Key: key,
-      Body: buffer,
-      ContentType: mimetype,
-      Metadata: {
-        prospectId,
-        uploadedAt: new Date().toISOString()
-      }
-    })
-
-    await client.send(command)
-    */
-
-    console.log('[S3Client] uploadDocument:', { key, size: buffer.length, mimetype })
-
-    return key
+    void buffer
+    void mimetype
+    this.assertConfigured('uploadDocument')
+    return this.throwUnsupported(`uploadDocument for ${key}`)
   }
 
   /**
@@ -177,36 +138,11 @@ export class S3Client {
     mimetype: string,
     metadata?: Record<string, string>
   ): Promise<S3Response<UploadResult>> {
-    if (!this.isConfigured()) {
-      console.log('[S3Client] STUB upload:', { key, size: buffer.length, mimetype, metadata })
-
-      return {
-        success: true,
-        data: {
-          key,
-          bucket: this.config.bucketName,
-          location: `https://${this.config.bucketName}.s3.${this.config.region}.amazonaws.com/${key}`,
-          etag: `"${this.generateEtag()}"`,
-          contentType: mimetype,
-          size: buffer.length
-        }
-      }
-    }
-
-    // In production, use AWS SDK
-    console.log('[S3Client] upload:', { key, size: buffer.length, mimetype, metadata })
-
-    return {
-      success: true,
-      data: {
-        key,
-        bucket: this.config.bucketName,
-        location: `https://${this.config.bucketName}.s3.${this.config.region}.amazonaws.com/${key}`,
-        etag: `"${this.generateEtag()}"`,
-        contentType: mimetype,
-        size: buffer.length
-      }
-    }
+    void buffer
+    void mimetype
+    void metadata
+    this.assertConfigured('upload')
+    return this.throwUnsupported(`upload for ${key}`)
   }
 
   /**
@@ -217,40 +153,9 @@ export class S3Client {
    * @returns A presigned URL for downloading the document
    */
   async getPresignedUrl(key: string, expiresInSeconds: number = 3600): Promise<string> {
-    const expiresAt = new Date(Date.now() + expiresInSeconds * 1000)
-
-    if (!this.isConfigured()) {
-      const stubUrl = `https://${this.config.bucketName}.s3.${this.config.region}.amazonaws.com/${key}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=${expiresInSeconds}&X-Amz-SignedHeaders=host&X-Amz-Signature=${this.generateSignature()}`
-
-      console.log('[S3Client] STUB getPresignedUrl:', { key, expiresAt: expiresAt.toISOString() })
-
-      return stubUrl
-    }
-
-    // In production, this would use the AWS SDK:
-    /*
-    const client = new S3Client({
-      region: this.config.region,
-      credentials: {
-        accessKeyId: this.config.accessKeyId,
-        secretAccessKey: this.config.secretAccessKey
-      }
-    })
-
-    const command = new GetObjectCommand({
-      Bucket: this.config.bucketName,
-      Key: key
-    })
-
-    const url = await getSignedUrl(client, command, { expiresIn: expiresInSeconds })
-    return url
-    */
-
-    const url = `https://${this.config.bucketName}.s3.${this.config.region}.amazonaws.com/${key}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=${expiresInSeconds}&X-Amz-SignedHeaders=host&X-Amz-Signature=${this.generateSignature()}`
-
-    console.log('[S3Client] getPresignedUrl:', { key, expiresAt: expiresAt.toISOString() })
-
-    return url
+    void expiresInSeconds
+    this.assertConfigured('getPresignedUrl')
+    return this.throwUnsupported(`getPresignedUrl for ${key}`)
   }
 
   /**
@@ -289,20 +194,10 @@ export class S3Client {
     mimetype: string,
     expiresInSeconds: number = 3600
   ): Promise<string> {
-    if (!this.isConfigured()) {
-      const stubUrl = `https://${this.config.bucketName}.s3.${this.config.region}.amazonaws.com/${key}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=${expiresInSeconds}&X-Amz-SignedHeaders=host%3Bcontent-type&X-Amz-Signature=${this.generateSignature()}`
-
-      console.log('[S3Client] STUB getPresignedUploadUrl:', { key, mimetype })
-
-      return stubUrl
-    }
-
-    // In production, use AWS SDK with PutObjectCommand
-    const url = `https://${this.config.bucketName}.s3.${this.config.region}.amazonaws.com/${key}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=${expiresInSeconds}&X-Amz-SignedHeaders=host%3Bcontent-type&X-Amz-Signature=${this.generateSignature()}`
-
-    console.log('[S3Client] getPresignedUploadUrl:', { key, mimetype })
-
-    return url
+    void mimetype
+    void expiresInSeconds
+    this.assertConfigured('getPresignedUploadUrl')
+    return this.throwUnsupported(`getPresignedUploadUrl for ${key}`)
   }
 
   /**
@@ -311,30 +206,8 @@ export class S3Client {
    * @param key - The S3 key of the document to delete
    */
   async deleteDocument(key: string): Promise<void> {
-    if (!this.isConfigured()) {
-      console.log('[S3Client] STUB deleteDocument:', { key })
-      return
-    }
-
-    // In production, this would use the AWS SDK:
-    /*
-    const client = new S3Client({
-      region: this.config.region,
-      credentials: {
-        accessKeyId: this.config.accessKeyId,
-        secretAccessKey: this.config.secretAccessKey
-      }
-    })
-
-    const command = new DeleteObjectCommand({
-      Bucket: this.config.bucketName,
-      Key: key
-    })
-
-    await client.send(command)
-    */
-
-    console.log('[S3Client] deleteDocument:', { key })
+    this.assertConfigured('deleteDocument')
+    this.throwUnsupported(`deleteDocument for ${key}`)
   }
 
   /**
@@ -346,28 +219,8 @@ export class S3Client {
   async deleteDocuments(
     keys: string[]
   ): Promise<S3Response<{ deleted: string[]; errors: string[] }>> {
-    if (!this.isConfigured()) {
-      console.log('[S3Client] STUB deleteDocuments:', { count: keys.length })
-
-      return {
-        success: true,
-        data: {
-          deleted: keys,
-          errors: []
-        }
-      }
-    }
-
-    // In production, use DeleteObjectsCommand for batch delete
-    console.log('[S3Client] deleteDocuments:', { count: keys.length })
-
-    return {
-      success: true,
-      data: {
-        deleted: keys,
-        errors: []
-      }
-    }
+    this.assertConfigured('deleteDocuments')
+    return this.throwUnsupported(`deleteDocuments for ${keys.length} keys`)
   }
 
   /**
@@ -377,16 +230,8 @@ export class S3Client {
    * @returns True if the document exists
    */
   async documentExists(key: string): Promise<boolean> {
-    if (!this.isConfigured()) {
-      console.log('[S3Client] STUB documentExists:', { key })
-      // In stub mode, simulate document exists for valid-looking keys
-      return key.startsWith('prospects/') && key.includes('/')
-    }
-
-    // In production, use HeadObjectCommand
-    console.log('[S3Client] documentExists:', { key })
-
-    return true
+    this.assertConfigured('documentExists')
+    return this.throwUnsupported(`documentExists for ${key}`)
   }
 
   /**
@@ -397,17 +242,9 @@ export class S3Client {
    * @returns Array of document keys
    */
   async listDocuments(prefix: string, maxKeys: number = 1000): Promise<string[]> {
-    if (!this.isConfigured()) {
-      console.log('[S3Client] STUB listDocuments:', { prefix, maxKeys })
-
-      // Return empty array in stub mode
-      return []
-    }
-
-    // In production, use ListObjectsV2Command
-    console.log('[S3Client] listDocuments:', { prefix, maxKeys })
-
-    return []
+    void maxKeys
+    this.assertConfigured('listDocuments')
+    return this.throwUnsupported(`listDocuments for ${prefix}`)
   }
 
   /**
@@ -418,15 +255,8 @@ export class S3Client {
    * @returns The destination key
    */
   async copyDocument(sourceKey: string, destinationKey: string): Promise<string> {
-    if (!this.isConfigured()) {
-      console.log('[S3Client] STUB copyDocument:', { sourceKey, destinationKey })
-      return destinationKey
-    }
-
-    // In production, use CopyObjectCommand
-    console.log('[S3Client] copyDocument:', { sourceKey, destinationKey })
-
-    return destinationKey
+    this.assertConfigured('copyDocument')
+    return this.throwUnsupported(`copyDocument from ${sourceKey} to ${destinationKey}`)
   }
 
   /**
@@ -472,15 +302,6 @@ export class S3Client {
   }
 
   /**
-   * Get file extension from filename
-   */
-  private getExtensionFromFilename(filename: string): string {
-    const lastDot = filename.lastIndexOf('.')
-    if (lastDot === -1) return ''
-    return filename.substring(lastDot)
-  }
-
-  /**
    * Sanitize filename for S3 key
    */
   private sanitizeFilename(filename: string): string {
@@ -501,30 +322,6 @@ export class S3Client {
   }
 
   /**
-   * Generate a fake ETag for stub responses
-   */
-  private generateEtag(): string {
-    const chars = 'abcdef0123456789'
-    let etag = ''
-    for (let i = 0; i < 32; i++) {
-      etag += chars.charAt(Math.floor(Math.random() * chars.length))
-    }
-    return etag
-  }
-
-  /**
-   * Generate a fake signature for stub presigned URLs
-   */
-  private generateSignature(): string {
-    const chars = 'abcdef0123456789'
-    let sig = ''
-    for (let i = 0; i < 64; i++) {
-      sig += chars.charAt(Math.floor(Math.random() * chars.length))
-    }
-    return sig
-  }
-
-  /**
    * Build the full S3 URL for a key
    */
   getS3Url(key: string): string {
@@ -532,6 +329,18 @@ export class S3Client {
       return `${this.config.endpoint}/${this.config.bucketName}/${key}`
     }
     return `https://${this.config.bucketName}.s3.${this.config.region}.amazonaws.com/${key}`
+  }
+
+  private assertConfigured(operation: string): void {
+    if (!this.isConfigured()) {
+      throw new Error(`S3 client is not configured for ${operation}`)
+    }
+  }
+
+  private throwUnsupported(operation: string): never {
+    throw new Error(
+      `S3Client is not wired to the AWS SDK for ${operation}. Configure a production storage adapter before enabling document storage.`
+    )
   }
 }
 

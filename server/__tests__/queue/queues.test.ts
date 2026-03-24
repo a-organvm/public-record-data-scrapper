@@ -67,15 +67,20 @@ describeConditional('Queue Initialization', () => {
   })
 
   describe('initializeQueues', () => {
-    it('should create three queues with correct names', async () => {
+    it('should create five queues with correct names', async () => {
       const { initializeQueues } = await import('../../queue/queues')
 
       const queues = initializeQueues()
 
-      expect(mocks.instances.length).toBe(3)
+      expect(mocks.instances.length).toBe(8)
       expect(queues.ingestionQueue.name).toBe('ucc-ingestion')
       expect(queues.enrichmentQueue.name).toBe('data-enrichment')
       expect(queues.healthScoreQueue.name).toBe('health-scores')
+      expect(queues.portalProbeQueue.name).toBe('portal-health-probes')
+      expect(queues.digestQueue.name).toBe('coverage-digest')
+      expect(queues.terminationDetectionQueue.name).toBe('termination-detection')
+      expect(queues.velocityAnalysisQueue.name).toBe('velocity-analysis')
+      expect(queues.outreachQueue.name).toBe('outreach')
     })
 
     it('should configure queues with default job options', async () => {
@@ -188,7 +193,7 @@ describeConditional('Queue Initialization', () => {
       initializeQueues()
       await closeQueues()
 
-      expect(mocks.mockQueueClose).toHaveBeenCalledTimes(3)
+      expect(mocks.mockQueueClose).toHaveBeenCalledTimes(8)
     })
 
     it('should handle closing uninitialized queues gracefully', async () => {
@@ -264,6 +269,175 @@ describeConditional('Queue Initialization', () => {
         batchSize: 50
       })
     })
+  })
+})
+
+describe('Ingestion coverage telemetry', () => {
+  beforeEach(async () => {
+    vi.resetModules()
+    const { resetIngestionCoverageTelemetry } = await import('../../queue/queues')
+    resetIngestionCoverageTelemetry()
+  })
+
+  it('records queue, start, success, and failure lifecycle events', async () => {
+    const {
+      recordIngestionQueued,
+      recordIngestionStarted,
+      recordIngestionCompleted,
+      recordIngestionFailed,
+      getIngestionCoverageTelemetry
+    } = await import('../../queue/queues')
+
+    recordIngestionQueued({
+      state: 'ca',
+      jobId: 'job-1',
+      dataTier: 'free-tier',
+      uccProvider: 'unconfigured',
+      queuedBy: 'scheduler',
+      timestamp: '2026-03-23T12:00:00.000Z'
+    })
+    recordIngestionStarted({
+      state: 'CA',
+      jobId: 'job-1',
+      dataTier: 'free-tier',
+      uccProvider: 'unconfigured',
+      timestamp: '2026-03-23T12:01:00.000Z'
+    })
+    recordIngestionCompleted({
+      state: 'CA',
+      jobId: 'job-1',
+      dataTier: 'free-tier',
+      uccProvider: 'unconfigured',
+      recordsProcessed: 88,
+      timestamp: '2026-03-23T12:02:00.000Z'
+    })
+    recordIngestionFailed({
+      state: 'CA',
+      jobId: 'job-2',
+      dataTier: 'free-tier',
+      uccProvider: 'unconfigured',
+      error: 'Timeout',
+      timestamp: '2026-03-23T12:03:00.000Z'
+    })
+
+    const [telemetry] = getIngestionCoverageTelemetry('CA')
+
+    expect(telemetry).toMatchObject({
+      state: 'CA',
+      currentStatus: 'failed',
+      lastJobId: 'job-2',
+      lastQueuedAt: '2026-03-23T12:00:00.000Z',
+      lastStartedAt: '2026-03-23T12:01:00.000Z',
+      lastSuccessfulPull: '2026-03-23T12:02:00.000Z',
+      lastFailedAt: '2026-03-23T12:03:00.000Z',
+      lastError: 'Timeout',
+      lastRecordsProcessed: 88,
+      successCount: 1,
+      failureCount: 1,
+      consecutiveFailures: 1,
+      queuedBy: 'scheduler'
+    })
+    expect(telemetry.successes).toEqual([
+      {
+        completedAt: '2026-03-23T12:02:00.000Z',
+        recordsProcessed: 88
+      }
+    ])
+    expect(telemetry.failures).toEqual([
+      {
+        failedAt: '2026-03-23T12:03:00.000Z',
+        error: 'Timeout'
+      }
+    ])
+  })
+
+  it('resets consecutive failures after a successful run', async () => {
+    const { recordIngestionFailed, recordIngestionCompleted, getIngestionCoverageTelemetry } =
+      await import('../../queue/queues')
+
+    recordIngestionFailed({
+      state: 'TX',
+      error: 'Proxy exhausted',
+      timestamp: '2026-03-23T13:00:00.000Z'
+    })
+    recordIngestionFailed({
+      state: 'TX',
+      error: 'Proxy exhausted again',
+      timestamp: '2026-03-23T13:05:00.000Z'
+    })
+    recordIngestionCompleted({
+      state: 'TX',
+      recordsProcessed: 120,
+      timestamp: '2026-03-23T13:10:00.000Z'
+    })
+
+    const [telemetry] = getIngestionCoverageTelemetry('TX')
+
+    expect(telemetry.currentStatus).toBe('success')
+    expect(telemetry.consecutiveFailures).toBe(0)
+    expect(telemetry.successCount).toBe(1)
+    expect(telemetry.failureCount).toBe(2)
+  })
+
+  it('opens a circuit and plans a retry when no alternate strategy is wired', async () => {
+    const { recordIngestionFailed, evaluateIngestionRecoveryAction, getIngestionCircuitGate } =
+      await import('../../queue/queues')
+
+    recordIngestionFailed({
+      state: 'CA',
+      strategy: 'api',
+      error: 'Portal timeout',
+      timestamp: '2026-03-23T14:00:00.000Z'
+    })
+
+    const recovery = evaluateIngestionRecoveryAction({
+      state: 'CA',
+      currentStrategy: 'api',
+      error: 'Portal timeout',
+      timestamp: '2026-03-23T14:00:00.000Z'
+    })
+
+    expect(recovery).toMatchObject({
+      action: 'retry',
+      nextStrategy: 'api',
+      reason: 'Retrying api after Portal timeout'
+    })
+
+    const gate = getIngestionCircuitGate('CA', '2026-03-23T14:01:00.000Z')
+
+    expect(gate.allowed).toBe(false)
+    expect(gate.circuitState).toBe('open')
+  })
+
+  it('allows half-open probes after circuit backoff expires', async () => {
+    const { recordIngestionFailed, evaluateIngestionRecoveryAction, getIngestionCircuitGate } =
+      await import('../../queue/queues')
+
+    recordIngestionFailed({
+      state: 'TX',
+      strategy: 'bulk',
+      error: 'CAPTCHA challenge',
+      timestamp: '2026-03-23T15:00:00.000Z'
+    })
+
+    const recovery = evaluateIngestionRecoveryAction({
+      state: 'TX',
+      currentStrategy: 'bulk',
+      error: 'CAPTCHA challenge',
+      timestamp: '2026-03-23T15:00:00.000Z'
+    })
+
+    expect(recovery.action).toBe('retry')
+
+    const blockedGate = getIngestionCircuitGate('TX', '2026-03-23T15:01:00.000Z')
+    const allowedGate = getIngestionCircuitGate(
+      'TX',
+      recovery.backoffUntil ?? '2026-03-23T15:02:00.000Z'
+    )
+
+    expect(blockedGate.allowed).toBe(false)
+    expect(allowedGate.allowed).toBe(true)
+    expect(allowedGate.circuitState).toBe('half-open')
   })
 })
 

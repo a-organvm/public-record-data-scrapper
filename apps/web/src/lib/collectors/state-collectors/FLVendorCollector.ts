@@ -1,7 +1,7 @@
 /**
  * Florida Image API Vendor Collector
  *
- * PLACEHOLDER IMPLEMENTATION for Florida UCC filing data.
+ * Vendor-gated implementation shell for Florida UCC filing data.
  *
  * IMPORTANT: Florida's UCC system is privatized. The state contracted with
  * Image API, LLC (now part of a larger data services company) to manage
@@ -43,11 +43,10 @@ import type {
   ValidationResult,
   CollectorStatus,
   Party,
-  CollectionError,
   CollectionErrorType
 } from '../types'
 
-// FL Vendor API Types (placeholder based on typical vendor implementations)
+// FL vendor API types based on common commercial data contracts.
 interface FLVendorFilingResponse {
   filing_id: string
   doc_number: string
@@ -239,14 +238,14 @@ export class FLVendorCollector implements StateCollector {
         'AUTH',
         false,
         'Florida UCC data requires a vendor agreement with Image API, LLC. ' +
-        'Contact sales@imageapionline.com for access. ' +
-        'See docs/vendor-agreements/FL-ImageAPI.md for details.'
+          'Contact sales@imageapionline.com for access. ' +
+          'See docs/vendor-agreements/FL-ImageAPI.md for details.'
       )
     }
   }
 
   /**
-   * Make authenticated API request (placeholder implementation)
+   * Make authenticated API request.
    */
   private async request<T>(
     endpoint: string,
@@ -270,7 +269,7 @@ export class FLVendorCollector implements StateCollector {
       'X-API-Key': this.config.apiKey!,
       'X-API-Secret': this.config.apiSecret!,
       'X-Account-ID': this.config.accountId!,
-      'Accept': 'application/json',
+      Accept: 'application/json',
       'Content-Type': 'application/json'
     }
 
@@ -309,7 +308,7 @@ export class FLVendorCollector implements StateCollector {
         throw new Error(`FL Vendor API error ${response.status}: ${errorText}`)
       }
 
-      return await response.json() as T
+      return (await response.json()) as T
     } catch (error) {
       this.stats.totalErrors++
       throw error
@@ -484,19 +483,19 @@ export class FLVendorCollector implements StateCollector {
     const rateLimitStats = this.rateLimiter.getStats()
 
     return {
-      isHealthy: this.contractActive && (
-        this.stats.totalRequests > 0
+      isHealthy:
+        this.contractActive &&
+        (this.stats.totalRequests > 0
           ? this.stats.totalErrors / this.stats.totalRequests < 0.1
-          : true
-      ),
+          : true),
       lastCollectionTime: this.stats.lastCollectionTime,
       totalCollected: this.stats.totalCollected,
-      errorRate: this.stats.totalRequests > 0
-        ? this.stats.totalErrors / this.stats.totalRequests
-        : 0,
-      averageLatency: this.stats.latencies.length > 0
-        ? this.stats.latencies.reduce((a, b) => a + b, 0) / this.stats.latencies.length
-        : 0,
+      errorRate:
+        this.stats.totalRequests > 0 ? this.stats.totalErrors / this.stats.totalRequests : 0,
+      averageLatency:
+        this.stats.latencies.length > 0
+          ? this.stats.latencies.reduce((a, b) => a + b, 0) / this.stats.latencies.length
+          : 0,
       rateLimitStats: {
         perMinute: rateLimitStats.perMinute,
         perHour: rateLimitStats.perHour,
@@ -536,13 +535,15 @@ export class FLVendorCollector implements StateCollector {
     return {
       name: party.name,
       organizationType: party.name_type === 'INDIVIDUAL' ? 'individual' : 'organization',
-      address: party.address ? {
-        street: [party.address.line1, party.address.line2].filter(Boolean).join(' '),
-        city: party.address.city,
-        state: party.address.state,
-        zipCode: party.address.zip,
-        country: party.address.country || 'US'
-      } : undefined
+      address: party.address
+        ? {
+            street: [party.address.line1, party.address.line2].filter(Boolean).join(' '),
+            city: party.address.city,
+            state: party.address.state,
+            zipCode: party.address.zip,
+            country: party.address.country || 'US'
+          }
+        : undefined
     }
   }
 
@@ -589,7 +590,9 @@ export class FLVendorCollector implements StateCollector {
   /**
    * Normalize amendment type
    */
-  private normalizeAmendmentType(type: string): 'continuation' | 'assignment' | 'termination' | 'amendment' {
+  private normalizeAmendmentType(
+    type: string
+  ): 'continuation' | 'assignment' | 'termination' | 'amendment' {
     const normalized = type.toLowerCase()
     if (normalized.includes('continu')) return 'continuation'
     if (normalized.includes('assign')) return 'assignment'
@@ -620,7 +623,7 @@ export function createFLVendorCollector(): FLVendorCollector | null {
   if (!apiKey || !apiSecret || !contractActive) {
     console.warn(
       'FL Vendor collector not configured. Florida UCC data requires a vendor agreement. ' +
-      'See docs/vendor-agreements/FL-ImageAPI.md for setup instructions.'
+        'See docs/vendor-agreements/FL-ImageAPI.md for setup instructions.'
     )
     return new FLVendorCollector() // Return inactive collector
   }

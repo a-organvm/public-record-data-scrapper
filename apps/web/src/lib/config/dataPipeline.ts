@@ -150,10 +150,13 @@ export const getDataPipelineConfig = () => {
 /**
  * Feature flags
  */
+const demoDataEnabled = import.meta.env.VITE_USE_MOCK_DATA === 'true'
+
 export const featureFlags = {
   enableRealTimeIngestion: import.meta.env.VITE_ENABLE_REALTIME_INGESTION === 'true',
   enableMLEnrichment: import.meta.env.VITE_ENABLE_ML_ENRICHMENT === 'true',
   enableAutoRefresh: import.meta.env.VITE_ENABLE_AUTO_REFRESH === 'true',
-  useMockData: import.meta.env.VITE_USE_MOCK_DATA !== 'false', // Default to true
+  useDemoData: demoDataEnabled,
+  useMockData: demoDataEnabled,
   debugMode: import.meta.env.MODE === 'development'
 }

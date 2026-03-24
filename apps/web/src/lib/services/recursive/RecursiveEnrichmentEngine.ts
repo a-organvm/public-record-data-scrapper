@@ -304,49 +304,24 @@ export class RecursiveEnrichmentEngine {
     // Contact Discovery Chain
     this.strategies.set('contact_discovery', {
       execute: async (node) => {
-        // Mock: Find contact information
-        return {
-          emails: [`contact@${node.prospectId}.com`, `info@${node.prospectId}.com`],
-          phones: ['+1-555-0100', '+1-555-0101'],
-          linkedinProfiles: [`linkedin.com/company/${node.prospectId}`],
-          confidence: 0.75
-        }
+        void node
+        throw new Error('Recursive contact discovery is not wired to live providers')
       }
     })
 
     // Network Expansion
     this.strategies.set('network_expansion', {
       execute: async (node) => {
-        // Mock: Find related companies
-        return {
-          subsidiaries: [`${node.prospectId}-sub1`, `${node.prospectId}-sub2`],
-          parentCompany: node.depth > 0 ? null : `${node.prospectId}-parent`,
-          affiliates: [`${node.prospectId}-affiliate1`],
-          confidence: 0.65
-        }
+        void node
+        throw new Error('Recursive network expansion is not wired to live providers')
       }
     })
 
     // Signal Amplification
     this.strategies.set('signal_amplification', {
       execute: async (node) => {
-        // Mock: Deep dive into signals
-        if (node.data.growthSignals) {
-          return {
-            hiringDetails: {
-              positions: ['Senior Developer', 'Sales Manager'],
-              locations: ['New York', 'San Francisco'],
-              salaryRanges: ['$100k-$150k', '$80k-$120k']
-            },
-            permitDetails: {
-              type: 'Building Permit',
-              value: 500000,
-              purpose: 'Office Expansion'
-            },
-            confidence: 0.8
-          }
-        }
-        return { confidence: 0.5 }
+        void node
+        throw new Error('Recursive signal amplification is not wired to live providers')
       }
     })
 
@@ -354,14 +329,7 @@ export class RecursiveEnrichmentEngine {
     this.strategies.set('relationship_mapping', {
       execute: async (node) => {
         void node
-        // Mock: Map business relationships
-        return {
-          customers: [`customer1`, `customer2`],
-          suppliers: [`supplier1`, `supplier2`],
-          partners: [`partner1`],
-          competitors: [`competitor1`, `competitor2`],
-          confidence: 0.7
-        }
+        throw new Error('Recursive relationship mapping is not wired to live providers')
       }
     })
 
@@ -369,19 +337,7 @@ export class RecursiveEnrichmentEngine {
     this.strategies.set('historical_analysis', {
       execute: async (node) => {
         void node
-        // Mock: Analyze historical data
-        return {
-          previousFilings: [
-            { date: new Date('2023-01-15'), amount: 100000, lender: 'Bank A' },
-            { date: new Date('2022-06-20'), amount: 75000, lender: 'Bank B' }
-          ],
-          paymentHistory: {
-            onTimePayments: 18,
-            latePayments: 2,
-            defaults: 0
-          },
-          confidence: 0.85
-        }
+        throw new Error('Recursive historical analysis is not wired to live providers')
       }
     })
 
@@ -389,16 +345,7 @@ export class RecursiveEnrichmentEngine {
     this.strategies.set('social_graph', {
       execute: async (node) => {
         void node
-        // Mock: Build social network graph
-        return {
-          executives: [
-            { name: 'John Doe', title: 'CEO', linkedin: 'linkedin.com/in/johndoe' },
-            { name: 'Jane Smith', title: 'CFO', linkedin: 'linkedin.com/in/janesmith' }
-          ],
-          connections: 250,
-          influence: 'medium',
-          confidence: 0.65
-        }
+        throw new Error('Recursive social graph enrichment is not wired to live providers')
       }
     })
 
@@ -406,15 +353,7 @@ export class RecursiveEnrichmentEngine {
     this.strategies.set('financial_deep_dive', {
       execute: async (node) => {
         void node
-        // Mock: Deep financial analysis
-        return {
-          estimatedRevenue: 5000000,
-          revenueGrowth: 0.15,
-          profitMargin: 0.12,
-          cashFlow: 'positive',
-          debtToEquity: 1.5,
-          confidence: 0.7
-        }
+        throw new Error('Recursive financial analysis is not wired to live providers')
       }
     })
 
@@ -422,17 +361,7 @@ export class RecursiveEnrichmentEngine {
     this.strategies.set('regulatory_research', {
       execute: async (node) => {
         void node
-        // Mock: Research regulatory compliance
-        return {
-          licenses: ['Business License', 'Health Permit'],
-          violations: [],
-          inspections: [
-            { date: new Date('2024-01-15'), result: 'passed' },
-            { date: new Date('2023-07-20'), result: 'passed' }
-          ],
-          complianceScore: 0.95,
-          confidence: 0.8
-        }
+        throw new Error('Recursive regulatory research is not wired to live providers')
       }
     })
   }

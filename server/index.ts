@@ -26,9 +26,17 @@ import jobsRouter from './routes/jobs'
 import contactsRouter from './routes/contacts'
 import dealsRouter from './routes/deals'
 import webhooksRouter from './routes/webhooks'
+import statusRouter from './routes/status'
+import competitiveRouter from './routes/competitive'
+import outreachRouter from './routes/outreach'
 
 // Import queue infrastructure
-import { initializeQueues, closeQueues } from './queue/queues'
+import {
+  initializeQueues,
+  closeQueues,
+  initTelemetryPersistence,
+  hydrateTelemetryFromDatabase
+} from './queue/queues'
 import { jobScheduler } from './queue/scheduler'
 import { redisConnection } from './queue/connection'
 
@@ -96,6 +104,9 @@ export class Server {
     // Swagger UI documentation
     this.setupSwaggerDocs()
 
+    // Public status page (no auth, bookmarkable)
+    this.app.use(statusRouter)
+
     // Public routes (no authentication required)
     this.app.use('/api/health', healthRouter)
 
@@ -110,6 +121,8 @@ export class Server {
     this.app.use('/api/jobs', authMiddleware, jobsRouter)
     this.app.use('/api/contacts', authMiddleware, contactsRouter)
     this.app.use('/api/deals', authMiddleware, dealsRouter)
+    this.app.use('/api/competitive', authMiddleware, competitiveRouter)
+    this.app.use('/api/outreach', authMiddleware, outreachRouter)
 
     // Root endpoint
     this.app.get('/', (req, res) => {
@@ -127,6 +140,8 @@ export class Server {
           jobs: '/api/jobs',
           contacts: '/api/contacts',
           deals: '/api/deals',
+          competitive: '/api/competitive',
+          outreach: '/api/outreach',
           webhooks: '/api/webhooks'
         }
       })
@@ -219,6 +234,11 @@ export class Server {
       console.error('Failed to connect to database:', error)
       process.exit(1)
     }
+
+    // Initialize telemetry persistence and hydrate from database
+    initTelemetryPersistence(database)
+    const hydratedCount = await hydrateTelemetryFromDatabase()
+    console.log(`[telemetry] Hydrated ${hydratedCount} states from database`)
 
     // Initialize job queues
     try {

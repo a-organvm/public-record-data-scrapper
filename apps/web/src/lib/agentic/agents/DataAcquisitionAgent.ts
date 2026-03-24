@@ -279,7 +279,7 @@ export class DataAcquisitionAgent extends BaseAgent {
    */
   private checkDataFreshness(context: SystemContext): string[] {
     void context
-    // This is a placeholder - in production, you'd check actual data freshness
+    // TODO: Inspect persisted collector telemetry instead of returning an empty result.
     return []
   }
 }

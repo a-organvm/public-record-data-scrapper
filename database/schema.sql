@@ -427,3 +427,245 @@ CREATE INDEX idx_prospects_search_vector ON prospects USING gin(search_vector);
 -- SELECT * FROM competitors
 -- ORDER BY market_share DESC
 -- LIMIT 10;
+
+-- =============================================================================
+-- Migration 010: Ingestion Telemetry + Coverage Monitoring
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS ingestion_telemetry (
+  state_code VARCHAR(2) PRIMARY KEY,
+  current_status VARCHAR(20) NOT NULL DEFAULT 'idle',
+  last_job_id VARCHAR(100),
+  last_queued_at TIMESTAMPTZ,
+  last_started_at TIMESTAMPTZ,
+  last_successful_pull TIMESTAMPTZ,
+  last_failed_at TIMESTAMPTZ,
+  last_error TEXT,
+  last_records_processed INTEGER,
+  data_tier VARCHAR(20),
+  ucc_provider VARCHAR(50),
+  queued_by VARCHAR(20),
+  current_strategy VARCHAR(20),
+  circuit_state VARCHAR(20) NOT NULL DEFAULT 'closed',
+  circuit_opened_at TIMESTAMPTZ,
+  circuit_backoff_until TIMESTAMPTZ,
+  circuit_trip_count INTEGER NOT NULL DEFAULT 0,
+  escalation_count INTEGER NOT NULL DEFAULT 0,
+  last_escalated_at TIMESTAMPTZ,
+  last_escalation_reason TEXT,
+  success_count INTEGER NOT NULL DEFAULT 0,
+  failure_count INTEGER NOT NULL DEFAULT 0,
+  consecutive_failures INTEGER NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ingestion_successes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  state_code VARCHAR(2) NOT NULL REFERENCES ingestion_telemetry(state_code),
+  completed_at TIMESTAMPTZ NOT NULL,
+  records_processed INTEGER NOT NULL,
+  strategy VARCHAR(20),
+  duration_ms INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ingestion_failures (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  state_code VARCHAR(2) NOT NULL REFERENCES ingestion_telemetry(state_code),
+  failed_at TIMESTAMPTZ NOT NULL,
+  error TEXT NOT NULL,
+  strategy VARCHAR(20),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ingestion_fallbacks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  state_code VARCHAR(2) NOT NULL REFERENCES ingestion_telemetry(state_code),
+  escalated_at TIMESTAMPTZ NOT NULL,
+  from_strategy VARCHAR(20) NOT NULL,
+  to_strategy VARCHAR(20),
+  reason TEXT NOT NULL,
+  delay_ms INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS portal_probe_results (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  state_code VARCHAR(2) NOT NULL,
+  probe_timestamp TIMESTAMPTZ NOT NULL,
+  reachable BOOLEAN NOT NULL,
+  response_time_ms INTEGER,
+  http_status INTEGER,
+  schema_valid BOOLEAN NOT NULL DEFAULT true,
+  anti_bot_detected BOOLEAN NOT NULL DEFAULT false,
+  error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS data_quality_reports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  state_code VARCHAR(2) NOT NULL,
+  job_id VARCHAR(100) NOT NULL,
+  records_ingested INTEGER NOT NULL,
+  volume_in_range BOOLEAN NOT NULL,
+  field_completeness NUMERIC(5,2) NOT NULL,
+  deduplication_rate NUMERIC(5,2) NOT NULL,
+  filing_date_recency BOOLEAN NOT NULL,
+  party_name_present NUMERIC(5,2) NOT NULL,
+  passed BOOLEAN NOT NULL,
+  warnings TEXT[],
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS coverage_alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  alert_type VARCHAR(50) NOT NULL,
+  state_code VARCHAR(2),
+  severity VARCHAR(20) NOT NULL DEFAULT 'medium',
+  message TEXT NOT NULL,
+  details JSONB,
+  emailed BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_successes_state_date ON ingestion_successes(state_code, completed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_failures_state_date ON ingestion_failures(state_code, failed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_fallbacks_state_date ON ingestion_fallbacks(state_code, escalated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_probes_state_date ON portal_probe_results(state_code, probe_timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_dq_state_date ON data_quality_reports(state_code, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alerts_type_date ON coverage_alerts(alert_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alerts_state ON coverage_alerts(state_code, created_at DESC);
+
+-- Seed all 50 states + DC into ingestion_telemetry
+INSERT INTO ingestion_telemetry (state_code) VALUES
+  ('AL'),('AK'),('AZ'),('AR'),('CA'),('CO'),('CT'),('DE'),('FL'),('GA'),
+  ('HI'),('ID'),('IL'),('IN'),('IA'),('KS'),('KY'),('LA'),('ME'),('MD'),
+  ('MA'),('MI'),('MN'),('MS'),('MO'),('MT'),('NE'),('NV'),('NH'),('NJ'),
+  ('NM'),('NY'),('NC'),('ND'),('OH'),('OK'),('OR'),('PA'),('RI'),('SC'),
+  ('SD'),('TN'),('TX'),('UT'),('VT'),('VA'),('WA'),('WV'),('WI'),('WY'),
+  ('DC')
+ON CONFLICT (state_code) DO NOTHING;
+
+-- =============================================================================
+-- Migration 011: Competitive Intelligence
+-- =============================================================================
+
+-- Extend ucc_filings with termination/expiration tracking
+ALTER TABLE ucc_filings ADD COLUMN IF NOT EXISTS expiration_date DATE;
+ALTER TABLE ucc_filings ADD COLUMN IF NOT EXISTS termination_date DATE;
+ALTER TABLE ucc_filings ADD COLUMN IF NOT EXISTS amendment_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ucc_filings ADD COLUMN IF NOT EXISTS last_amendment_date DATE;
+
+CREATE INDEX IF NOT EXISTS idx_ucc_expiration ON ucc_filings(expiration_date) WHERE expiration_date IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ucc_termination ON ucc_filings(termination_date) WHERE termination_date IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ucc_status_updated ON ucc_filings(status, updated_at DESC);
+
+-- Amendment history
+CREATE TABLE IF NOT EXISTS ucc_amendments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  filing_id UUID NOT NULL REFERENCES ucc_filings(id) ON DELETE CASCADE,
+  external_id VARCHAR(200) UNIQUE,
+  amendment_type VARCHAR(20) NOT NULL CHECK (amendment_type IN ('continuation', 'assignment', 'termination', 'amendment')),
+  amendment_date DATE NOT NULL,
+  description TEXT,
+  raw_data JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_amendments_filing ON ucc_amendments(filing_id, amendment_date DESC);
+
+-- Filing events (terminations, new filings, expirations)
+CREATE TABLE IF NOT EXISTS filing_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  prospect_id UUID NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
+  event_type VARCHAR(30) NOT NULL CHECK (event_type IN ('termination', 'new_filing', 'expiration_approaching', 'amendment', 'status_change')),
+  filing_id UUID REFERENCES ucc_filings(id) ON DELETE SET NULL,
+  event_date DATE NOT NULL,
+  metadata JSONB,
+  processed BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_events_prospect ON filing_events(prospect_id, event_date DESC);
+CREATE INDEX IF NOT EXISTS idx_events_type_date ON filing_events(event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_events_unprocessed ON filing_events(processed) WHERE processed = false;
+
+-- Filing velocity metrics (pre-computed per prospect per window)
+CREATE TABLE IF NOT EXISTS filing_velocity_metrics (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  prospect_id UUID NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
+  window_days INTEGER NOT NULL,
+  filings_in_window INTEGER NOT NULL DEFAULT 0,
+  avg_filings_per_month NUMERIC(8,2) NOT NULL DEFAULT 0,
+  trend VARCHAR(20) NOT NULL CHECK (trend IN ('accelerating', 'stable', 'decelerating')) DEFAULT 'stable',
+  computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(prospect_id, window_days)
+);
+CREATE INDEX IF NOT EXISTS idx_velocity_trend ON filing_velocity_metrics(trend, computed_at DESC);
+
+-- Competitor market position snapshots
+CREATE TABLE IF NOT EXISTS competitor_market_positions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  funder_name VARCHAR(500) NOT NULL,
+  funder_normalized VARCHAR(500) NOT NULL,
+  funder_type VARCHAR(20),
+  funder_tier VARCHAR(2),
+  state VARCHAR(2) NOT NULL,
+  snapshot_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  filing_count INTEGER NOT NULL DEFAULT 0,
+  active_filing_count INTEGER NOT NULL DEFAULT 0,
+  unique_debtors INTEGER NOT NULL DEFAULT 0,
+  market_share_pct NUMERIC(5,2),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(funder_normalized, state, snapshot_date)
+);
+CREATE INDEX IF NOT EXISTS idx_competitor_state ON competitor_market_positions(state, snapshot_date DESC);
+CREATE INDEX IF NOT EXISTS idx_competitor_funder ON competitor_market_positions(funder_normalized, snapshot_date DESC);
+
+-- ============================================
+-- Migration 012: Outreach sequences
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS outreach_sequences (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  prospect_id UUID NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
+  filing_event_id UUID REFERENCES filing_events(id) ON DELETE SET NULL,
+  trigger_type VARCHAR(30) NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'completed', 'cancelled', 'failed')),
+  current_step INTEGER NOT NULL DEFAULT 0,
+  total_steps INTEGER NOT NULL DEFAULT 1,
+  fresh_capacity_score INTEGER,
+  metadata JSONB,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sequences_prospect ON outreach_sequences(prospect_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sequences_status ON outreach_sequences(status) WHERE status IN ('pending', 'active');
+
+CREATE TABLE IF NOT EXISTS outreach_steps (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sequence_id UUID NOT NULL REFERENCES outreach_sequences(id) ON DELETE CASCADE,
+  step_number INTEGER NOT NULL,
+  channel VARCHAR(10) NOT NULL CHECK (channel IN ('email', 'sms', 'call', 'briefing')),
+  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'scheduled', 'sent', 'delivered', 'failed', 'skipped')),
+  template_key VARCHAR(100),
+  subject TEXT,
+  body TEXT,
+  scheduled_for TIMESTAMPTZ,
+  sent_at TIMESTAMPTZ,
+  external_id VARCHAR(200),
+  error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_steps_sequence ON outreach_steps(sequence_id, step_number);
+CREATE INDEX IF NOT EXISTS idx_steps_scheduled ON outreach_steps(scheduled_for) WHERE status = 'scheduled';
+
+CREATE TABLE IF NOT EXISTS pre_call_briefings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  prospect_id UUID NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
+  content JSONB NOT NULL,
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '24 hours',
+  UNIQUE(prospect_id)
+);
+CREATE INDEX IF NOT EXISTS idx_briefings_prospect ON pre_call_briefings(prospect_id);

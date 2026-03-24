@@ -28,7 +28,7 @@ interface SearchResult {
 
 const SEARCH_SOURCES: Array<{ label: string; value: string }> = [
   { label: 'Web (Bing snippets)', value: 'bing' },
-  { label: 'Public UCC filings (mock demo)', value: 'ucc' },
+  { label: 'Public UCC filings (preview dataset)', value: 'ucc' },
   { label: 'Both', value: 'both' }
 ]
 

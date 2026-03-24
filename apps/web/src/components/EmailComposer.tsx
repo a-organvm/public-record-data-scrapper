@@ -180,8 +180,7 @@ export function EmailComposer({ prospect, open, onOpenChange, onSendEmail }: Ema
                 className="bg-muted"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Note: This is a placeholder email. In production, integrate with your CRM for actual
-                contact details.
+                Contact details in this composer are not sourced from CRM yet.
               </p>
             </div>
 

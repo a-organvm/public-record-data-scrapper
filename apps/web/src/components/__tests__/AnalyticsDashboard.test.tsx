@@ -97,17 +97,35 @@ vi.mock('@public-records/ui/select', () => ({
   SelectValue: () => null
 }))
 
-vi.mock('@phosphor-icons/react', () => ({
-  ChartBar: ({ className }: { className?: string }) => (
-    <span data-testid="chart-icon" className={className} />
-  ),
-  Calendar: ({ className }: { className?: string }) => (
-    <span data-testid="calendar-icon" className={className} />
-  ),
-  Download: ({ className }: { className?: string }) => (
-    <span data-testid="download-icon" className={className} />
-  )
+// Mock CoverageDashboard to avoid deep transitive import chain
+vi.mock('@/components/CoverageDashboard', () => ({
+  CoverageDashboard: () => <div data-testid="coverage-dashboard">Coverage</div>
 }))
+
+vi.mock('@phosphor-icons/react', () => {
+  const stub = ({ className }: { className?: string }) => (
+    <span data-testid="icon-stub" className={className} />
+  )
+  return {
+    ChartBar: ({ className }: { className?: string }) => (
+      <span data-testid="chart-icon" className={className} />
+    ),
+    Calendar: ({ className }: { className?: string }) => (
+      <span data-testid="calendar-icon" className={className} />
+    ),
+    Download: ({ className }: { className?: string }) => (
+      <span data-testid="download-icon" className={className} />
+    ),
+    // Icons used by CoverageDashboard (imported by AnalyticsDashboard)
+    ShieldCheck: stub,
+    WarningCircle: stub,
+    WarningOctagon: stub,
+    ArrowsClockwise: stub,
+    Broadcast: stub,
+    Pulse: stub,
+    LockKey: stub
+  }
+})
 
 // Mock recharts
 vi.mock('recharts', () => ({

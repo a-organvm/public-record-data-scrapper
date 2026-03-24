@@ -21,14 +21,47 @@ const mocks = vi.hoisted(() => {
     mockIngestionQueue: { add: mockQueueAdd, name: 'ucc-ingestion' },
     mockEnrichmentQueue: { add: mockQueueAdd, name: 'data-enrichment' },
     mockHealthScoreQueue: { add: mockQueueAdd, name: 'health-scores' },
-    mockDatabaseQuery: vi.fn()
+    mockPortalProbeQueue: { add: mockQueueAdd, name: 'portal-health-probes' },
+    mockDigestQueue: { add: mockQueueAdd, name: 'coverage-digest' },
+    mockTerminationDetectionQueue: { add: mockQueueAdd, name: 'termination-detection' },
+    mockVelocityAnalysisQueue: { add: mockQueueAdd, name: 'velocity-analysis' },
+    mockOutreachQueue: { add: mockQueueAdd, name: 'outreach' },
+    mockDatabaseQuery: vi.fn(),
+    mockRecordIngestionQueued: vi.fn(),
+    mockGetIngestionCircuitGate: vi.fn(() => ({
+      allowed: true,
+      circuitState: 'closed',
+      backoffUntil: null,
+      reason: null
+    })),
+    mockResolvePrimaryIngestionStrategy: vi.fn((state: string) => {
+      if (state === 'CA') return 'api'
+      if (state === 'TX') return 'bulk'
+      if (state === 'FL') return 'vendor'
+      return null
+    }),
+    mockResolveStateIngestionStrategyChain: vi.fn((state: string) => {
+      if (state === 'CA') return ['api']
+      if (state === 'TX') return ['bulk']
+      if (state === 'FL') return ['vendor']
+      return []
+    })
   }
 })
 
 vi.mock('../../queue/queues', () => ({
   getIngestionQueue: vi.fn(() => mocks.mockIngestionQueue),
   getEnrichmentQueue: vi.fn(() => mocks.mockEnrichmentQueue),
-  getHealthScoreQueue: vi.fn(() => mocks.mockHealthScoreQueue)
+  getHealthScoreQueue: vi.fn(() => mocks.mockHealthScoreQueue),
+  getPortalProbeQueue: vi.fn(() => mocks.mockPortalProbeQueue),
+  getDigestQueue: vi.fn(() => mocks.mockDigestQueue),
+  getTerminationDetectionQueue: vi.fn(() => mocks.mockTerminationDetectionQueue),
+  getVelocityAnalysisQueue: vi.fn(() => mocks.mockVelocityAnalysisQueue),
+  getOutreachQueue: vi.fn(() => mocks.mockOutreachQueue),
+  getIngestionCircuitGate: mocks.mockGetIngestionCircuitGate,
+  recordIngestionQueued: mocks.mockRecordIngestionQueued,
+  resolvePrimaryIngestionStrategy: mocks.mockResolvePrimaryIngestionStrategy,
+  resolveStateIngestionStrategyChain: mocks.mockResolveStateIngestionStrategyChain
 }))
 
 vi.mock('../../database/connection', () => ({
@@ -49,6 +82,13 @@ describeConditional('JobScheduler', () => {
     vi.resetModules()
     mocks.mockDatabaseQuery.mockReset()
     mocks.mockQueueAdd.mockReset().mockResolvedValue({ id: 'test-job-id' })
+    mocks.mockRecordIngestionQueued.mockReset()
+    mocks.mockGetIngestionCircuitGate.mockReset().mockReturnValue({
+      allowed: true,
+      circuitState: 'closed',
+      backoffUntil: null,
+      reason: null
+    })
   })
 
   afterEach(() => {
@@ -155,29 +195,29 @@ describeConditional('JobScheduler', () => {
   })
 
   describe('scheduleUCCIngestion', () => {
-    it('should queue ingestion jobs for all 10 states', async () => {
+    it('should queue ingestion jobs only for supported states', async () => {
       const { JobScheduler } = await import('../../queue/scheduler')
       const scheduler = new JobScheduler()
 
       // Access private method via type casting for testing
       await (scheduler as any).scheduleUCCIngestion()
 
-      expect(mocks.mockQueueAdd).toHaveBeenCalledTimes(10)
+      expect(mocks.mockQueueAdd).toHaveBeenCalledTimes(3)
     })
 
-    it('should queue jobs with correct state codes', async () => {
+    it('should queue jobs with correct supported state codes', async () => {
       const { JobScheduler } = await import('../../queue/scheduler')
       const scheduler = new JobScheduler()
 
       await (scheduler as any).scheduleUCCIngestion()
 
-      const expectedStates = ['NY', 'CA', 'TX', 'FL', 'IL', 'PA', 'OH', 'GA', 'NC', 'MI']
+      const expectedStates = ['CA', 'TX', 'FL']
 
       expectedStates.forEach((state) => {
         expect(mocks.mockQueueAdd).toHaveBeenCalledWith(
           `ingest-${state}`,
           expect.objectContaining({ state, batchSize: 1000 }),
-          expect.objectContaining({ priority: 1, removeOnComplete: true })
+          expect.objectContaining({ priority: 1, attempts: 1, removeOnComplete: true })
         )
       })
     })
@@ -202,7 +242,71 @@ describeConditional('JobScheduler', () => {
       await (scheduler as any).scheduleUCCIngestion()
 
       expect(consoleSpy).toHaveBeenCalledWith('[Scheduler] Queueing UCC ingestion for 10 states')
-      expect(consoleSpy).toHaveBeenCalledWith('[Scheduler] Queued 10 ingestion jobs')
+      expect(consoleSpy).toHaveBeenCalledWith('[Scheduler] Queued 3 ingestion jobs')
+    })
+
+    it('records telemetry when jobs are queued', async () => {
+      const { JobScheduler } = await import('../../queue/scheduler')
+      const scheduler = new JobScheduler()
+
+      await (scheduler as any).scheduleUCCIngestion()
+
+      expect(mocks.mockRecordIngestionQueued).toHaveBeenCalledTimes(3)
+      expect(mocks.mockRecordIngestionQueued).toHaveBeenCalledWith(
+        expect.objectContaining({
+          state: 'CA',
+          jobId: 'test-job-id',
+          strategy: 'api',
+          queuedBy: 'scheduler'
+        })
+      )
+    })
+
+    it('logs skipped states that do not have a production strategy', async () => {
+      const { JobScheduler } = await import('../../queue/scheduler')
+      const scheduler = new JobScheduler()
+
+      await (scheduler as any).scheduleUCCIngestion()
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[Scheduler] Skipping NY because no production ingestion strategy is configured'
+      )
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[Scheduler] Skipping IL because no production ingestion strategy is configured'
+      )
+    })
+
+    it('skips states with an open circuit', async () => {
+      mocks.mockGetIngestionCircuitGate.mockImplementation((state: string) =>
+        state === 'TX'
+          ? {
+              allowed: false,
+              circuitState: 'open',
+              backoffUntil: '2026-03-23T16:00:00.000Z',
+              reason: 'Escalating from bulk to scrape after timeout'
+            }
+          : {
+              allowed: true,
+              circuitState: 'closed',
+              backoffUntil: null,
+              reason: null
+            }
+      )
+
+      const { JobScheduler } = await import('../../queue/scheduler')
+      const scheduler = new JobScheduler()
+
+      await (scheduler as any).scheduleUCCIngestion()
+
+      expect(mocks.mockQueueAdd).toHaveBeenCalledTimes(2)
+      expect(mocks.mockQueueAdd).not.toHaveBeenCalledWith(
+        'ingest-TX',
+        expect.anything(),
+        expect.anything()
+      )
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[Scheduler] Skipping TX because circuit is open until 2026-03-23T16:00:00.000Z'
+      )
     })
   })
 

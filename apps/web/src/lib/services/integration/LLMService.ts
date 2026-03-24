@@ -148,8 +148,7 @@ class LLMService {
     const apiKey = this.config.llm.apiKey || import.meta.env.VITE_OPENAI_API_KEY
 
     if (!apiKey) {
-      console.warn('OpenAI API key not configured, using mock response')
-      return this.getMockResponse(request)
+      throw new Error('OpenAI API key is not configured')
     }
 
     try {
@@ -190,7 +189,7 @@ class LLMService {
       }
     } catch (error) {
       console.error('OpenAI API call failed:', error)
-      return this.getMockResponse(request)
+      throw error instanceof Error ? error : new Error('OpenAI API call failed')
     }
   }
 
@@ -201,8 +200,7 @@ class LLMService {
     const apiKey = this.config.llm.apiKey || import.meta.env.VITE_OPENAI_API_KEY
 
     if (!apiKey) {
-      yield { text: this.getMockResponse(request).text, isComplete: true }
-      return
+      throw new Error('OpenAI API key is not configured')
     }
 
     try {
@@ -264,7 +262,7 @@ class LLMService {
       }
     } catch (error) {
       console.error('OpenAI streaming failed:', error)
-      yield { text: this.getMockResponse(request).text, isComplete: true }
+      throw error instanceof Error ? error : new Error('OpenAI streaming failed')
     }
   }
 
@@ -275,8 +273,7 @@ class LLMService {
     const apiKey = this.config.llm.apiKey || import.meta.env.VITE_ANTHROPIC_API_KEY
 
     if (!apiKey) {
-      console.warn('Anthropic API key not configured, using mock response')
-      return this.getMockResponse(request)
+      throw new Error('Anthropic API key is not configured')
     }
 
     try {
@@ -315,7 +312,7 @@ class LLMService {
       }
     } catch (error) {
       console.error('Anthropic API call failed:', error)
-      return this.getMockResponse(request)
+      throw error instanceof Error ? error : new Error('Anthropic API call failed')
     }
   }
 
@@ -329,8 +326,7 @@ class LLMService {
     const apiKey = this.config.llm.apiKey || import.meta.env.VITE_ANTHROPIC_API_KEY
 
     if (!apiKey) {
-      yield { text: this.getMockResponse(request).text, isComplete: true }
-      return
+      throw new Error('Anthropic API key is not configured')
     }
 
     try {
@@ -392,18 +388,16 @@ class LLMService {
       }
     } catch (error) {
       console.error('Anthropic streaming failed:', error)
-      yield { text: this.getMockResponse(request).text, isComplete: true }
+      throw error instanceof Error ? error : new Error('Anthropic streaming failed')
     }
   }
 
   /**
-   * Call local model (mock implementation)
+   * Call local model
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async callLocalModel(request: LLMRequest, model: string): Promise<LLMResponse> {
-    // In a real implementation, this would call a local model server
-    console.debug('Local model not implemented, using mock response')
-    return this.getMockResponse(request)
+    throw new Error('Local model provider is not implemented')
   }
 
   /**
@@ -501,71 +495,6 @@ class LLMService {
     if (mag1 === 0 || mag2 === 0) return 0
 
     return dotProduct / (mag1 * mag2)
-  }
-
-  /**
-   * Get mock response for testing/fallback
-   */
-  private getMockResponse(request: LLMRequest): LLMResponse {
-    const mockResponses: Record<string, string> = {
-      'outreach template': `Subject: Strategic Financing Opportunity for [Company Name]
-
-Dear [Contact Name],
-
-I hope this message finds you well. I'm reaching out because I noticed [Company Name] has been experiencing growth in [specific area based on signals].
-
-Given your current position and expansion plans, I wanted to discuss how we can support your business objectives with flexible financing options tailored to your unique situation.
-
-Would you be open to a brief conversation this week?
-
-Best regards,
-[Your Name]`,
-      'deal proposal': `Based on the analysis of [Company Name], I recommend the following deal structure:
-
-- Advance Amount: $[amount] based on monthly revenue of $[revenue]
-- Factor Rate: [rate] (competitive for the industry)
-- Payback: $[payback] over [term] days
-- Daily Payment: $[daily]
-
-This structure balances competitive pricing with appropriate risk management given the company's [health grade] health score and [signal count] growth signals.`,
-      insight: `Key Insight: The data shows a 25% increase in UCC filing activity in the construction industry over the past 30 days, indicating increased competition. However, our conversion rate remains strong at 32%, suggesting we maintain competitive advantage in this sector.`,
-      report: `# Executive Summary
-
-## Overview
-Pipeline health has improved 15% this quarter, driven by increased lead quality and faster conversion times.
-
-## Key Metrics
-- Total Prospects: [count]
-- Conversion Rate: 32% (+5% QoQ)
-- Average Deal Size: $[amount] (+12% QoQ)
-- Pipeline Value: $[total]
-
-## Recommendations
-1. Focus on construction and healthcare sectors (highest conversion rates)
-2. Increase outreach to prospects with 3+ growth signals
-3. Optimize pricing in competitive markets`
-    }
-
-    // Find matching mock response
-    const promptLower = request.prompt.toLowerCase()
-    const mockKey = Object.keys(mockResponses).find((key) =>
-      promptLower.includes(key.toLowerCase())
-    )
-
-    const text = mockKey
-      ? mockResponses[mockKey]
-      : `Generated response for: ${request.prompt.substring(0, 100)}...`
-
-    return {
-      text,
-      finishReason: 'stop',
-      usage: {
-        promptTokens: request.prompt.length / 4, // Rough estimate
-        completionTokens: text.length / 4,
-        totalTokens: (request.prompt.length + text.length) / 4
-      },
-      model: 'mock-model'
-    }
   }
 
   /**

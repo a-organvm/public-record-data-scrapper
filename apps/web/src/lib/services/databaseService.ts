@@ -289,10 +289,10 @@ export async function fetchCompetitorData(): Promise<CompetitorData[]> {
 }
 
 /**
- * Fetch portfolio companies (placeholder - needs data source)
+ * Fetch portfolio companies.
  */
 export async function fetchPortfolioCompanies(): Promise<PortfolioCompany[]> {
-  // TODO: Implement when we have portfolio tracking
+  // TODO: Wire portfolio tracking data source.
   return []
 }
 

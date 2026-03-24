@@ -53,45 +53,36 @@ export class CompetitorAgent extends BaseAgent {
   }
 
   private identifyCompetitors(context: SystemContext): string[] {
-    void context
-    // In a real scenario, this would involve more sophisticated analysis
-    // of market data, keywords, and other signals.
-    // For now, we'll use a mock list.
-    return ['Competitor A', 'Competitor B', 'Competitor C']
+    return context.competitors
+      .map((competitor) => {
+        if (typeof competitor === 'string') {
+          return competitor
+        }
+
+        if (
+          typeof competitor === 'object' &&
+          competitor !== null &&
+          'name' in competitor &&
+          typeof competitor.name === 'string'
+        ) {
+          return competitor.name
+        }
+
+        return null
+      })
+      .filter((name): name is string => Boolean(name))
   }
 
   private analyzeThreats(context: SystemContext, competitors: string[]): Finding[] {
     void context
-    // Placeholder for threat analysis logic
-    const findings: Finding[] = []
-    if (competitors.includes('Competitor A')) {
-      findings.push(
-        this.createFinding(
-          'competitor-intelligence',
-          'critical',
-          'Competitor A is aggressively targeting our key market segment.',
-          { competitor: 'Competitor A', segment: 'key_market_segment' }
-        )
-      )
-    }
-    return findings
+    void competitors
+    return []
   }
 
   private findOpportunities(context: SystemContext, competitors: string[]): Finding[] {
     void context
-    // Placeholder for opportunity analysis
-    const findings: Finding[] = []
-    if (!competitors.includes('Competitor D')) {
-      findings.push(
-        this.createFinding(
-          'competitor-intelligence',
-          'info',
-          'A new market niche is emerging with no strong competitors.',
-          { niche: 'emerging_niche' }
-        )
-      )
-    }
-    return findings
+    void competitors
+    return []
   }
 
   private suggestThreatMitigation(threats: Finding[]): ImprovementSuggestion {

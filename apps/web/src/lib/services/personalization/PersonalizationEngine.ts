@@ -228,113 +228,15 @@ export class PersonalizationEngine {
 
   /**
    * Generate daily recommendations
+   *
+   * Returns empty array until the recommendation engine is wired to real
+   * behavioral analytics and outcome data. Generating fabricated
+   * recommendations would mislead callers about prospect quality and timing.
    */
   private async generateDailyRecommendations(
-    userId: string
+    _userId: string
   ): Promise<PersonalizedRecommendation[]> {
-    const profile = await this.getUserProfile(userId)
-    const recommendations: PersonalizedRecommendation[] = []
-
-    // Recommendation 1: Top prospects to contact today
-    recommendations.push({
-      recommendationId: `rec_${Date.now()}_1`,
-      userId,
-      type: 'prospect',
-      title: 'Top 5 Prospects to Contact Today',
-      description:
-        'Based on your success patterns and optimal contact timing, these prospects are most likely to convert if contacted now.',
-      confidence: 0.85,
-      expectedValue: 125000 * 5, // 5 prospects × avg deal size
-      priority: 'high',
-      reasoning: [
-        'Match your historical success patterns (construction, NY)',
-        'Optimal contact time based on your response rate data',
-        'Fresh growth signals detected in last 48 hours'
-      ],
-      data: {
-        prospectIds: ['p1', 'p2', 'p3', 'p4', 'p5']
-      },
-      personalizationFactors: [
-        {
-          factor: 'industry_preference',
-          value: profile.preferences.preferredIndustries,
-          weight: 0.3,
-          description: 'Matches your preferred industries'
-        },
-        {
-          factor: 'optimal_timing',
-          value: new Date().getHours(),
-          weight: 0.25,
-          description: 'Aligns with your peak productivity hours'
-        }
-      ]
-    })
-
-    // Recommendation 2: Skill development
-    if (profile.performance.conversionRate < 0.25) {
-      recommendations.push({
-        recommendationId: `rec_${Date.now()}_2`,
-        userId,
-        type: 'learning',
-        title: 'Improve Conversion Rate with Objection Handling Training',
-        description:
-          'Your conversion rate is below team average. Focus on objection handling to improve.',
-        confidence: 0.75,
-        expectedValue: 50000, // Estimated improvement value
-        priority: 'medium',
-        reasoning: [
-          'Conversion rate 28% vs team average 35%',
-          'Analysis shows objection handling as key differentiator',
-          'Top performers use consultative approach'
-        ],
-        data: {
-          currentRate: profile.performance.conversionRate,
-          targetRate: 0.35,
-          trainingModules: ['objection_handling', 'consultative_selling']
-        },
-        personalizationFactors: [
-          {
-            factor: 'performance_gap',
-            value: 0.35 - profile.performance.conversionRate,
-            weight: 0.4,
-            description: 'Gap to team average'
-          }
-        ]
-      })
-    }
-
-    // Recommendation 3: Timing optimization
-    recommendations.push({
-      recommendationId: `rec_${Date.now()}_3`,
-      userId,
-      type: 'timing',
-      title: 'Schedule Follow-ups for Maximum Response',
-      description: 'Your follow-up timing can be optimized for better response rates.',
-      confidence: 0.8,
-      expectedValue: 35000,
-      priority: 'medium',
-      reasoning: [
-        'Your best response rates occur at 10 AM Tuesdays',
-        'Current follow-up cadence is suboptimal',
-        'Data shows 42% higher response rate with optimized timing'
-      ],
-      data: {
-        optimalTime: '10:00 AM',
-        optimalDay: 'Tuesday',
-        currentCadence: profile.preferences.followUpCadence,
-        recommendedCadence: 3
-      },
-      personalizationFactors: [
-        {
-          factor: 'historical_response_pattern',
-          value: profile.behavior.timeOfDayPatterns,
-          weight: 0.35,
-          description: 'Based on your historical response data'
-        }
-      ]
-    })
-
-    return recommendations
+    return []
   }
 
   // ==================== PRIVATE METHODS ====================
@@ -400,12 +302,12 @@ export class PersonalizationEngine {
         weaknessAreas: []
       },
       performance: {
-        conversionRate: 0.28,
-        averageDealSize: 125000,
-        averageTimeToClose: 14,
-        portfolioHealthScore: 75,
-        prospectQuality: 0.7,
-        activityLevel: 80,
+        conversionRate: 0,
+        averageDealSize: 0,
+        averageTimeToClose: 0,
+        portfolioHealthScore: 0,
+        prospectQuality: 0,
+        activityLevel: 0,
         trends: [],
         benchmarks: [],
         strengths: [],
@@ -420,25 +322,25 @@ export class PersonalizationEngine {
         learnedPreferences: [],
         conversionPredictorWeights: {},
         timingModel: {
-          optimalContactTime: { hourOfDay: 10, dayOfWeek: 2, confidence: 0.6 },
+          optimalContactTime: { hourOfDay: 10, dayOfWeek: 2, confidence: 0 },
           optimalFollowUpInterval: 3,
           responsePatterns: []
         },
         channelModel: {
           channelPreferences: {
-            email: 0.8,
-            sms: 0.3,
-            phone_script: 0.6,
+            email: 0.5,
+            sms: 0.5,
+            phone_script: 0.5,
             linkedin: 0.5,
-            direct_mail: 0.2
+            direct_mail: 0.5
           },
           channelEffectiveness: {},
           contextualPreferences: []
         },
         userSegment: 'new_user',
         similarUsers: [],
-        modelConfidence: 0.3,
-        dataQuality: 0.5
+        modelConfidence: 0,
+        dataQuality: 0
       },
       achievements: [],
       goals: []
@@ -483,14 +385,14 @@ export class PersonalizationEngine {
         })
         break
       case 'outcome':
-        // Track conversion patterns
-        if (action.outcome === 'success') {
+        // Track conversion patterns from actual outcome data
+        if (action.outcome === 'success' && action.data) {
           behavior.conversionPatterns.push({
-            prospectCharacteristics: {},
-            timeToConversion: 14,
-            dealSize: 125000,
-            successFactors: [],
-            touchpoints: 5
+            prospectCharacteristics: action.data.characteristics || {},
+            timeToConversion: action.data.timeToConversion || 0,
+            dealSize: action.data.dealSize || 0,
+            successFactors: action.data.successFactors || [],
+            touchpoints: action.data.touchpoints || 0
           })
         }
         break
@@ -553,15 +455,17 @@ export class PersonalizationEngine {
 
   /**
    * Build channel model
+   *
+   * Returns equal weights until real channel effectiveness data is collected.
    */
-  private buildChannelModel(behavior: UserBehavior): any {
+  private buildChannelModel(_behavior: UserBehavior): any {
     return {
       channelPreferences: {
-        email: 0.8,
-        sms: 0.3,
-        phone_script: 0.6,
+        email: 0.5,
+        sms: 0.5,
+        phone_script: 0.5,
         linkedin: 0.5,
-        direct_mail: 0.2
+        direct_mail: 0.5
       },
       channelEffectiveness: {},
       contextualPreferences: []
@@ -610,7 +514,20 @@ export class PersonalizationEngine {
    * Calculate data quality
    */
   private calculateDataQuality(profile: UserProfile): number {
-    return 0.75 // Mock value
+    const preferenceCoverage =
+      [
+        profile.preferences.preferredIndustries.length > 0,
+        profile.preferences.preferredStates.length > 0,
+        profile.preferences.preferredDealSizes.length > 0,
+        profile.preferences.preferredChannels.length > 0
+      ].filter(Boolean).length / 4
+
+    const behaviorCoverage = Math.min(profile.behavior.conversionPatterns.length / 25, 1)
+    const feedbackCoverage = Math.min(profile.feedback.totalInteractions / 20, 1)
+
+    return Number(
+      (preferenceCoverage * 0.4 + behaviorCoverage * 0.4 + feedbackCoverage * 0.2).toFixed(2)
+    )
   }
 
   /**
@@ -657,24 +574,46 @@ export class PersonalizationEngine {
   }
 
   /**
-   * Suggest approach
+   * Suggest approach based on prospect data
    */
   private suggestApproach(prospect: Prospect, profile: UserProfile): string {
-    return 'Lead with growth opportunity financing based on detected expansion signals'
+    if (prospect.growthSignals && prospect.growthSignals.length > 0) {
+      return `Review ${prospect.growthSignals.length} growth signal(s) before outreach`
+    }
+    if (profile.preferences.preferredIndustries.includes(prospect.industry)) {
+      return `Industry match (${prospect.industry}) — apply standard playbook`
+    }
+    return 'No personalized approach available — review prospect details manually'
   }
 
   /**
-   * Make predictions
+   * Make predictions from available data
+   *
+   * Returns null values when no behavioral data exists to derive predictions.
+   * Once outcome data is collected via learnFromOutcome(), these can be
+   * computed from actual conversion patterns.
    */
   private makePredictions(
     prospect: Prospect,
     profile: UserProfile,
     model: PersonalizationModel
-  ): any {
+  ): { conversionProbability: number | null; dealSize: number | null; timeToClose: number | null } {
+    const hasOutcomeData = profile.behavior.conversionPatterns.length > 0
+
+    if (!hasOutcomeData) {
+      return { conversionProbability: null, dealSize: null, timeToClose: null }
+    }
+
+    // Derive from actual conversion history
+    const patterns = profile.behavior.conversionPatterns
+    const avgDealSize = patterns.reduce((s, p) => s + p.dealSize, 0) / patterns.length
+    const avgTimeToClose = patterns.reduce((s, p) => s + p.timeToConversion, 0) / patterns.length
+    const confidence = model.modelConfidence
+
     return {
-      conversionProbability: 0.32,
-      dealSize: 125000,
-      timeToClose: 14
+      conversionProbability: confidence > 0 ? confidence : null,
+      dealSize: avgDealSize > 0 ? avgDealSize : null,
+      timeToClose: avgTimeToClose > 0 ? avgTimeToClose : null
     }
   }
 
@@ -724,20 +663,13 @@ export class PersonalizationEngine {
 
   /**
    * Generate personalized insights
+   *
+   * Returns empty array until real performance data and behavioral
+   * patterns are available. Fabricating insights would misrepresent
+   * the user's actual conversion rate and performance.
    */
-  private generatePersonalizedInsights(profile: UserProfile): PersonalizedInsight[] {
-    return [
-      {
-        insightId: 'insight_1',
-        type: 'performance',
-        title: 'Your Conversion Rate is Above Average',
-        description: `You're converting at 28%, which is 5% above the team average. Keep focusing on construction and healthcare.`,
-        relevanceScore: 0.9,
-        actionable: true,
-        suggestedActions: ['Continue targeting construction industry', 'Expand to healthcare'],
-        impact: 'medium'
-      }
-    ]
+  private generatePersonalizedInsights(_profile: UserProfile): PersonalizedInsight[] {
+    return []
   }
 
   /**

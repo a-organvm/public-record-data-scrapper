@@ -5,9 +5,6 @@
  * Enriches prospect data with growth signals, health scores, revenue estimates,
  * and industry classifications from external data sources.
  *
- * Note: Current implementation uses mock data. In production, this will integrate
- * with external APIs for real data enrichment.
- *
  * @module server/services/EnrichmentService
  */
 
@@ -80,7 +77,7 @@ export class EnrichmentService {
    *
    * This method:
    * 1. Fetches the prospect from the database
-   * 2. Gathers enrichment data (currently mocked)
+   * 2. Gathers enrichment data from live providers
    * 3. Updates the prospect with enrichment metadata
    * 4. Stores growth signals and health scores
    *
@@ -99,69 +96,7 @@ export class EnrichmentService {
       throw new Error(`Prospect ${prospectId} not found`)
     }
 
-    const prospectData = prospect[0] as { lien_amount?: number; industry?: string }
-
-    // Simulate enrichment process
-    // In Phase 2, this will call actual external APIs
-    const enrichment: EnrichmentResult = {
-      growth_signals: {
-        hiring: Math.floor(Math.random() * 5),
-        permits: Math.floor(Math.random() * 3),
-        contracts: Math.floor(Math.random() * 2),
-        expansion: Math.floor(Math.random() * 2),
-        equipment: Math.floor(Math.random() * 3)
-      },
-      health_score: {
-        score: Math.floor(Math.random() * 40) + 60, // 60-100
-        grade: this.calculateGrade(Math.floor(Math.random() * 40) + 60),
-        trend: ['improving', 'stable', 'declining'][Math.floor(Math.random() * 3)],
-        violations: Math.floor(Math.random() * 3)
-      },
-      estimated_revenue: prospectData.lien_amount
-        ? prospectData.lien_amount * (4 + Math.random() * 2)
-        : 0,
-      industry_classification: prospectData.industry || 'unknown',
-      data_sources_used: ['mock-data', dataTier, ...listEnabledIntegrations(dataTier)]
-    }
-
-    // Update prospect with enrichment data
-    await database.query(
-      `UPDATE prospects
-       SET last_enriched_at = NOW(),
-           enrichment_confidence = $2,
-           updated_at = NOW()
-       WHERE id = $1`,
-      [prospectId, 0.85]
-    )
-
-    // Store growth signals
-    const signalTypes = ['hiring', 'permits', 'contracts', 'expansion', 'equipment'] as const
-    for (const type of signalTypes) {
-      const count = enrichment.growth_signals[type]
-      for (let i = 0; i < count; i++) {
-        await database.query(
-          `INSERT INTO growth_signals (prospect_id, type, description, detected_date)
-           VALUES ($1, $2, $3, NOW())`,
-          [prospectId, type, `Mock ${type} signal ${i + 1}`]
-        )
-      }
-    }
-
-    // Store health score
-    await database.query(
-      `INSERT INTO health_scores (prospect_id, score, grade, trend, violations_count, sentiment_score, recorded_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-      [
-        prospectId,
-        enrichment.health_score.score,
-        enrichment.health_score.grade,
-        enrichment.health_score.trend,
-        enrichment.health_score.violations,
-        0.5 + Math.random() * 0.5 // Mock sentiment 0.5-1.0
-      ]
-    )
-
-    return enrichment
+    this.assertLiveEnrichmentAvailable(dataTier)
   }
 
   /**
@@ -260,31 +195,27 @@ export class EnrichmentService {
    *
    * Note: In Phase 3, this will integrate with BullMQ for real queue status.
    *
-   * @returns Queue statistics (currently mocked)
+   * @returns Queue telemetry status
    */
   async getQueueStatus() {
-    // In Phase 3, this will integrate with BullMQ
-    // For now, return mock queue status
     return {
-      waiting: 0,
-      active: 0,
-      completed: 0,
-      failed: 0,
-      delayed: 0
+      supported: false,
+      reason: 'Enrichment queue telemetry is not wired yet.',
+      waiting: null,
+      active: null,
+      completed: null,
+      failed: null,
+      delayed: null
     }
   }
 
-  /**
-   * Calculate letter grade from numeric score.
-   *
-   * @param score - Numeric score (0-100)
-   * @returns Letter grade (A, B, C, D, or F)
-   */
-  private calculateGrade(score: number): string {
-    if (score >= 90) return 'A'
-    if (score >= 80) return 'B'
-    if (score >= 70) return 'C'
-    if (score >= 60) return 'D'
-    return 'F'
+  private assertLiveEnrichmentAvailable(dataTier: ResolvedDataTier): never {
+    const enabledIntegrations = listEnabledIntegrations(dataTier)
+    const configuredProviders =
+      enabledIntegrations.length > 0 ? enabledIntegrations.join(', ') : 'none'
+
+    throw new Error(
+      `EnrichmentService is not wired to live providers yet for ${dataTier}. Configured integrations: ${configuredProviders}.`
+    )
   }
 }

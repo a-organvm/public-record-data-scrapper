@@ -360,20 +360,8 @@ describe('DataPipelineStatus', () => {
   })
 })
 
-describe('DataPipelineStatus with mock data mode', () => {
-  beforeEach(() => {
-    vi.resetModules()
-  })
-
-  it('shows mock data badge when useMockData is true', async () => {
-    vi.doMock('@/lib/config/dataPipeline', () => ({
-      featureFlags: {
-        useMockData: true
-      }
-    }))
-
-    const { DataPipelineStatus: MockDataPipelineStatus } = await import('../DataPipelineStatus')
-
+describe('DataPipelineStatus without demo data mode', () => {
+  it('does not show mock data badge (demo data is opt-in only)', () => {
     const props: DataPipelineStatusProps = {
       loading: false,
       error: null,
@@ -382,10 +370,10 @@ describe('DataPipelineStatus with mock data mode', () => {
       onRefresh: vi.fn()
     }
 
-    render(<MockDataPipelineStatus {...props} />)
+    render(<DataPipelineStatus {...props} />)
 
-    const badges = screen.getAllByTestId('badge')
+    const badges = screen.queryAllByTestId('badge')
     const mockBadge = badges.find((b) => b.textContent?.includes('Mock Data'))
-    expect(mockBadge).toBeInTheDocument()
+    expect(mockBadge).toBeUndefined()
   })
 })

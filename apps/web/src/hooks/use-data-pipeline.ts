@@ -8,7 +8,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Prospect } from '@public-records/core'
 import { DataRefreshScheduler, SchedulerStatus } from '@/lib/services'
 import { featureFlags } from '@/lib/config/dataPipeline'
-import { generateProspects } from '@/lib/mockData'
+import { generateProspects } from '@/lib/demoData'
 import { useDataTier } from '@/hooks/useDataTier'
 import {
   initDatabaseService,
@@ -41,6 +41,7 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
   const { dataTier } = useDataTier()
 
   const schedulerRef = useRef<DataRefreshScheduler | null>(null)
+  const demoDataEnabled = featureFlags.useDemoData
 
   /**
    * Initialize data pipeline
@@ -51,11 +52,10 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
         setLoading(true)
         setError(null)
 
-        if (featureFlags.useMockData) {
-          // Use mock data
-          console.log('Using mock data (VITE_USE_MOCK_DATA=true)')
-          const mockProspects = generateProspects(100, { dataTier })
-          setProspects(mockProspects)
+        if (demoDataEnabled) {
+          console.log('Using demo data (preview mode enabled)')
+          const previewProspects = generateProspects(100, { dataTier })
+          setProspects(previewProspects)
           setLastUpdate(new Date().toISOString())
         } else {
           // Use database
@@ -75,7 +75,7 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
             console.log(`Loaded ${dbProspects.length} prospects from database`)
           } else {
             console.warn('No data in database. Run `npm run db:seed` to seed sample data.')
-            setError('No data in database. Please seed data or switch to mock mode.')
+            setError('No data in database. Please seed data or switch to preview mode.')
           }
         }
 
@@ -84,11 +84,6 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
         console.error('Failed to initialize data pipeline:', err)
         setError(err instanceof Error ? err.message : 'Failed to initialize data pipeline')
         setLoading(false)
-
-        // Fallback to mock data on error
-        console.log('Falling back to mock data due to error')
-        const mockProspects = generateProspects(100, { dataTier })
-        setProspects(mockProspects)
       }
     }
 
@@ -99,7 +94,7 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
     return () => {
       scheduler?.stop()
     }
-  }, [dataTier])
+  }, [dataTier, demoDataEnabled])
 
   /**
    * Manually refresh all data
@@ -109,10 +104,9 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
       setLoading(true)
       setError(null)
 
-      if (featureFlags.useMockData) {
-        // Regenerate mock data
-        const mockProspects = generateProspects(100, { dataTier })
-        setProspects(mockProspects)
+      if (demoDataEnabled) {
+        const previewProspects = generateProspects(100, { dataTier })
+        setProspects(previewProspects)
         setLastUpdate(new Date().toISOString())
       } else {
         // Refresh from database
@@ -128,17 +122,17 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
       setError(err instanceof Error ? err.message : 'Failed to refresh data')
       setLoading(false)
     }
-  }, [dataTier])
+  }, [dataTier, demoDataEnabled])
 
   /**
    * Start the scheduler
    */
   const startScheduler = useCallback(() => {
-    if (schedulerRef.current && !featureFlags.useMockData) {
+    if (schedulerRef.current && !demoDataEnabled) {
       schedulerRef.current.start()
       setSchedulerStatus(schedulerRef.current.getStatus())
     }
-  }, [])
+  }, [demoDataEnabled])
 
   /**
    * Stop the scheduler
@@ -153,20 +147,23 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
   /**
    * Refresh a specific prospect
    */
-  const refreshProspect = useCallback(async (prospectId: string) => {
-    try {
-      if (!featureFlags.useMockData && schedulerRef.current) {
-        const refreshed = await schedulerRef.current.refreshProspect(prospectId)
-        if (refreshed) {
-          setProspects((prev) => prev.map((p) => (p.id === prospectId ? refreshed : p)))
-          setLastUpdate(new Date().toISOString())
+  const refreshProspect = useCallback(
+    async (prospectId: string) => {
+      try {
+        if (!demoDataEnabled && schedulerRef.current) {
+          const refreshed = await schedulerRef.current.refreshProspect(prospectId)
+          if (refreshed) {
+            setProspects((prev) => prev.map((p) => (p.id === prospectId ? refreshed : p)))
+            setLastUpdate(new Date().toISOString())
+          }
         }
+      } catch (err) {
+        console.error('Failed to refresh prospect:', err)
+        setError(err instanceof Error ? err.message : 'Failed to refresh prospect')
       }
-    } catch (err) {
-      console.error('Failed to refresh prospect:', err)
-      setError(err instanceof Error ? err.message : 'Failed to refresh prospect')
-    }
-  }, [])
+    },
+    [demoDataEnabled]
+  )
 
   /**
    * Manually trigger ingestion
@@ -176,7 +173,7 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
       setLoading(true)
       setError(null)
 
-      if (!featureFlags.useMockData && schedulerRef.current) {
+      if (!demoDataEnabled && schedulerRef.current) {
         await schedulerRef.current.triggerIngestion()
         setProspects(schedulerRef.current.getProspects())
         setSchedulerStatus(schedulerRef.current.getStatus())
@@ -189,7 +186,7 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
       setError(err instanceof Error ? err.message : 'Failed to trigger ingestion')
       setLoading(false)
     }
-  }, [])
+  }, [demoDataEnabled])
 
   return {
     prospects,

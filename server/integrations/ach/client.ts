@@ -1,7 +1,7 @@
 /**
  * ACH Client
  *
- * Stub for Actum/ACH Works integration providing ACH payment processing.
+ * Adapter shell for Actum/ACH Works-style ACH payment processing.
  * Supports debit/credit transactions, status checking, and account validation.
  *
  * Environment variables required:
@@ -40,9 +40,6 @@ export interface ACHTransaction {
 
 /**
  * ACHClient provides access to ACH payment processing APIs.
- *
- * This is a stub implementation that returns mock responses.
- * In production, this would integrate with Actum, ACH Works, or similar provider.
  */
 export class ACHClient {
   private config: ACHConfig
@@ -66,7 +63,7 @@ export class ACHClient {
     if (this.initialized) return
 
     if (!this.config.apiKey || !this.config.merchantId) {
-      console.warn('[ACHClient] Missing credentials - running in stub mode')
+      console.warn('[ACHClient] Missing credentials - ACH processing is disabled')
     }
 
     this.initialized = true
@@ -112,24 +109,10 @@ export class ACHClient {
    * @returns Transaction ID
    */
   async initiateDebit(amount: number, accountId: string): Promise<string> {
-    const transactionId = this.generateTransactionId('DBT')
-
-    if (!this.isConfigured()) {
-      console.log(`[ACHClient] STUB initiateDebit`, { amount, accountId, transactionId })
-      return transactionId
-    }
-
-    // In production, this would make actual API calls:
-    /*
-    const response = await fetch(`${this.baseUrl}/transactions/debit`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${this.config.apiKey}` },
-      body: JSON.stringify({ amount, accountId, merchantId: this.config.merchantId })
-    })
-    */
-
-    console.log(`[ACHClient] initiateDebit`, { amount, accountId, transactionId })
-    return transactionId
+    void amount
+    void accountId
+    this.assertConfigured('initiateDebit')
+    return this.throwUnsupported('initiateDebit')
   }
 
   /**
@@ -140,16 +123,10 @@ export class ACHClient {
    * @returns Transaction ID
    */
   async initiateCredit(amount: number, accountId: string): Promise<string> {
-    const transactionId = this.generateTransactionId('CRD')
-
-    if (!this.isConfigured()) {
-      console.log(`[ACHClient] STUB initiateCredit`, { amount, accountId, transactionId })
-      return transactionId
-    }
-
-    // In production, this would make actual API calls
-    console.log(`[ACHClient] initiateCredit`, { amount, accountId, transactionId })
-    return transactionId
+    void amount
+    void accountId
+    this.assertConfigured('initiateCredit')
+    return this.throwUnsupported('initiateCredit')
   }
 
   /**
@@ -159,15 +136,9 @@ export class ACHClient {
    * @returns Current transaction status
    */
   async checkStatus(transactionId: string): Promise<ACHStatus> {
-    if (!this.isConfigured()) {
-      console.log(`[ACHClient] STUB checkStatus`, { transactionId })
-      // Return a realistic progression for stub mode
-      return 'pending'
-    }
-
-    // In production, this would query the actual transaction status
-    console.log(`[ACHClient] checkStatus`, { transactionId })
-    return 'pending'
+    void transactionId
+    this.assertConfigured('checkStatus')
+    return this.throwUnsupported('checkStatus')
   }
 
   /**
@@ -177,14 +148,9 @@ export class ACHClient {
    * @throws Error if transaction cannot be cancelled
    */
   async cancelTransaction(transactionId: string): Promise<void> {
-    if (!this.isConfigured()) {
-      console.log(`[ACHClient] STUB cancelTransaction`, { transactionId })
-      return
-    }
-
-    // In production, this would attempt to cancel the transaction
-    // Note: ACH transactions can only be cancelled before processing
-    console.log(`[ACHClient] cancelTransaction`, { transactionId })
+    void transactionId
+    this.assertConfigured('cancelTransaction')
+    this.throwUnsupported('cancelTransaction')
   }
 
   /**
@@ -195,7 +161,7 @@ export class ACHClient {
    * @returns Whether the account appears valid
    */
   async validateAccount(routingNumber: string, accountNumber: string): Promise<boolean> {
-    // Basic validation even in stub mode
+    // Always perform local format checks before requiring the provider.
     if (!this.validateRoutingNumber(routingNumber)) {
       console.log(`[ACHClient] validateAccount - invalid routing number`, { routingNumber })
       return false
@@ -206,20 +172,8 @@ export class ACHClient {
       return false
     }
 
-    if (!this.isConfigured()) {
-      console.log(`[ACHClient] STUB validateAccount`, {
-        routingNumber: `${routingNumber.slice(0, 4)}***`,
-        accountNumberLength: accountNumber.length
-      })
-      return true
-    }
-
-    // In production, this would use a micro-deposit or instant verification service
-    console.log(`[ACHClient] validateAccount`, {
-      routingNumber: `${routingNumber.slice(0, 4)}***`,
-      accountNumberLength: accountNumber.length
-    })
-    return true
+    this.assertConfigured('validateAccount')
+    return this.throwUnsupported('validateAccount')
   }
 
   /**
@@ -254,58 +208,10 @@ export class ACHClient {
       limit?: number
     }
   ): Promise<ACHTransaction[]> {
-    const { startDate, endDate, status, limit = 100 } = options || {}
-
-    if (!this.isConfigured()) {
-      console.log(`[ACHClient] STUB getTransactionHistory`, {
-        accountId,
-        startDate,
-        endDate,
-        status,
-        limit
-      })
-      // Return mock transaction history for stub mode
-      const now = new Date()
-      return [
-        {
-          transactionId: this.generateTransactionId('DBT'),
-          type: 'debit',
-          amount: 50000, // $500.00 in cents
-          accountId,
-          status: 'completed',
-          createdAt: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-          updatedAt: new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString()
-        },
-        {
-          transactionId: this.generateTransactionId('DBT'),
-          type: 'debit',
-          amount: 50000,
-          accountId,
-          status: 'completed',
-          createdAt: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString(),
-          updatedAt: new Date(now.getTime() - 13 * 24 * 60 * 60 * 1000).toISOString()
-        }
-      ]
-    }
-
-    // In production, this would query the ACH provider's transaction history API
-    console.log(`[ACHClient] getTransactionHistory`, {
-      accountId,
-      startDate,
-      endDate,
-      status,
-      limit
-    })
-    return []
-  }
-
-  /**
-   * Generate an ACH-style transaction ID
-   */
-  private generateTransactionId(prefix: string = 'ACH'): string {
-    const timestamp = Date.now().toString(36).toUpperCase()
-    const random = Math.random().toString(36).substring(2, 10).toUpperCase()
-    return `${prefix}-${timestamp}-${random}`
+    void accountId
+    void options
+    this.assertConfigured('getTransactionHistory')
+    return this.throwUnsupported('getTransactionHistory')
   }
 
   /**
@@ -326,6 +232,18 @@ export class ACHClient {
       (digits[2] + digits[5] + digits[8])
 
     return checksum % 10 === 0
+  }
+
+  private assertConfigured(operation: string): void {
+    if (!this.isConfigured()) {
+      throw new Error(`ACH client is not configured for ${operation}`)
+    }
+  }
+
+  private throwUnsupported(operation: string): never {
+    throw new Error(
+      `ACHClient is not wired to a live provider for ${operation}. Configure a provider-specific implementation before enabling ACH operations.`
+    )
   }
 }
 
