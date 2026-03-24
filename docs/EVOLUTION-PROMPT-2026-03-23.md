@@ -1,25 +1,3 @@
-# Tony Carbone — Text + Scrapper Evolution Prompt
-
-## Text Message (send to 305-546-5774)
-
----
-
-Hey Tony — been thinking about our conversation. Went back into the UCC platform with fresh eyes after hearing about your underwriting flow. Two things jumped out:
-
-1. The 50-state agents are solid but I mapped out a reliability layer on top — health monitoring per state, auto-failover, and a simple dashboard you could check anytime to see coverage status (green/yellow/red per state with last-pull timestamps).
-
-2. The bigger thing — UCC filings are table stakes. What nobody else is doing is combining UCC data with bank statement patterns, filing termination alerts (merchant just paid off an advance = fresh capacity), and funder identification (who else is already chasing the same merchant). That's the next-level stuff we talked about.
-
-I put together a roadmap. Want to hop on a quick call this week so I can walk you through it?
-
----
-
-## Scrapper Evolution Prompt (standalone — bring into the repo)
-
-_NOTE: This is a copy of the evolution prompt, relocated from the scrapper repo's docs/ directory to this standalone location for portability._
-
----
-
 # Evolution Prompt: Beyond UCC Scraping — Next-Generation MCA Intelligence
 
 **Date:** 2026-03-23
