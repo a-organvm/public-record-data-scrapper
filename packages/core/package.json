@@ -1,0 +1,17 @@
+{
+  "name": "@public-records/core",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./database": "./src/database.ts",
+    "./identity": "./src/identity.ts",
+    "./types": "./src/types.ts"
+  },
+  "peerDependencies": {
+    "pg": "^8.16.3"
+  }
+}
