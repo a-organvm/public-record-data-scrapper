@@ -25,8 +25,8 @@ COPY . .
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Build the application
-RUN npm run build
+# Build frontend + server bundle
+RUN npm run build:render
 
 # Stage 3: Production runner
 FROM node:20-alpine AS runner
@@ -43,9 +43,8 @@ ENV PORT=3000
 # Copy only production dependencies
 COPY --from=deps /app/node_modules ./node_modules
 
-# Copy built application
+# Copy built application (frontend dist + server bundle)
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/server ./server
 COPY --from=builder /app/package.json ./
 
 # Copy database migrations and scripts
@@ -65,5 +64,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
-# Start the server
-CMD ["node", "dist/server/index.js"]
+# Start the server (esbuild bundle)
+CMD ["node", "dist/server.cjs"]

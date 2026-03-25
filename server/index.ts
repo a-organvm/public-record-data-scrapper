@@ -4,6 +4,7 @@ import helmet from 'helmet'
 import compression from 'compression'
 import path from 'path'
 import fs from 'fs'
+import { fileURLToPath } from 'url'
 import swaggerUi from 'swagger-ui-express'
 import YAML from 'yamljs'
 import { config, validateConfig } from './config'
@@ -150,8 +151,9 @@ export class Server {
 
   private setupSwaggerDocs(): void {
     try {
-      // Load OpenAPI spec from YAML file
-      const openApiPath = path.join(__dirname, 'openapi.yaml')
+      // Load OpenAPI spec from YAML file — use import.meta.url for ESM compat
+      const __server_dir = path.dirname(fileURLToPath(import.meta.url))
+      const openApiPath = path.join(__server_dir, 'openapi.yaml')
 
       if (fs.existsSync(openApiPath)) {
         const openApiSpec = YAML.load(openApiPath)
