@@ -127,6 +127,10 @@ export interface IngestionRecoveryAction {
   reason: string
 }
 
+export interface TelemetryHydrationOptions {
+  historyLimitPerState?: number
+}
+
 export interface TerminationDetectionJobData {
   triggeredBy: 'scheduler' | 'manual'
 }
@@ -156,10 +160,12 @@ export function initTelemetryPersistence(db: {
   persistenceService = new TelemetryPersistenceService(db)
 }
 
-export async function hydrateTelemetryFromDatabase(): Promise<number> {
+export async function hydrateTelemetryFromDatabase(
+  options: TelemetryHydrationOptions = {}
+): Promise<number> {
   if (!persistenceService) return 0
   try {
-    const persisted = await persistenceService.hydrateAll()
+    const persisted = await persistenceService.hydrateAll(options)
     let hydrated = 0
     for (const [state, telemetry] of persisted) {
       if (!ingestionCoverageTelemetry.has(state)) {

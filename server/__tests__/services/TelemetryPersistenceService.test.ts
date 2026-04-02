@@ -287,6 +287,46 @@ describe('TelemetryPersistenceService', () => {
       expect(allSqls.some((s) => s.includes('ingestion_failures'))).toBe(true)
       expect(allSqls.some((s) => s.includes('ingestion_fallbacks'))).toBe(true)
     })
+
+    it('passes the configured history limit into batched history queries', async () => {
+      const telemetryRow = {
+        state_code: 'CA',
+        current_status: 'idle',
+        last_job_id: null,
+        last_queued_at: null,
+        last_started_at: null,
+        last_successful_pull: null,
+        last_failed_at: null,
+        last_error: null,
+        last_records_processed: null,
+        data_tier: null,
+        ucc_provider: null,
+        queued_by: null,
+        current_strategy: null,
+        available_strategies: null,
+        circuit_state: 'closed',
+        circuit_opened_at: null,
+        circuit_backoff_until: null,
+        circuit_trip_count: 0,
+        escalation_count: 0,
+        last_escalated_at: null,
+        last_escalation_reason: null,
+        success_count: 0,
+        failure_count: 0,
+        consecutive_failures: 0
+      }
+
+      mockQuery.mockResolvedValueOnce([telemetryRow])
+      mockQuery.mockResolvedValueOnce([])
+      mockQuery.mockResolvedValueOnce([])
+      mockQuery.mockResolvedValueOnce([])
+
+      await service.hydrateAll({ historyLimitPerState: 7 })
+
+      const historyParams = mockQuery.mock.calls.slice(1).map(([, params]) => params as unknown[])
+      expect(historyParams).toHaveLength(3)
+      expect(historyParams.every((params) => params[1] === 7)).toBe(true)
+    })
   })
 
   // ─── recordSuccess ────────────────────────────────────────────────────────

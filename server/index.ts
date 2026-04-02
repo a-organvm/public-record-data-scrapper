@@ -239,8 +239,14 @@ export class Server {
 
     // Initialize telemetry persistence and hydrate from database
     initTelemetryPersistence(database)
-    const hydratedCount = await hydrateTelemetryFromDatabase()
-    console.log(`[telemetry] Hydrated ${hydratedCount} states from database`)
+    if (config.telemetry.skipHydration) {
+      console.warn('[telemetry] Startup hydration skipped by config')
+    } else {
+      const hydratedCount = await hydrateTelemetryFromDatabase({
+        historyLimitPerState: config.telemetry.hydrateHistoryLimit
+      })
+      console.log(`[telemetry] Hydrated ${hydratedCount} states from database`)
+    }
 
     // Initialize job queues
     try {

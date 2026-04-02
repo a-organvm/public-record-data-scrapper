@@ -28,7 +28,7 @@ This repository is a managed component of the ORGANVM meta-workspace.
 
 - Strictly unidirectional flow: I→II→III. No dependencies on Theory (I).
 
-_Last synced: 2026-03-25T22:27:10Z_
+_Last synced: 2026-03-26T19:39:27Z_
 
 ## Session Review Protocol
 
@@ -118,40 +118,11 @@ Run: `organvm ecosystem show public-record-data-scrapper` | `organvm ecosystem v
 
 Convergences: 20 | Run: `organvm network map --repo public-record-data-scrapper` | `organvm network suggest`
 
-## Entity Identity (Ontologia)
-
-**UID:** `ent_repo_01KKKX3RVM84W1V9XGANHNW54G` | **Matched by:** primary_name
-
-Resolve: `organvm ontologia resolve public-record-data-scrapper` | History: `organvm ontologia history ent_repo_01KKKX3RVM84W1V9XGANHNW54G`
-
-## Live System Variables (Ontologia)
-
-| Variable                | Value | Scope  | Updated    |
-| ----------------------- | ----- | ------ | ---------- |
-| `active_repos`          | 64    | global | 2026-03-25 |
-| `archived_repos`        | 54    | global | 2026-03-25 |
-| `ci_workflows`          | 106   | global | 2026-03-25 |
-| `code_files`            | 0     | global | 2026-03-25 |
-| `dependency_edges`      | 60    | global | 2026-03-25 |
-| `operational_organs`    | 8     | global | 2026-03-25 |
-| `published_essays`      | 29    | global | 2026-03-25 |
-| `repos_with_tests`      | 0     | global | 2026-03-25 |
-| `sprints_completed`     | 33    | global | 2026-03-25 |
-| `test_files`            | 0     | global | 2026-03-25 |
-| `total_organs`          | 8     | global | 2026-03-25 |
-| `total_repos`           | 127   | global | 2026-03-25 |
-| `total_words_formatted` | 0     | global | 2026-03-25 |
-| `total_words_numeric`   | 0     | global | 2026-03-25 |
-| `total_words_short`     | 0K+   | global | 2026-03-25 |
-
-Metrics: 9 registered | Observations: 15536 recorded
-Resolve: `organvm ontologia status` | Refresh: `organvm refresh`
-
 ## System Density (auto-generated)
 
-AMMOI: 56% | Edges: 41 | Tensions: 33 | Clusters: 5 | Adv: 7 | Events(24h): 23754
-Structure: 8 organs / 127 repos / 1654 components (depth 17) | Inference: 98% | Organs: META-ORGANVM:64%, ORGAN-I:55%, ORGAN-II:47%, ORGAN-III:55% +4 more
-Last pulse: 2026-03-25T22:27:04 | Δ24h: +3.5% | Δ7d: n/a
+AMMOI: 56% | Edges: 41 | Tensions: 0 | Clusters: 0 | Adv: 8 | Events(24h): 24029
+Structure: 8 organs / 127 repos / 1654 components (depth 17) | Inference: 0% | Organs: META-ORGANVM:64%, ORGAN-I:55%, ORGAN-II:47%, ORGAN-III:55% +4 more
+Last pulse: 2026-03-26T19:39:26 | Δ24h: +3.6% | Δ7d: n/a
 
 ## Dialect Identity (Trivium)
 

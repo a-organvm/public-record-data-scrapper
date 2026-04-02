@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS ingestion_telemetry (
   ucc_provider VARCHAR(50),
   queued_by VARCHAR(20),
   current_strategy VARCHAR(20),
+  available_strategies TEXT NOT NULL DEFAULT '[]',
   circuit_state VARCHAR(20) NOT NULL DEFAULT 'closed',
   circuit_opened_at TIMESTAMPTZ,
   circuit_backoff_until TIMESTAMPTZ,

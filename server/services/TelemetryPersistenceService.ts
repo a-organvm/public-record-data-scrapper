@@ -50,16 +50,19 @@ interface TelemetryRow extends DbRow {
 }
 
 interface SuccessRow extends DbRow {
+  state_code?: string
   completed_at: string
   records_processed: number
 }
 
 interface FailureRow extends DbRow {
+  state_code?: string
   failed_at: string
   error: string
 }
 
 interface FallbackRow extends DbRow {
+  state_code?: string
   escalated_at: string
   from_strategy: string | null
   to_strategy: string
@@ -75,6 +78,10 @@ type DbClient = {
   query: <T>(sql: string, params?: unknown[]) => Promise<T[]>
 }
 
+interface HydrateTelemetryOptions {
+  historyLimitPerState?: number
+}
+
 function parseAvailableStrategies(raw: string[] | string | null | undefined): IngestionStrategy[] {
   if (!raw) return []
   if (Array.isArray(raw)) return raw as IngestionStrategy[]
@@ -84,6 +91,29 @@ function parseAvailableStrategies(raw: string[] | string | null | undefined): In
   } catch {
     return []
   }
+}
+
+function groupRowsByState<T extends { state_code?: string }>(
+  rows: T[],
+  stateCodes: string[]
+): Map<string, T[]> {
+  const grouped = new Map<string, T[]>(stateCodes.map((stateCode) => [stateCode, []]))
+  const defaultStateCode = stateCodes.length === 1 ? stateCodes[0] : null
+
+  for (const row of rows) {
+    const stateCode = row.state_code ?? defaultStateCode
+    if (!stateCode) continue
+
+    const bucket = grouped.get(stateCode)
+    if (bucket) {
+      bucket.push(row)
+      continue
+    }
+
+    grouped.set(stateCode, [row])
+  }
+
+  return grouped
 }
 
 function rowToTelemetry(
@@ -223,7 +253,9 @@ export class TelemetryPersistenceService {
    * Load all states from DB, joined with recent history (30 days).
    * Returns a Map keyed by state_code.
    */
-  async hydrateAll(): Promise<Map<string, IngestionCoverageTelemetry>> {
+  async hydrateAll(
+    options: HydrateTelemetryOptions = {}
+  ): Promise<Map<string, IngestionCoverageTelemetry>> {
     const rows = await this.db.query<TelemetryRow>(
       'SELECT * FROM ingestion_telemetry ORDER BY state_code'
     )
@@ -234,35 +266,72 @@ export class TelemetryPersistenceService {
       return result
     }
 
+    const stateCodes = rows.map((row) => row.state_code)
     const horizon = "NOW() - INTERVAL '30 days'"
+    const historyLimitPerState = Number.isFinite(options.historyLimitPerState)
+      ? Math.max(1, Math.trunc(options.historyLimitPerState ?? 0))
+      : 50
+
+    const [successRows, failureRows, fallbackRows] = await Promise.all([
+      this.db.query<SuccessRow>(
+        `SELECT state_code, completed_at, records_processed
+         FROM (
+           SELECT
+             state_code,
+             completed_at,
+             records_processed,
+             ROW_NUMBER() OVER (PARTITION BY state_code ORDER BY completed_at DESC) AS row_num
+           FROM ingestion_successes
+           WHERE state_code = ANY($1) AND completed_at >= ${horizon}
+         ) ranked
+         WHERE row_num <= $2
+         ORDER BY state_code, completed_at DESC`,
+        [stateCodes, historyLimitPerState]
+      ),
+      this.db.query<FailureRow>(
+        `SELECT state_code, failed_at, error
+         FROM (
+           SELECT
+             state_code,
+             failed_at,
+             error,
+             ROW_NUMBER() OVER (PARTITION BY state_code ORDER BY failed_at DESC) AS row_num
+           FROM ingestion_failures
+           WHERE state_code = ANY($1) AND failed_at >= ${horizon}
+         ) ranked
+         WHERE row_num <= $2
+         ORDER BY state_code, failed_at DESC`,
+        [stateCodes, historyLimitPerState]
+      ),
+      this.db.query<FallbackRow>(
+        `SELECT state_code, escalated_at, from_strategy, to_strategy, reason, delay_ms
+         FROM (
+           SELECT
+             state_code,
+             escalated_at,
+             from_strategy,
+             to_strategy,
+             reason,
+             delay_ms,
+             ROW_NUMBER() OVER (PARTITION BY state_code ORDER BY escalated_at DESC) AS row_num
+           FROM ingestion_fallbacks
+           WHERE state_code = ANY($1) AND escalated_at >= ${horizon}
+         ) ranked
+         WHERE row_num <= $2
+         ORDER BY state_code, escalated_at DESC`,
+        [stateCodes, historyLimitPerState]
+      )
+    ])
+
+    const successesByState = groupRowsByState(successRows, stateCodes)
+    const failuresByState = groupRowsByState(failureRows, stateCodes)
+    const fallbacksByState = groupRowsByState(fallbackRows, stateCodes)
 
     for (const row of rows) {
       const stateCode = row.state_code
-
-      const [successes, failures, fallbacks] = await Promise.all([
-        this.db.query<SuccessRow>(
-          `SELECT completed_at, records_processed
-           FROM ingestion_successes
-           WHERE state_code = $1 AND completed_at >= ${horizon}
-           ORDER BY completed_at DESC`,
-          [stateCode]
-        ),
-        this.db.query<FailureRow>(
-          `SELECT failed_at, error
-           FROM ingestion_failures
-           WHERE state_code = $1 AND failed_at >= ${horizon}
-           ORDER BY failed_at DESC`,
-          [stateCode]
-        ),
-        this.db.query<FallbackRow>(
-          `SELECT escalated_at, from_strategy, to_strategy, reason, delay_ms
-           FROM ingestion_fallbacks
-           WHERE state_code = $1 AND escalated_at >= ${horizon}
-           ORDER BY escalated_at DESC`,
-          [stateCode]
-        )
-      ])
-
+      const successes = successesByState.get(stateCode) ?? []
+      const failures = failuresByState.get(stateCode) ?? []
+      const fallbacks = fallbacksByState.get(stateCode) ?? []
       const successRecords: IngestionSuccessRecord[] = successes.map((s) => ({
         completedAt: s.completed_at,
         recordsProcessed: s.records_processed

@@ -17,7 +17,7 @@
     "build:render": "npm run build && npm run build:server",
     "build:all": "npm run build && npm run build:server",
     "build:desktop": "npm --workspace apps/desktop run build",
-    "start": "node --import tsx server/index.ts",
+    "start": "node dist/server.cjs",
     "start:worker": "node --import tsx server/worker.ts",
     "lint": "eslint .",
     "optimize": "vite optimize --config apps/web/vite.config.ts",

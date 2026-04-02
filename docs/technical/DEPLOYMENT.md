@@ -38,6 +38,7 @@
 ### Cloud Provider Options
 
 #### AWS
+
 ```
 - EC2: t3.xlarge or m5.xlarge
 - RDS: db.t3.large PostgreSQL 14
@@ -47,6 +48,7 @@
 ```
 
 #### Google Cloud
+
 ```
 - Compute Engine: n2-standard-4
 - Cloud SQL: PostgreSQL 14, db-n1-standard-2
@@ -56,6 +58,7 @@
 ```
 
 #### Azure
+
 ```
 - Virtual Machines: Standard_D4s_v3
 - Azure Database for PostgreSQL: General Purpose, 4 vCores
@@ -197,13 +200,13 @@ npm run dev
 ### Production Build
 
 ```bash
-# Build
-npm run build
+# Build frontend + bundled API server
+npm run build:render
 
 # Preview
 npm run preview
 
-# Start production server
+# Start bundled production server
 npm start
 ```
 
@@ -274,7 +277,7 @@ services:
   app:
     build: .
     ports:
-      - "3000:3000"
+      - '3000:3000'
     env_file:
       - .env
     depends_on:
@@ -292,13 +295,13 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./database:/docker-entrypoint-initdb.d
     ports:
-      - "5432:5432"
+      - '5432:5432'
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - '6379:6379'
     volumes:
       - redis_data:/data
     restart: unless-stopped
@@ -306,7 +309,7 @@ services:
   prometheus:
     image: prom/prometheus
     ports:
-      - "9090:9090"
+      - '9090:9090'
     volumes:
       - ./monitoring/prometheus-config.yml:/etc/prometheus/prometheus.yml
       - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml
@@ -337,7 +340,7 @@ export const dataSources = {
       endpoint: process.env.VITE_UCC_API_ENDPOINT,
       apiKey: process.env.VITE_UCC_API_KEY,
       rateLimit: 100
-    },
+    }
     // Add more sources as needed
   ]
 }
@@ -350,8 +353,8 @@ export const scheduleConfig = {
   production: {
     enabled: true,
     ingestionInterval: 24 * 60 * 60 * 1000, // 24 hours
-    enrichmentInterval: 6 * 60 * 60 * 1000,  // 6 hours
-    refreshInterval: 12 * 60 * 60 * 1000,    // 12 hours
+    enrichmentInterval: 6 * 60 * 60 * 1000, // 6 hours
+    refreshInterval: 12 * 60 * 60 * 1000, // 12 hours
     staleDataThreshold: 7, // days
     autoStart: true
   }
@@ -411,6 +414,7 @@ docker run -d \
 ```
 
 Access Grafana: http://localhost:3001
+
 - Username: admin
 - Password: admin (change on first login)
 
@@ -710,6 +714,7 @@ curl http://localhost:3000/health
 ## Support
 
 For deployment issues:
+
 - Check logs: `pm2 logs ucc-app`
 - Review documentation: [README.md](./README.md)
 - Contact: support@yourdomain.com

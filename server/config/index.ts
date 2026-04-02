@@ -1,3 +1,12 @@
+function parseBooleanFlag(value: string | undefined): boolean {
+  return value === '1' || value?.toLowerCase() === 'true'
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? '', 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
 // Parse Redis URL into components
 function parseRedisUrl(url: string): { host: string; port: number; password?: string } {
   try {
@@ -63,6 +72,10 @@ export const config = {
     port: parsedRedis.port,
     password: parsedRedis.password,
     maxRetriesPerRequest: 3
+  },
+  telemetry: {
+    skipHydration: parseBooleanFlag(process.env.INGESTION_TELEMETRY_SKIP_HYDRATION),
+    hydrateHistoryLimit: parsePositiveInt(process.env.INGESTION_TELEMETRY_HISTORY_LIMIT, 50)
   }
 }
 
