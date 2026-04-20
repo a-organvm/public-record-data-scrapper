@@ -1,13 +1,16 @@
 import { Button } from '@public-records/ui/button'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { SettingsMenu } from '@/components/SettingsMenu'
-import { ArrowClockwise, Info } from '@phosphor-icons/react'
+import { ArrowClockwise, CurrencyDollar, Info } from '@phosphor-icons/react'
+
+type HashRoute = 'dashboard' | 'pricing' | 'billing/success' | 'billing/cancel'
 
 interface HeaderProps {
   onRefresh: () => void
+  onNavigate?: (route: HashRoute) => void
 }
 
-export function Header({ onRefresh }: HeaderProps) {
+export function Header({ onRefresh, onNavigate }: HeaderProps) {
   const isDemoMode =
     import.meta.env.DEV ||
     ['1', 'true', 'yes'].includes(String(import.meta.env.VITE_USE_MOCK_DATA ?? '').toLowerCase())
@@ -18,9 +21,14 @@ export function Header({ onRefresh }: HeaderProps) {
         <div className="flex items-center justify-between gap-2 sm:gap-4">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 sm:gap-3">
-              <h1 className="text-lg sm:text-xl md:text-2xl font-bold tracking-tight text-white truncate bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">
-                UCC-MCA Intelligence Platform
-              </h1>
+              <button
+                onClick={() => onNavigate?.('dashboard')}
+                className="text-left focus:outline-none"
+              >
+                <h1 className="text-lg sm:text-xl md:text-2xl font-bold tracking-tight text-white truncate bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">
+                  UCC-MCA Intelligence Platform
+                </h1>
+              </button>
               {isDemoMode && (
                 <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
                   <Info size={10} weight="fill" />
@@ -36,6 +44,15 @@ export function Header({ onRefresh }: HeaderProps) {
           </div>
           {/* Header Actions */}
           <div className="flex gap-2 flex-shrink-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onNavigate?.('pricing')}
+              className="text-white/70 hover:text-white hover:bg-white/10"
+            >
+              <CurrencyDollar size={16} weight="bold" className="sm:mr-1" />
+              <span className="sr-only sm:not-sr-only">Pricing</span>
+            </Button>
             <ThemeToggle />
             <SettingsMenu />
             <Button

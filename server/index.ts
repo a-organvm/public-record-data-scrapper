@@ -28,6 +28,7 @@ import contactsRouter from './routes/contacts'
 import dealsRouter from './routes/deals'
 import webhooksRouter from './routes/webhooks'
 import statusRouter from './routes/status'
+import billingRouter from './routes/billing'
 import competitiveRouter from './routes/competitive'
 import outreachRouter from './routes/outreach'
 
@@ -78,6 +79,18 @@ export class Server {
       })
     )
 
+    // Raw body for Stripe billing webhook (signature verification)
+    this.app.use(
+      '/api/billing/webhook',
+      express.raw({
+        type: 'application/json',
+        limit: '1mb',
+        verify: (req: Request, res: Response, buf: Buffer) => {
+          ;(req as Request & { rawBody?: Buffer }).rawBody = buf
+        }
+      })
+    )
+
     // Parsing for webhook form data (Twilio sends as x-www-form-urlencoded)
     this.app.use('/api/webhooks', express.urlencoded({ extended: true, limit: '1mb' }))
 
@@ -111,6 +124,9 @@ export class Server {
     // Public routes (no authentication required)
     this.app.use('/api/health', healthRouter)
 
+    // Billing routes (Stripe checkout + webhooks, no JWT auth)
+    this.app.use('/api/billing', billingRouter)
+
     // Webhook routes (signature verification, no JWT auth)
     this.app.use('/api/webhooks', webhooksRouter)
 
@@ -143,6 +159,7 @@ export class Server {
           deals: '/api/deals',
           competitive: '/api/competitive',
           outreach: '/api/outreach',
+          billing: '/api/billing',
           webhooks: '/api/webhooks'
         }
       })

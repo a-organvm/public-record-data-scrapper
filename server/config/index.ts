@@ -73,6 +73,14 @@ export const config = {
     password: parsedRedis.password,
     maxRetriesPerRequest: 3
   },
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY || '',
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+    priceIds: {
+      starter: process.env.STRIPE_PRICE_ID_STARTER || '',
+      professional: process.env.STRIPE_PRICE_ID_PROFESSIONAL || ''
+    }
+  },
   telemetry: {
     skipHydration: parseBooleanFlag(process.env.INGESTION_TELEMETRY_SKIP_HYDRATION),
     hydrateHistoryLimit: parsePositiveInt(process.env.INGESTION_TELEMETRY_HISTORY_LIMIT, 50)

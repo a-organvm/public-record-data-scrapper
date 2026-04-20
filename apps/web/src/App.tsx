@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useSafeKV as useKV } from '@/hooks/useSparkKV'
 import { Tabs, TabsContent } from '@public-records/ui/tabs'
 import { StatsOverview } from '@/components/StatsOverview'
@@ -18,6 +18,9 @@ import { AnalyticsTab } from '@/features/analytics'
 import { RequalificationTab } from '@/features/requalification'
 import { AgenticTab } from '@/features/agentic'
 import { CoverageTab } from '@/features/coverage/CoverageTab'
+import { PricingPage } from '@/features/pricing'
+import { CheckoutSuccess } from '@/features/pricing/CheckoutSuccess'
+import { CheckoutCancel } from '@/features/pricing/CheckoutCancel'
 
 // Hooks
 import { useProspectFilters } from '@/hooks/useProspectFilters'
@@ -38,7 +41,39 @@ import { UserAction } from '@/lib/agentic/types'
 import { logUserAction } from '@/lib/api/userActions'
 import { toast } from 'sonner'
 
+type HashRoute = 'dashboard' | 'pricing' | 'billing/success' | 'billing/cancel'
+
+function useHashRoute(): [HashRoute, (route: HashRoute) => void] {
+  const [route, setRoute] = useState<HashRoute>(() => {
+    const hash = window.location.hash.replace('#/', '').replace('#', '')
+    if (hash === 'pricing') return 'pricing'
+    if (hash.startsWith('billing/success')) return 'billing/success'
+    if (hash === 'billing/cancel') return 'billing/cancel'
+    return 'dashboard'
+  })
+
+  useEffect(() => {
+    function onHashChange() {
+      const hash = window.location.hash.replace('#/', '').replace('#', '')
+      if (hash === 'pricing') setRoute('pricing')
+      else if (hash.startsWith('billing/success')) setRoute('billing/success')
+      else if (hash === 'billing/cancel') setRoute('billing/cancel')
+      else setRoute('dashboard')
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+
+  const navigate = useCallback((target: HashRoute) => {
+    window.location.hash = target === 'dashboard' ? '' : `#/${target}`
+    setRoute(target)
+  }, [])
+
+  return [route, navigate]
+}
+
 function App() {
+  const [hashRoute, navigateTo] = useHashRoute()
   const [selectedProspect, setSelectedProspect] = useState<Prospect | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [exportFormat, setExportFormat] = useKV<ExportFormat>('export-format', 'json')
@@ -158,9 +193,39 @@ function App() {
     [prospectActions]
   )
 
+  if (hashRoute === 'pricing') {
+    return (
+      <div className="min-h-screen">
+        <Header onRefresh={handleRefreshData} onNavigate={navigateTo} />
+        <PricingPage onNavigateBack={() => navigateTo('dashboard')} />
+      </div>
+    )
+  }
+
+  if (hashRoute === 'billing/success') {
+    return (
+      <div className="min-h-screen">
+        <Header onRefresh={handleRefreshData} onNavigate={navigateTo} />
+        <CheckoutSuccess onNavigateHome={() => navigateTo('dashboard')} />
+      </div>
+    )
+  }
+
+  if (hashRoute === 'billing/cancel') {
+    return (
+      <div className="min-h-screen">
+        <Header onRefresh={handleRefreshData} onNavigate={navigateTo} />
+        <CheckoutCancel
+          onNavigateBack={() => navigateTo('pricing')}
+          onNavigateHome={() => navigateTo('dashboard')}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen">
-      <Header onRefresh={handleRefreshData} />
+      <Header onRefresh={handleRefreshData} onNavigate={navigateTo} />
       <QuickAccessBanner />
       <DemoTour isOpen={tourOpen} onClose={() => setTourOpen(false)} />
 
