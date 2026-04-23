@@ -36,6 +36,8 @@ tags:
     description: Contact relationship management
   - name: Deals
     description: Deal pipeline management
+  - name: Billing
+    description: Public pricing signup, checkout, and billing session retrieval
   - name: Webhooks
     description: External service webhooks
 
@@ -111,6 +113,121 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LiveResponse'
+
+  # ===========================================
+  # Billing Endpoints
+  # ===========================================
+  /api/billing/status:
+    get:
+      tags:
+        - Billing
+      summary: Billing configuration status
+      description: Returns whether Stripe billing is configured and which paid plans are live.
+      security: []
+      responses:
+        '200':
+          description: Billing status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured:
+                    type: boolean
+                  provider:
+                    type: string
+                    example: stripe
+                  tiers:
+                    type: object
+                    properties:
+                      starter:
+                        type: boolean
+                      pro:
+                        type: boolean
+
+  /api/billing/signup:
+    post:
+      tags:
+        - Billing
+      summary: Capture pricing signup intent
+      description: Captures a pricing signup. Free plan requests are recorded immediately; paid plans continue into Stripe when configured or fall back to waitlist capture.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan, email]
+              properties:
+                plan:
+                  type: string
+                  enum: [free, starter, pro]
+                email:
+                  type: string
+                  format: email
+                companyName:
+                  type: string
+      responses:
+        '200':
+          description: Paid signup captured and forwarded to checkout
+        '201':
+          description: Free signup captured
+        '202':
+          description: Paid signup captured in waitlist mode because billing is not live
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/billing/checkout:
+    post:
+      tags:
+        - Billing
+      summary: Create a Stripe checkout session
+      description: Creates a checkout session for the starter or pro paid tiers.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tier]
+              properties:
+                tier:
+                  type: string
+                  enum: [starter, pro, professional]
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Checkout session created
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          description: Billing is not configured for the requested tier
+
+  /api/billing/session/{sessionId}:
+    get:
+      tags:
+        - Billing
+      summary: Retrieve checkout session details
+      description: Returns a completed Stripe checkout session with customer email, selected plan, and subscription status.
+      security: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Stripe checkout session ID
+      responses:
+        '200':
+          description: Checkout session details
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          description: Billing is not configured
 
   # ===========================================
   # Prospects Endpoints

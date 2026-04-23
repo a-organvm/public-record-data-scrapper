@@ -120,7 +120,7 @@ export async function retrieveCheckoutSession(sessionId: string): Promise<Sessio
     status: session.status,
     paymentStatus: session.payment_status,
     customerEmail: session.customer_details?.email ?? null,
-    tier: session.metadata?.tier ?? null,
+    tier: session.metadata?.plan ?? session.metadata?.tier ?? null,
     subscription: subInfo
   }
 }

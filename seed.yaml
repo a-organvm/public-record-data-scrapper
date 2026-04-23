@@ -12,6 +12,7 @@ org: organvm-iii-ergon
 metadata:
   implementation_status: PRODUCTION
   tier: flagship
+  revenue: true
   promotion_status: PUBLIC_PROCESS
   last_validated: "2026-02-11"
   generated: "2026-02-12"

@@ -78,7 +78,8 @@ export const config = {
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
     priceIds: {
       starter: process.env.STRIPE_PRICE_ID_STARTER || '',
-      professional: process.env.STRIPE_PRICE_ID_PROFESSIONAL || ''
+      professional:
+        process.env.STRIPE_PRICE_ID_PRO || process.env.STRIPE_PRICE_ID_PROFESSIONAL || ''
     }
   },
   telemetry: {

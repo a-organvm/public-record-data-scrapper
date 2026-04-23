@@ -157,6 +157,14 @@ Full endpoint list: [server/openapi.yaml](server/openapi.yaml)
 | **Free / OSS** | SEC EDGAR, OSHA, USPTO, Census, SAM.gov                     | $0           |
 | **Paid**       | + D&B, Clearbit, Experian, ZoomInfo, Google Places, NewsAPI | Subscription |
 
+### Pricing & Billing
+
+- `Free` — $0/month, light-volume preview access and exported results delivered by email
+- `Starter` — $49/month, 1,000 monthly lookups across 5 states
+- `Pro` — $149/month, 15,000 monthly lookups across all 50 states plus API/batch access
+- Public signup flow: `POST /api/billing/signup`
+- Stripe checkout is activated by setting `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_STARTER`, and `STRIPE_PRICE_ID_PRO`
+
 ---
 
 ## Key Features

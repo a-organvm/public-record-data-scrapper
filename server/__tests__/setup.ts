@@ -35,6 +35,7 @@ afterEach(async () => {
   // Clean up test data after each test
   // This ensures tests don't interfere with each other
   const tables = [
+    'billing_signups',
     'coverage_alerts',
     'data_quality_reports',
     'portal_probe_results',

@@ -87,6 +87,22 @@ CORS_ORIGIN=https://app.example.com,https://admin.example.com
 
 ## External Services
 
+### Stripe Billing
+
+| Variable                       | Description                                          | Default | Required |
+| ------------------------------ | ---------------------------------------------------- | ------- | -------- |
+| `STRIPE_SECRET_KEY`            | Stripe secret key used for checkout session creation | -       | No       |
+| `STRIPE_WEBHOOK_SECRET`        | Stripe webhook signing secret                        | -       | No       |
+| `STRIPE_PRICE_ID_STARTER`      | Stripe price ID for the Starter plan                 | -       | No       |
+| `STRIPE_PRICE_ID_PRO`          | Stripe price ID for the Pro plan                     | -       | No       |
+| `STRIPE_PRICE_ID_PROFESSIONAL` | Legacy alias for the Pro plan price ID               | -       | No       |
+
+Notes:
+
+- `STRIPE_PRICE_ID_PRO` is preferred for new environments.
+- `STRIPE_PRICE_ID_PROFESSIONAL` is still accepted as a backward-compatible alias.
+- If Stripe env vars are missing, `/api/billing/signup` still records paid-plan interest in waitlist mode.
+
 ### Enrichment APIs
 
 | Variable              | Description                             | Default | Required |
@@ -138,6 +154,10 @@ DATABASE_URL=postgresql://user:password@db.example.com:5432/ucc_prod?sslmode=req
 REDIS_URL=rediss://:password@redis.example.com:6379
 JWT_SECRET=<generated-secure-random-string>
 CORS_ORIGIN=https://app.example.com
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_PRICE_ID_STARTER=price_...
+STRIPE_PRICE_ID_PRO=price_...
 ```
 
 ### Test (.env.test)

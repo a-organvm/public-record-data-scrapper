@@ -1,28 +1,30 @@
 /**
- * Pricing page — displays MCA/UCC public record intelligence subscription tiers.
+ * Pricing page — captures work-email intent and routes users into the correct plan path.
  *
- * Three tiers targeted at the MCA industry:
- *   - Starter ($49/mo): Individual loan officers and brokers
- *   - Professional ($149/mo): Agencies and ISO teams
- *   - Enterprise (custom): Large operations, ISOs, and institutional buyers
+ * Public plan model:
+ *   - Free ($0): preview / light usage
+ *   - Starter ($49): individual operators
+ *   - Pro ($149): agencies and ISO teams
  *
- * Checks /api/billing/status to determine which tiers have active Stripe price IDs.
- * If Stripe is not configured, shows a "coming soon" state on checkout buttons.
+ * Paid plans continue into Stripe when configured; otherwise the backend records
+ * the request as a waitlist lead so pricing intent is still captured.
  */
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@public-records/ui/button'
 import {
   Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
   CardContent,
-  CardFooter
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle
 } from '@public-records/ui/card'
 import { Badge } from '@public-records/ui/badge'
 import { Separator } from '@public-records/ui/separator'
-import { Check, ArrowLeft, Lightning, Buildings, Crown } from '@phosphor-icons/react'
+import { Input } from '@public-records/ui/input'
+import { navigateToExternal } from './navigation'
+import { ArrowLeft, Buildings, Check, EnvelopeSimple, Lightning } from '@phosphor-icons/react'
 
 interface BillingStatus {
   configured: boolean
@@ -30,122 +32,191 @@ interface BillingStatus {
   tiers: Record<string, boolean>
 }
 
+interface SignupFeedback {
+  tone: 'success' | 'warning' | 'error'
+  title: string
+  message: string
+}
+
 interface PricingPageProps {
   onNavigateBack: () => void
 }
 
+type PricingPlanId = 'free' | 'starter' | 'pro'
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 const TIERS = [
   {
-    id: 'starter' as const,
+    id: 'free' as PricingPlanId,
+    name: 'Free',
+    price: '$0',
+    period: '/mo',
+    icon: EnvelopeSimple,
+    badge: 'Fastest Start',
+    description: 'For solo operators validating fit before they spend money or team time.',
+    features: [
+      '100 UCC filing lookups per month',
+      '1 state jurisdiction',
+      'Basic debtor and secured party visibility',
+      'Email delivery of exported results',
+      'Priority upgrade path into paid plans'
+    ],
+    cta: 'Start Free',
+    highlighted: false
+  },
+  {
+    id: 'starter' as PricingPlanId,
     name: 'Starter',
     price: '$49',
     period: '/mo',
     icon: Lightning,
     badge: null,
     description:
-      'For individual loan officers and brokers tracking UCC filings in their territory.',
+      'For individual loan officers and brokers who need consistent deal flow in-market.',
     features: [
       '1,000 UCC filing lookups per month',
       '5 state jurisdictions',
-      'Basic debtor & secured party data',
+      'Basic debtor and secured party data',
       'MCA likelihood scoring',
-      'CSV & JSON export',
+      'CSV and JSON export',
       'Email support'
     ],
-    cta: 'Start with Starter',
+    cta: 'Start Starter',
     highlighted: false
   },
   {
-    id: 'professional' as const,
-    name: 'Professional',
+    id: 'pro' as PricingPlanId,
+    name: 'Pro',
     price: '$149',
     period: '/mo',
     icon: Buildings,
     badge: 'Most Popular',
-    description: 'For agencies and ISO teams running multi-state lead generation campaigns.',
+    description: 'For agencies and ISO teams running repeatable multi-state lead generation.',
     features: [
       '15,000 UCC filing lookups per month',
       'All 50 state jurisdictions',
-      'Full debtor, secured party & amendment history',
+      'Full debtor, secured party, and amendment history',
       'Advanced MCA scoring with confidence bands',
-      'Batch processing & API access',
-      'Growth signal detection (hiring, contracts, revenue)',
-      'Competitive intelligence dashboard',
+      'Batch processing and API access',
+      'Growth signal detection and competitive dashboards',
       'Priority support with 4-hour SLA'
     ],
-    cta: 'Go Professional',
+    cta: 'Go Pro',
     highlighted: true
-  },
-  {
-    id: 'enterprise' as const,
-    name: 'Enterprise',
-    price: 'Custom',
-    period: '',
-    icon: Crown,
-    badge: null,
-    description:
-      'For ISOs, large operations, and institutional buyers who need dedicated infrastructure.',
-    features: [
-      'Unlimited UCC filing lookups',
-      'Dedicated scraping infrastructure',
-      'Custom data enrichment pipelines',
-      'White-label API with your branding',
-      'Agentic AI system with autonomous workflows',
-      'SSO & team management',
-      'Custom integrations (CRM, dialer, LOS)',
-      'SLA guarantee with 99.9% uptime',
-      'Dedicated account manager'
-    ],
-    cta: 'Contact Sales',
-    highlighted: false
   }
 ] as const
 
 export function PricingPage({ onNavigateBack }: PricingPageProps) {
   const [billingStatus, setBillingStatus] = useState<BillingStatus | null>(null)
-  const [loadingTier, setLoadingTier] = useState<string | null>(null)
+  const [email, setEmail] = useState('')
+  const [companyName, setCompanyName] = useState('')
+  const [loadingPlan, setLoadingPlan] = useState<PricingPlanId | null>(null)
+  const [feedback, setFeedback] = useState<SignupFeedback | null>(null)
 
   useEffect(() => {
     fetch('/api/billing/status')
-      .then((r) => r.json())
+      .then((response) => response.json())
       .then(setBillingStatus)
       .catch(() => setBillingStatus({ configured: false, provider: 'none', tiers: {} }))
   }, [])
 
-  async function handleCheckout(tier: string) {
-    if (tier === 'enterprise') {
-      window.location.href =
-        'mailto:sales@ucc-intelligence.com?subject=Enterprise%20Inquiry&body=I%27m%20interested%20in%20the%20Enterprise%20plan%20for%20UCC-MCA%20Intelligence.'
+  const normalizedEmail = email.trim().toLowerCase()
+  const isEmailValid = EMAIL_PATTERN.test(normalizedEmail)
+
+  async function handleSignup(plan: PricingPlanId) {
+    if (!isEmailValid) {
+      setFeedback({
+        tone: 'error',
+        title: 'Work Email Required',
+        message: 'Enter a valid work email to start free access or continue into checkout.'
+      })
       return
     }
 
-    setLoadingTier(tier)
+    setLoadingPlan(plan)
+    setFeedback(null)
+
     try {
-      const res = await fetch('/api/billing/checkout', {
+      const response = await fetch('/api/billing/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier })
+        body: JSON.stringify({
+          plan,
+          email: normalizedEmail,
+          companyName: companyName.trim() || undefined
+        })
       })
-      const data = await res.json()
-      if (data.url) {
-        window.location.href = data.url
-      } else {
-        console.error('[pricing] No checkout URL returned:', data)
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Signup failed')
       }
+
+      if (data.mode === 'checkout' && data.url) {
+        navigateToExternal(data.url)
+        return
+      }
+
+      if (data.mode === 'free') {
+        setFeedback({
+          tone: 'success',
+          title: 'Free Access Captured',
+          message:
+            'Your free plan request is in. We will use this email to deliver onboarding and your first dataset.'
+        })
+        return
+      }
+
+      if (data.mode === 'waitlist') {
+        setFeedback({
+          tone: 'warning',
+          title: 'Waitlist Confirmed',
+          message:
+            'We captured your interest. Stripe is not fully configured for this paid tier yet, so we will follow up directly.'
+        })
+        return
+      }
+
+      setFeedback({
+        tone: 'success',
+        title: 'Signup Captured',
+        message: 'Your request has been recorded and the team will follow up from this email.'
+      })
     } catch (error) {
-      console.error('[pricing] Checkout failed:', error)
+      console.error('[pricing] Signup failed:', error)
+      setFeedback({
+        tone: 'error',
+        title: 'Signup Failed',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'We could not process your signup right now. Try again in a moment.'
+      })
     } finally {
-      setLoadingTier(null)
+      setLoadingPlan(null)
     }
   }
 
-  function isTierAvailable(tierId: string): boolean {
-    if (tierId === 'enterprise') return true
-    return !!billingStatus?.configured && !!billingStatus.tiers[tierId]
+  function getPlanAvailability(plan: PricingPlanId) {
+    if (plan === 'free') {
+      return {
+        available: true,
+        buttonLabel: 'Start Free'
+      }
+    }
+
+    const available = !!billingStatus?.configured && !!billingStatus.tiers[plan]
+    const defaultCta = TIERS.find((tier) => tier.id === plan)?.cta || 'Continue'
+
+    return {
+      available,
+      buttonLabel: available ? defaultCta : 'Join Waitlist'
+    }
   }
 
   return (
-    <main className="container mx-auto px-3 sm:px-4 md:px-6 py-8 sm:py-12 md:py-16 max-w-6xl">
+    <main className="container mx-auto max-w-6xl px-3 py-8 sm:px-4 sm:py-12 md:px-6 md:py-16">
       <div className="mb-6">
         <Button
           variant="ghost"
@@ -158,58 +229,124 @@ export function PricingPage({ onNavigateBack }: PricingPageProps) {
         </Button>
       </div>
 
-      <div className="text-center mb-10 sm:mb-14">
-        <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-white mb-3">
+      <div className="mb-10 text-center sm:mb-14">
+        <h1 className="mb-3 text-3xl font-bold tracking-tight text-white sm:text-4xl md:text-5xl">
           Public Record Intelligence Pricing
         </h1>
-        <p className="text-base sm:text-lg text-white/70 max-w-2xl mx-auto">
-          Turn UCC filings and MCA data into qualified leads. Real-time scraping, scoring, and
-          enrichment across all 50 states.
+        <p className="mx-auto max-w-2xl text-base text-white/70 sm:text-lg">
+          Turn UCC filings into qualified MCA leads. Start with one work email, then move into the
+          plan that matches your deal volume.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8 mb-12">
-        {TIERS.map((tier) => {
-          const Icon = tier.icon
-          const available = isTierAvailable(tier.id)
-          const isLoading = loadingTier === tier.id
+      <Card className="mb-8 border-white/10 bg-card/60 shadow-2xl shadow-primary/10">
+        <CardHeader className="pb-4">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <CardTitle className="text-xl text-white">Start With One Work Email</CardTitle>
+              <CardDescription className="mt-2 max-w-2xl text-white/60">
+                Free signups are captured immediately. Paid plans use the same email to prefill
+                Stripe checkout or, if billing is not live yet, to place you on the waitlist.
+              </CardDescription>
+            </div>
+            <Badge variant="outline" className="border-white/20 text-white/70">
+              {billingStatus?.configured ? 'Stripe Live' : 'Waitlist Mode'}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-[1.4fr_1fr]">
+          <div className="space-y-3">
+            <label htmlFor="pricing-email" className="text-sm font-medium text-white">
+              Work Email
+            </label>
+            <Input
+              id="pricing-email"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@fundingteam.com"
+              className="border-white/15 bg-white/5 text-white placeholder:text-white/35"
+            />
+            {!isEmailValid && email.length > 0 && (
+              <p className="text-sm text-amber-300">
+                Enter a valid email so we can attach onboarding or checkout to a real inbox.
+              </p>
+            )}
+          </div>
+          <div className="space-y-3">
+            <label htmlFor="pricing-company" className="text-sm font-medium text-white">
+              Company Name
+              <span className="ml-2 text-white/40">(Optional)</span>
+            </label>
+            <Input
+              id="pricing-company"
+              type="text"
+              value={companyName}
+              onChange={(event) => setCompanyName(event.target.value)}
+              placeholder="Acme Capital"
+              className="border-white/15 bg-white/5 text-white placeholder:text-white/35"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {feedback && (
+        <div
+          className={`mb-8 rounded-2xl border px-4 py-4 sm:px-5 ${
+            feedback.tone === 'success'
+              ? 'border-emerald-400/30 bg-emerald-500/10'
+              : feedback.tone === 'warning'
+                ? 'border-amber-400/30 bg-amber-500/10'
+                : 'border-rose-400/30 bg-rose-500/10'
+          }`}
+        >
+          <p className="text-sm font-semibold text-white">{feedback.title}</p>
+          <p className="mt-1 text-sm text-white/75">{feedback.message}</p>
+        </div>
+      )}
+
+      <div className="mb-12 grid grid-cols-1 gap-6 md:grid-cols-3 lg:gap-8">
+        {TIERS.map((plan) => {
+          const Icon = plan.icon
+          const { available, buttonLabel } = getPlanAvailability(plan.id)
+          const isLoading = loadingPlan === plan.id
 
           return (
             <Card
-              key={tier.id}
+              key={plan.id}
               className={`relative flex flex-col ${
-                tier.highlighted
-                  ? 'border-primary/60 bg-primary/5 shadow-2xl shadow-primary/20 scale-[1.02]'
+                plan.highlighted
+                  ? 'scale-[1.02] border-primary/60 bg-primary/5 shadow-2xl shadow-primary/20'
                   : 'border-white/10 bg-card/50'
               }`}
             >
-              {tier.badge && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <Badge variant="default" className="text-xs px-3 py-1">
-                    {tier.badge}
+              {plan.badge && (
+                <div className="absolute left-1/2 top-[-0.75rem] -translate-x-1/2">
+                  <Badge variant="default" className="px-3 py-1 text-xs">
+                    {plan.badge}
                   </Badge>
                 </div>
               )}
 
               <CardHeader className="pb-2">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="mb-2 flex items-center gap-2">
                   <div
-                    className={`p-2 rounded-lg ${tier.highlighted ? 'bg-primary/20' : 'bg-white/10'}`}
+                    className={`rounded-lg p-2 ${plan.highlighted ? 'bg-primary/20' : 'bg-white/10'}`}
                   >
                     <Icon
                       size={20}
                       weight="fill"
-                      className={tier.highlighted ? 'text-primary' : 'text-white/80'}
+                      className={plan.highlighted ? 'text-primary' : 'text-white/80'}
                     />
                   </div>
-                  <CardTitle className="text-xl text-white">{tier.name}</CardTitle>
+                  <CardTitle className="text-xl text-white">{plan.name}</CardTitle>
                 </div>
-                <div className="flex items-baseline gap-1 mb-2">
-                  <span className="text-4xl font-bold text-white">{tier.price}</span>
-                  {tier.period && <span className="text-base text-white/50">{tier.period}</span>}
+                <div className="mb-2 flex items-baseline gap-1">
+                  <span className="text-4xl font-bold text-white">{plan.price}</span>
+                  {plan.period && <span className="text-base text-white/50">{plan.period}</span>}
                 </div>
-                <CardDescription className="text-white/60 text-sm leading-relaxed">
-                  {tier.description}
+                <CardDescription className="text-sm leading-relaxed text-white/60">
+                  {plan.description}
                 </CardDescription>
               </CardHeader>
 
@@ -217,12 +354,12 @@ export function PricingPage({ onNavigateBack }: PricingPageProps) {
 
               <CardContent className="flex-1 pt-4">
                 <ul className="space-y-2.5">
-                  {tier.features.map((feature) => (
+                  {plan.features.map((feature) => (
                     <li key={feature} className="flex items-start gap-2.5 text-sm text-white/80">
                       <Check
                         size={16}
                         weight="bold"
-                        className={`mt-0.5 shrink-0 ${tier.highlighted ? 'text-primary' : 'text-green-400'}`}
+                        className={`mt-0.5 shrink-0 ${plan.highlighted ? 'text-primary' : 'text-green-400'}`}
                       />
                       <span>{feature}</span>
                     </li>
@@ -232,13 +369,19 @@ export function PricingPage({ onNavigateBack }: PricingPageProps) {
 
               <CardFooter className="pt-4">
                 <Button
-                  variant={tier.highlighted ? 'default' : 'outline'}
+                  variant={plan.highlighted ? 'default' : 'outline'}
                   size="lg"
                   className="w-full"
-                  onClick={() => handleCheckout(tier.id)}
-                  disabled={(!available && tier.id !== 'enterprise') || isLoading}
+                  onClick={() => void handleSignup(plan.id)}
+                  disabled={isLoading}
                 >
-                  {isLoading ? 'Redirecting to Stripe...' : available ? tier.cta : 'Coming Soon'}
+                  {isLoading
+                    ? plan.id === 'free'
+                      ? 'Capturing Signup...'
+                      : available
+                        ? 'Redirecting to Stripe...'
+                        : 'Joining Waitlist...'
+                    : buttonLabel}
                 </Button>
               </CardFooter>
             </Card>
@@ -246,9 +389,22 @@ export function PricingPage({ onNavigateBack }: PricingPageProps) {
         })}
       </div>
 
-      <div className="text-center space-y-4">
-        <p className="text-white/50 text-sm">
-          All plans include a 14-day free trial. No credit card required to start. Cancel anytime.
+      <Card className="mb-10 border-white/10 bg-card/50">
+        <CardContent className="py-6 text-center">
+          <p className="text-base font-medium text-white">
+            Need higher-volume, white-label, or dedicated infrastructure?
+          </p>
+          <p className="mt-2 text-sm text-white/65">
+            Reply from the signup email and ask for enterprise infrastructure, custom data
+            enrichment, or dedicated scraping capacity.
+          </p>
+        </CardContent>
+      </Card>
+
+      <div className="space-y-4 text-center">
+        <p className="text-sm text-white/50">
+          Free starts with email only. Paid plans continue into Stripe when configured. You can
+          still express intent even if a tier is waitlisted.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-white/40">
           <span>SOC 2 Compliant</span>
@@ -257,7 +413,7 @@ export function PricingPage({ onNavigateBack }: PricingPageProps) {
           <span className="hidden sm:inline">|</span>
           <span>TCPA & FCRA Aware</span>
           <span className="hidden sm:inline">|</span>
-          <span>99.9% Uptime SLA (Enterprise)</span>
+          <span>50-State Coverage</span>
         </div>
       </div>
     </main>

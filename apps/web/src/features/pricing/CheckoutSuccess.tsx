@@ -35,8 +35,10 @@ interface CheckoutSuccessProps {
 }
 
 const TIER_LABELS: Record<string, string> = {
+  free: 'Free',
   starter: 'Starter',
-  professional: 'Professional'
+  pro: 'Pro',
+  professional: 'Pro'
 }
 
 export function CheckoutSuccess({ onNavigateHome }: CheckoutSuccessProps) {
