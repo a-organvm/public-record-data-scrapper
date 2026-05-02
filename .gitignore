@@ -63,3 +63,4 @@ src-tauri/bindings/
 
 # Editor local history (VS Code "Local History" extension)
 .lh/
+2026-*.txt
