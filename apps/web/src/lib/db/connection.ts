@@ -19,10 +19,14 @@ export const getPool = (): Pool => {
   if (!pool) {
     pool = new Pool(poolConfig)
 
-    // Handle pool errors
+    // Handle pool errors.
+    // Do NOT call process.exit() here: an error on an idle client should not
+    // tear down the whole process (this module is also bundled into the
+    // frontend, where exiting is never appropriate). `pg` removes the broken
+    // client from the pool automatically, so we just log and let the pool
+    // recover by creating fresh connections on demand.
     pool.on('error', (err) => {
       console.error('Unexpected error on idle database client', err)
-      process.exit(-1)
     })
 
     // Log pool creation

@@ -31,8 +31,13 @@ export function BatchOperations({
 }: BatchOperationsProps) {
   const isMobile = useIsMobile()
   const allIds = prospects.map((p) => p.id)
+  const visibleIdSet = new Set(allIds)
+  // Only consider selections that map to a currently-visible prospect. The
+  // selection store can outlive the list it was built against (filters/refresh),
+  // so we intersect at the component boundary to avoid acting on stale ids.
+  const selectedCount = allIds.filter((id) => selectedIds.has(id)).length
   const isAllSelected = allIds.length > 0 && allIds.every((id) => selectedIds.has(id))
-  const isSomeSelected = selectedIds.size > 0 && !isAllSelected
+  const isSomeSelected = selectedCount > 0 && !isAllSelected
 
   const handleToggleAll = () => {
     if (isAllSelected) {
@@ -43,7 +48,8 @@ export function BatchOperations({
   }
 
   const handleBatchAction = (action: 'claim' | 'export' | 'delete') => {
-    const ids = Array.from(selectedIds)
+    // Never let a destructive/batch action touch ids that aren't visible.
+    const ids = Array.from(selectedIds).filter((id) => visibleIdSet.has(id))
     switch (action) {
       case 'claim':
         onBatchClaim(ids)
@@ -71,14 +77,14 @@ export function BatchOperations({
             className="glass-effect border-white/30 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
           />
           <span className="text-sm text-white/70">
-            {selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select all'}
+            {selectedCount > 0 ? `${selectedCount} selected` : 'Select all'}
           </span>
         </div>
 
-        {selectedIds.size > 0 && (
+        {selectedCount > 0 && (
           <>
             <Badge variant="secondary" className="glass-effect border-white/30">
-              {selectedIds.size} prospects
+              {selectedCount} prospects
             </Badge>
 
             <DropdownMenu>
@@ -95,11 +101,11 @@ export function BatchOperations({
               <DropdownMenuContent align="start" className="glass-effect border-white/30">
                 <DropdownMenuItem onClick={() => handleBatchAction('claim')}>
                   <UserPlus size={16} className="mr-2" />
-                  Claim Selected ({selectedIds.size})
+                  Claim Selected ({selectedCount})
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleBatchAction('export')}>
                   <Export size={16} className="mr-2" />
-                  Export Selected ({selectedIds.size})
+                  Export Selected ({selectedCount})
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -107,7 +113,7 @@ export function BatchOperations({
                   className="text-destructive"
                 >
                   <Trash size={16} className="mr-2" />
-                  Remove Selected ({selectedIds.size})
+                  Remove Selected ({selectedCount})
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -123,15 +129,15 @@ export function BatchOperations({
           className="glass-effect border-white/30 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
         />
         <span className="text-xs text-white/70">
-          {selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select all'}
+          {selectedCount > 0 ? `${selectedCount} selected` : 'Select all'}
         </span>
       </div>
 
       {/* Mobile: Sticky selection bar (above bottom nav) */}
-      {isMobile && selectedIds.size > 0 && (
+      {isMobile && selectedCount > 0 && (
         <div className="fixed bottom-16 left-0 right-0 z-40 p-3 glass-effect border-t border-white/20 safe-area-pb">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-sm font-medium">{selectedIds.size} selected</span>
+            <span className="text-sm font-medium">{selectedCount} selected</span>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"

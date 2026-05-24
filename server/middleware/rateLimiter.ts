@@ -28,25 +28,16 @@ function getRedisClient(): Redis {
 }
 
 /**
- * Extract client IP address, accounting for proxies
+ * Extract client IP address.
+ *
+ * Relies on Express `req.ip`, which is derived from the socket address and,
+ * when `app.set('trust proxy', ...)` is configured, the left-most untrusted
+ * address in X-Forwarded-For. We do NOT parse X-Forwarded-For / X-Real-IP
+ * ourselves: blindly trusting those attacker-controlled headers lets a client
+ * spoof its identity and evade (or poison) rate limiting. Trust-proxy is
+ * configured centrally in server/index.ts.
  */
 function getClientIp(req: Request): string {
-  // Check X-Forwarded-For header (set by proxies/load balancers)
-  const forwarded = req.headers['x-forwarded-for']
-  if (forwarded) {
-    // Take the first IP in the chain (original client)
-    const forwardedStr = Array.isArray(forwarded) ? forwarded[0] : forwarded
-    const firstIp = forwardedStr.split(',')[0].trim()
-    if (firstIp) return firstIp
-  }
-
-  // Check X-Real-IP header (Nginx)
-  const realIp = req.headers['x-real-ip']
-  if (realIp) {
-    return Array.isArray(realIp) ? realIp[0] : realIp
-  }
-
-  // Fallback to req.ip (may be proxy IP if not configured)
   return req.ip || 'unknown'
 }
 
@@ -87,9 +78,13 @@ export const rateLimiter = async (
     const results = await pipeline.exec()
 
     if (!results) {
-      // Redis transaction failed, allow request through (fail open)
-      console.warn('[RateLimiter] Redis transaction failed, allowing request')
-      return next()
+      // Redis transaction failed. Behavior is governed by config.rateLimit.failOpen
+      // which defaults to FAIL CLOSED for safety.
+      return handleLimiterBackendError(
+        res,
+        next,
+        new Error('Redis transaction returned no results')
+      )
     }
 
     // zcard result is at index 1 (after zremrangebyscore)
@@ -128,11 +123,44 @@ export const rateLimiter = async (
 
     next()
   } catch (error) {
-    // If Redis fails, fall back to allowing the request (fail open)
-    // This prevents Redis outages from blocking all traffic
-    console.error('[RateLimiter] Redis error, allowing request:', error)
-    next()
+    // Redis backend error. Default behavior is FAIL CLOSED (deny with 503).
+    // Operators may opt into fail-open via RATE_LIMIT_FAIL_OPEN=true.
+    return handleLimiterBackendError(res, next, error)
   }
+}
+
+/**
+ * Handle a rate-limiter backend (Redis) error.
+ *
+ * Default: FAIL CLOSED — respond 503 so a Redis outage cannot be exploited to
+ * bypass rate limits (e.g. credential stuffing / scraping floods). Operators
+ * who prefer availability over this protection can set RATE_LIMIT_FAIL_OPEN=true
+ * (config.rateLimit.failOpen), in which case we allow the request through.
+ * Either way we log loudly.
+ */
+function handleLimiterBackendError(
+  res: Response,
+  next: NextFunction,
+  error: unknown
+): void {
+  if (config.rateLimit.failOpen) {
+    console.error(
+      '[RateLimiter] Backend error — failing OPEN (RATE_LIMIT_FAIL_OPEN=true), allowing request:',
+      error
+    )
+    return next()
+  }
+
+  console.error('[RateLimiter] Backend error — failing CLOSED, denying request:', error)
+  res.set('Retry-After', '5')
+  res.status(503).json({
+    error: {
+      message: 'Rate limiting temporarily unavailable. Please retry shortly.',
+      code: 'RATE_LIMIT_BACKEND_UNAVAILABLE',
+      statusCode: 503,
+      retryAfter: 5
+    }
+  })
 }
 
 /**
@@ -148,7 +176,30 @@ interface InMemoryStore {
 
 const inMemoryStore: InMemoryStore = {}
 
+// Cleanup timer for the in-memory store. Lazily started only when the in-memory
+// limiter is actually used so we don't leave a dangling interval (and keep the
+// event loop alive) in deployments that use the Redis limiter exclusively.
+let inMemoryCleanupTimer: ReturnType<typeof setInterval> | null = null
+
+function ensureInMemoryCleanupTimer(): void {
+  if (inMemoryCleanupTimer) return
+  inMemoryCleanupTimer = setInterval(
+    () => {
+      const now = Date.now()
+      Object.keys(inMemoryStore).forEach((key) => {
+        if (now > inMemoryStore[key].resetTime) {
+          delete inMemoryStore[key]
+        }
+      })
+    },
+    60 * 60 * 1000
+  )
+  // Do not keep the process alive solely for this cleanup timer.
+  inMemoryCleanupTimer.unref?.()
+}
+
 export const inMemoryRateLimiter = (req: Request, res: Response, next: NextFunction): void => {
+  ensureInMemoryCleanupTimer()
   const identifier = getClientIp(req)
   const now = Date.now()
 
@@ -200,18 +251,15 @@ export const inMemoryRateLimiter = (req: Request, res: Response, next: NextFunct
   next()
 }
 
-// Cleanup old entries every hour (in-memory fallback only)
-setInterval(
-  () => {
-    const now = Date.now()
-    Object.keys(inMemoryStore).forEach((key) => {
-      if (now > inMemoryStore[key].resetTime) {
-        delete inMemoryStore[key]
-      }
-    })
-  },
-  60 * 60 * 1000
-)
+/**
+ * Stop the in-memory cleanup timer (for graceful shutdown / test teardown).
+ */
+export function stopInMemoryCleanupTimer(): void {
+  if (inMemoryCleanupTimer) {
+    clearInterval(inMemoryCleanupTimer)
+    inMemoryCleanupTimer = null
+  }
+}
 
 /**
  * Create rate limiter middleware based on environment

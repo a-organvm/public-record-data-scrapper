@@ -172,16 +172,28 @@ export class ConsentService {
     channel: ConsentChannel
   ): Promise<ConsentCheckResult> {
     try {
-      // Look for active consent that covers the requested channel
+      // Look for the most recent active grant that covers the requested channel.
+      // A grant only counts if there is NO later revocation that applies to this
+      // channel — a revocation of a specific channel (or 'all') must win over an
+      // older 'all' grant. We compare against the revocation timestamp so that a
+      // newer re-grant can still re-establish consent.
       const results = await database.query<ConsentRecordRow>(
-        `SELECT * FROM consent_records
-        WHERE org_id = $1
-          AND contact_id = $2
-          AND (channel = $3 OR channel = 'all')
-          AND is_granted = true
-          AND revoked_at IS NULL
-          AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
-        ORDER BY granted_at DESC
+        `SELECT * FROM consent_records cr
+        WHERE cr.org_id = $1
+          AND cr.contact_id = $2
+          AND (cr.channel = $3 OR cr.channel = 'all')
+          AND cr.is_granted = true
+          AND cr.revoked_at IS NULL
+          AND (cr.expires_at IS NULL OR cr.expires_at > CURRENT_TIMESTAMP)
+          AND NOT EXISTS (
+            SELECT 1 FROM consent_records rev
+            WHERE rev.org_id = cr.org_id
+              AND rev.contact_id = cr.contact_id
+              AND (rev.channel = $3 OR rev.channel = 'all')
+              AND rev.revoked_at IS NOT NULL
+              AND rev.revoked_at >= cr.granted_at
+          )
+        ORDER BY cr.granted_at DESC
         LIMIT 1`,
         [orgId, contactId, channel]
       )
@@ -261,18 +273,45 @@ export class ConsentService {
     reason?: string
   ): Promise<number> {
     try {
-      const results = await database.query(
-        `UPDATE consent_records
+      // Revoke active grants that explicitly match the requested channel.
+      // When revoking a broad 'all' opt-out, also revoke every active grant
+      // regardless of channel.
+      const channelMatch =
+        channel === 'all'
+          ? `cr.channel IS NOT NULL`
+          : `cr.channel = $3`
+
+      const updateResults = await database.query(
+        `UPDATE consent_records AS cr
         SET revoked_at = CURRENT_TIMESTAMP,
             revoked_reason = $4
-        WHERE org_id = $1
-          AND contact_id = $2
-          AND (channel = $3 OR ($3 = 'all'))
-          AND revoked_at IS NULL`,
+        WHERE cr.org_id = $1
+          AND cr.contact_id = $2
+          AND (${channelMatch} OR cr.channel = 'all')
+          AND cr.is_granted = true
+          AND cr.revoked_at IS NULL`,
         [orgId, contactId, channel, reason]
       )
 
-      return (results as { rowCount: number }).rowCount
+      let affected = (updateResults as { rowCount: number }).rowCount
+
+      // For a channel-specific revocation, also record an explicit revocation
+      // marker scoped to that channel. This ensures hasConsent() honors the
+      // opt-out even when consent was only ever granted via a broad 'all' grant:
+      // the revocation marker overrides the older 'all' grant for this channel
+      // while leaving the 'all' grant intact for other channels.
+      if (channel !== 'all') {
+        const markerResults = await database.query(
+          `INSERT INTO consent_records (
+            org_id, contact_id, consent_type, channel, is_granted,
+            collection_method, granted_at, revoked_at, revoked_reason
+          ) VALUES ($1, $2, 'transactional', $3, false, 'imported', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $4)`,
+          [orgId, contactId, channel, reason]
+        )
+        affected += (markerResults as { rowCount: number }).rowCount
+      }
+
+      return affected
     } catch (error) {
       throw new DatabaseError(
         'Failed to revoke consent',

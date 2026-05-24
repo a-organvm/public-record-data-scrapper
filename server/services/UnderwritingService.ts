@@ -89,6 +89,14 @@ export interface UnderwritingFeatures {
   negativeDays: number
   /** Percentage of days with negative balance */
   negativeDaysPercentage: number
+  /**
+   * Whether daily-balance metrics (ADB, min/negative balance, negativeDays)
+   * are anchored to a real account balance. When false, the balance series is
+   * relative to an assumed zero opening balance, so absolute balance figures
+   * (minimumDailyBalance, negativeDays) are NOT reliable and should not be
+   * treated as overdraft evidence — they describe cash-flow movement only.
+   */
+  balanceAnchored: boolean
 
   /** Detected lender payments (MCA, loans, etc.) */
   lenderPayments: DetectedLenderPayment[]
@@ -205,8 +213,13 @@ export class UnderwritingService {
     // Filter transactions to primary account
     const accountTransactions = transactions.filter((t) => t.accountId === primaryAccount.accountId)
 
-    // Analyze transactions
-    const analysis = this.analyzeTransactions(accountTransactions, startDate, endDate)
+    // Analyze transactions — anchor balance series to the known current balance
+    const analysis = this.analyzeTransactions(
+      accountTransactions,
+      startDate,
+      endDate,
+      primaryAccount.balances.current
+    )
 
     // Detect lender payments
     const lenderPayments = this.detectLenderPayments(accountTransactions)
@@ -217,11 +230,16 @@ export class UnderwritingService {
     // Calculate deposit consistency
     const depositConsistencyScore = this.calculateDepositConsistency(accountTransactions)
 
-    // Calculate days since last deposit
-    const deposits = accountTransactions.filter((t) => t.amount < 0 && !this.isTransfer(t))
-    const lastDepositDate = deposits.length > 0 ? new Date(deposits[0].date) : new Date()
-    const daysSinceLastDeposit = Math.floor(
-      (new Date().getTime() - lastDepositDate.getTime()) / (1000 * 60 * 60 * 24)
+    // Calculate days since last deposit. Sort by date and use the most recent
+    // deposit; the source array order is not guaranteed to be chronological.
+    const deposits = accountTransactions
+      .filter((t) => t.amount < 0 && !this.isTransfer(t))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    const lastDepositDate =
+      deposits.length > 0 ? new Date(deposits[deposits.length - 1].date) : new Date()
+    const daysSinceLastDeposit = Math.max(
+      0,
+      Math.floor((new Date().getTime() - lastDepositDate.getTime()) / (1000 * 60 * 60 * 24))
     )
 
     // Estimate position count and payment obligations
@@ -236,7 +254,9 @@ export class UnderwritingService {
       nsfCount: analysis.nsfCount,
       nsfFeeTotal: analysis.nsfFeeTotal,
       negativeDays: analysis.negativeDays,
-      negativeDaysPercentage: (analysis.negativeDays / analysis.totalDays) * 100,
+      negativeDaysPercentage:
+        analysis.totalDays > 0 ? (analysis.negativeDays / analysis.totalDays) * 100 : 0,
+      balanceAnchored: analysis.balanceAnchored,
 
       lenderPayments,
       estimatedPositionCount: positionCount,
@@ -267,7 +287,15 @@ export class UnderwritingService {
   analyzeTransactions(
     transactions: PlaidTransaction[],
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    /**
+     * Known current (closing) balance for the account, used to anchor the
+     * running-balance series to reality. When provided, the opening balance is
+     * back-derived so the final modeled balance equals this value. When
+     * undefined, balances are computed relative to a zero opening balance and
+     * absolute balance metrics are flagged as non-anchored.
+     */
+    currentBalance?: number
   ): {
     averageDailyBalance: number
     minimumDailyBalance: number
@@ -278,11 +306,23 @@ export class UnderwritingService {
     totalDays: number
     totalDeposits: number
     dailyBalances: DailyBalance[]
+    balanceAnchored: boolean
   } {
     // Sort transactions by date (oldest first)
     const sortedTransactions = [...transactions].sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
     )
+
+    // Determine the opening balance. In Plaid, positive amounts are debits
+    // (withdrawals) and negative amounts are credits (deposits), so each tx
+    // changes the balance by `-tx.amount`. If we know the closing balance, the
+    // opening balance is closing minus the net effect of all transactions.
+    const balanceAnchored = typeof currentBalance === 'number' && Number.isFinite(currentBalance)
+    let openingBalance = 0
+    if (balanceAnchored) {
+      const netEffect = sortedTransactions.reduce((sum, tx) => sum - tx.amount, 0)
+      openingBalance = (currentBalance as number) - netEffect
+    }
 
     // Build daily balance map
     const dailyBalances: Map<string, DailyBalance> = new Map()
@@ -304,7 +344,7 @@ export class UnderwritingService {
     let nsfCount = 0
     let nsfFeeTotal = 0
     let totalDeposits = 0
-    let runningBalance = 0
+    let runningBalance = openingBalance
 
     for (const tx of sortedTransactions) {
       const dateStr = tx.date
@@ -333,6 +373,17 @@ export class UnderwritingService {
       }
     }
 
+    // Carry the running balance forward across days with no transactions so the
+    // daily series reflects the actual balance held each day, not a reset to 0.
+    let carried = openingBalance
+    for (const day of dailyBalances.values()) {
+      if (day.deposits === 0 && day.withdrawals === 0) {
+        day.balance = carried
+      } else {
+        carried = day.balance
+      }
+    }
+
     // Calculate statistics
     const balanceValues = Array.from(dailyBalances.values())
     let minBalance = Infinity
@@ -356,10 +407,14 @@ export class UnderwritingService {
       maximumDailyBalance: maxBalance === -Infinity ? 0 : maxBalance,
       nsfCount,
       nsfFeeTotal,
-      negativeDays,
+      // When not balance-anchored, negativeDays is not meaningful as an
+      // overdraft count (the series is relative to a zero opening balance);
+      // report 0 to avoid feeding fictitious overdraft signals downstream.
+      negativeDays: balanceAnchored ? negativeDays : 0,
       totalDays,
       totalDeposits,
-      dailyBalances: balanceValues
+      dailyBalances: balanceValues,
+      balanceAnchored
     }
   }
 

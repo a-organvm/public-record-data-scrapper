@@ -11,7 +11,13 @@
  */
 
 import { database } from '../database/connection'
-import { NotFoundError, ValidationError, DatabaseError, ExternalServiceError } from '../errors'
+import {
+  NotFoundError,
+  ValidationError,
+  DatabaseError,
+  ExternalServiceError,
+  ForbiddenError
+} from '../errors'
 import type {
   Communication,
   CommunicationTemplate,
@@ -27,6 +33,10 @@ import { TwilioSMS } from '../integrations/twilio/sms'
 import { TwilioVoice } from '../integrations/twilio/voice'
 import { SendGridClient } from '../integrations/sendgrid/client'
 import { SendGridSend } from '../integrations/sendgrid/send'
+
+// Compliance dependencies — TCPA / DNC gating
+import { SuppressionService } from './SuppressionService'
+import { ConsentService } from './ConsentService'
 
 // Database row types
 interface CommunicationRow {
@@ -170,13 +180,110 @@ export class CommunicationsService {
   private twilioVoice: TwilioVoice
   private sendgridClient: SendGridClient
   private sendgridSend: SendGridSend
+  private suppressionService: SuppressionService
+  private consentService: ConsentService
 
-  constructor() {
+  constructor(deps?: {
+    suppressionService?: SuppressionService
+    consentService?: ConsentService
+  }) {
     this.twilioClient = new TwilioClient()
     this.twilioSMS = new TwilioSMS(this.twilioClient)
     this.twilioVoice = new TwilioVoice(this.twilioClient)
     this.sendgridClient = new SendGridClient()
     this.sendgridSend = new SendGridSend(this.sendgridClient)
+    // Compliance dependencies are injectable to keep the service test-friendly.
+    this.suppressionService = deps?.suppressionService ?? new SuppressionService()
+    this.consentService = deps?.consentService ?? new ConsentService()
+  }
+
+  /**
+   * Enforce TCPA / DNC compliance before dispatching an outbound communication.
+   *
+   * Blocks the send when:
+   * - the destination (phone or email) is on the DNC / suppression list, OR
+   * - a contact is known and lacks active consent for the channel.
+   *
+   * Consent is only enforced when a contactId is present, since anonymous
+   * one-off sends (e.g. transactional notices to a prospect address) have no
+   * consent record to evaluate. DNC suppression is always enforced.
+   *
+   * Throws ForbiddenError (403) when blocked, and records a `blocked`
+   * communication row so the suppression is auditable.
+   */
+  private async assertSendAllowed(params: {
+    orgId: string
+    channel: CommunicationChannel
+    toPhone?: string
+    toAddress?: string
+    contactId?: string
+  }): Promise<void> {
+    const { orgId, channel, toPhone, toAddress, contactId } = params
+
+    // 1. DNC / suppression check on the destination identifier
+    if (channel === 'email' && toAddress) {
+      const suppressed = await this.suppressionService.isEmailSuppressed(orgId, toAddress)
+      if (suppressed.isSuppressed) {
+        await this.recordBlockedCommunication({ orgId, channel, toAddress, contactId, reason: `Email is on suppression list (${suppressed.source || 'internal'})` })
+        throw new ForbiddenError('Recipient email is on the suppression (DNC) list')
+      }
+    } else if ((channel === 'sms' || channel === 'call') && toPhone) {
+      const dncChannel = channel === 'call' ? 'call' : 'sms'
+      const suppressed = await this.suppressionService.isOnDNCList(orgId, toPhone, dncChannel)
+      if (suppressed.isSuppressed) {
+        await this.recordBlockedCommunication({ orgId, channel, toPhone, contactId, reason: `Number is on DNC list (${suppressed.source || 'internal'})` })
+        throw new ForbiddenError('Recipient is on the Do-Not-Call (DNC) suppression list')
+      }
+    }
+
+    // 2. Consent check (only when we know which contact we are reaching)
+    if (contactId) {
+      const consent = await this.consentService.hasConsent(orgId, contactId, channel)
+      if (!consent.hasConsent) {
+        await this.recordBlockedCommunication({ orgId, channel, toPhone, toAddress, contactId, reason: `No active ${channel} consent on file for contact` })
+        throw new ForbiddenError(`No active consent on file for ${channel} to this contact`)
+      }
+    }
+  }
+
+  /**
+   * Record a blocked outbound communication for audit/compliance purposes.
+   * Failures to persist the audit row are logged but do not mask the original
+   * compliance block.
+   */
+  private async recordBlockedCommunication(params: {
+    orgId: string
+    channel: CommunicationChannel
+    toPhone?: string
+    toAddress?: string
+    contactId?: string
+    reason: string
+  }): Promise<void> {
+    try {
+      // 'blocked' is not an allowed status in the communications CHECK
+      // constraint; record as 'failed' with a compliance-block reason so the
+      // suppression is auditable without violating the schema.
+      await database.query(
+        `INSERT INTO communications (
+          org_id, contact_id, channel, direction, to_address, to_phone,
+          status, status_reason, failure_reason, failed_at
+        ) VALUES ($1, $2, $3, 'outbound', $4, $5, 'failed', $6, $6, CURRENT_TIMESTAMP)`,
+        [
+          params.orgId,
+          params.contactId ?? null,
+          params.channel,
+          params.toAddress ?? null,
+          params.toPhone ?? null,
+          `COMPLIANCE_BLOCK: ${params.reason}`
+        ]
+      )
+    } catch (error) {
+      // Do not let an audit-write failure swallow the compliance block.
+      console.warn(
+        '[CommunicationsService] Failed to record blocked communication audit row:',
+        error instanceof Error ? error.message : error
+      )
+    }
   }
 
   /**
@@ -339,6 +446,14 @@ export class CommunicationsService {
       throw new ValidationError('Invalid email address')
     }
 
+    // TCPA / suppression compliance gate — blocks send if suppressed or no consent
+    await this.assertSendAllowed({
+      orgId: input.orgId,
+      channel: 'email',
+      toAddress: input.toAddress,
+      contactId: input.contactId
+    })
+
     try {
       // Create communication record with pending status
       const communicationResults = await database.query<CommunicationRow>(
@@ -423,6 +538,14 @@ export class CommunicationsService {
       throw new ValidationError('Invalid phone number')
     }
 
+    // TCPA / DNC compliance gate — blocks send if suppressed or no consent
+    await this.assertSendAllowed({
+      orgId: input.orgId,
+      channel: 'sms',
+      toPhone: normalizedPhone,
+      contactId: input.contactId
+    })
+
     try {
       // Create communication record
       const communicationResults = await database.query<CommunicationRow>(
@@ -495,6 +618,14 @@ export class CommunicationsService {
     if (normalizedPhone.length < 10) {
       throw new ValidationError('Invalid phone number')
     }
+
+    // TCPA / DNC compliance gate — blocks call if suppressed or no consent
+    await this.assertSendAllowed({
+      orgId: input.orgId,
+      channel: 'call',
+      toPhone: normalizedPhone,
+      contactId: input.contactId
+    })
 
     try {
       // Create communication record

@@ -2,17 +2,22 @@ import { Alert, AlertDescription } from '@public-records/ui/alert'
 import { Button } from '@public-records/ui/button'
 import { ClockCounterClockwise, ArrowClockwise } from '@phosphor-icons/react'
 import { motion } from 'framer-motion'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 interface StaleDataWarningProps {
   lastUpdated: string
   onRefresh: () => void
 }
 
-const getNow = () => Date.now()
-
 export function StaleDataWarning({ lastUpdated, onRefresh }: StaleDataWarningProps) {
-  const [now] = useState(getNow)
+  // Refresh `now` periodically so the "N days old" age doesn't freeze at mount
+  // time. Lazy initializer keeps the render itself pure.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [])
+
   const daysSinceUpdate = Math.floor(
     (now - new Date(lastUpdated).getTime()) / (1000 * 60 * 60 * 24)
   )

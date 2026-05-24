@@ -374,10 +374,16 @@ export class StateCollectorFactory {
               // Try fallback methods
               if (stateConfig) {
                 const methodIndex = stateConfig.accessMethods.indexOf(primaryMethod)
+                // Count fallback ATTEMPTS rather than bounding by the array
+                // index. Previously the loop compared the index `i` against
+                // maxFallbackAttempts, so e.g. a primary method at index 2 would
+                // never attempt any fallback when maxFallbackAttempts was 3.
+                let fallbackAttempts = 0
                 for (
                   let i = methodIndex + 1;
-                  i < stateConfig.accessMethods.length && i < this.config.maxFallbackAttempts;
-                  i++
+                  i < stateConfig.accessMethods.length &&
+                  fallbackAttempts < this.config.maxFallbackAttempts;
+                  i++, fallbackAttempts++
                 ) {
                   const fallbackMethod = stateConfig.accessMethods[i]
                   const fallbackCollector = this.createCollectorForMethod(stateCode, fallbackMethod)
@@ -505,7 +511,14 @@ export class StateCollectorFactory {
   }
 
   /**
-   * Check if a state has an implemented collector
+   * Check if a state has an implemented collector.
+   *
+   * This is kept consistent with getImplementedStates(): a state is only
+   * reported as having a collector if a concrete collector implementation
+   * exists for it. NY is intentionally excluded — it has empty accessMethods
+   * and no collector factory case, so getCollector('NY') returns undefined.
+   * Previously hasCollector('NY') returned true while getCollector('NY')
+   * returned undefined, which could lead callers into a null dereference.
    */
   hasCollector(stateCode: string): boolean {
     const normalizedCode = stateCode.toUpperCase()
@@ -513,12 +526,16 @@ export class StateCollectorFactory {
   }
 
   /**
-   * Get list of states with implemented collectors
+   * Get list of states with implemented collectors.
+   *
+   * Only includes states that have an actual collector implementation wired up
+   * via createCollectorForMethod(). NY is excluded until its portal collector
+   * is implemented (its STATE_CONFIG has empty accessMethods), so that
+   * hasCollector()/getImplementedStates()/getCollector() all agree.
    */
   getImplementedStates(): string[] {
     return [
-      'NY', // New York - Scraper
-      'CA', // California - API + Scraper fallback
+      'CA', // California - API
       'TX', // Texas - Bulk
       'FL' // Florida - Vendor (requires contract)
     ]

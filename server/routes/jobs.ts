@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { validateRequest } from '../middleware/validateRequest'
 import { asyncHandler } from '../middleware/errorHandler'
+import { requireRole } from '../middleware/authMiddleware'
 import { getResolvedDataTier } from '../middleware/dataTier'
 import {
   getIngestionCircuitGate,
@@ -16,32 +17,45 @@ import { resolveUccProvider } from '../config/tieredIntegrations'
 
 const router = Router()
 
-// Validation schemas
+// Validation schemas (`.strict()` to reject unknown keys — prevents
+// mass-assignment of arbitrary fields into the queued job payload).
 const triggerIngestionSchema = z.object({
   state: z.string().length(2).toUpperCase(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   batchSize: z.number().min(100).max(10000).default(1000),
   force: z.boolean().optional().default(false)
-})
+}).strict()
 
 const triggerEnrichmentSchema = z.object({
   prospectIds: z.array(z.string().uuid()).min(1).max(100),
   force: z.boolean().default(false)
-})
+}).strict()
 
 const triggerHealthScoreSchema = z.object({
   portfolioCompanyId: z.string().uuid().optional(),
   batchSize: z.number().min(10).max(200).default(50)
-})
+}).strict()
 
 const jobIdSchema = z.object({
-  jobId: z.string()
+  jobId: z.string().min(1).max(256)
+})
+
+const queueNameSchema = z.object({
+  queueName: z.enum(['ucc-ingestion', 'data-enrichment', 'health-scores'])
+})
+
+const queueListQuerySchema = z.object({
+  status: z
+    .enum(['waiting', 'active', 'completed', 'failed', 'delayed'])
+    .default('waiting'),
+  limit: z.coerce.number().int().positive().max(200).default(20)
 })
 
 // POST /api/jobs/ingestion - Trigger UCC ingestion job
 router.post(
   '/ingestion',
+  requireRole('user', 'admin'),
   validateRequest({ body: triggerIngestionSchema }),
   asyncHandler(async (req, res) => {
     const ingestionQueue = getIngestionQueue()
@@ -112,10 +126,13 @@ router.post(
 // POST /api/jobs/enrichment - Trigger enrichment job
 router.post(
   '/enrichment',
+  requireRole('user', 'admin'),
   validateRequest({ body: triggerEnrichmentSchema }),
   asyncHandler(async (req, res) => {
     const enrichmentQueue = getEnrichmentQueue()
     const dataTier = getResolvedDataTier(req)
+    // req.body is validated + stripped by the strict schema above, so the
+    // spread cannot smuggle arbitrary fields into the job payload.
     const job = await enrichmentQueue.add('enrich-batch', { ...req.body, dataTier })
 
     res.status(201).json({
@@ -130,10 +147,12 @@ router.post(
 // POST /api/jobs/health-scores - Trigger health score calculation
 router.post(
   '/health-scores',
+  requireRole('user', 'admin'),
   validateRequest({ body: triggerHealthScoreSchema }),
   asyncHandler(async (req, res) => {
     const healthScoreQueue = getHealthScoreQueue()
     const dataTier = getResolvedDataTier(req)
+    // req.body is validated + stripped by the strict schema above.
     const job = await healthScoreQueue.add('health-batch', { ...req.body, dataTier })
 
     res.status(201).json({
@@ -146,8 +165,13 @@ router.post(
 )
 
 // GET /api/jobs/:jobId - Get job status
+// Jobs are not tenant-scoped (BullMQ payloads carry no org binding), so reading
+// an arbitrary job by id would leak cross-tenant data. Restrict to admins.
+// TODO(security): when jobs are tagged with an owning org/user, scope reads to
+// the caller instead of requiring the admin role.
 router.get(
   '/:jobId',
+  requireRole('admin'),
   validateRequest({ params: jobIdSchema }),
   asyncHandler(async (req, res) => {
     const { jobId } = req.params
@@ -189,9 +213,10 @@ router.get(
   })
 )
 
-// GET /api/jobs/queues/stats - Get queue statistics
+// GET /api/jobs/queues/stats - Get queue statistics (admin-only operational view)
 router.get(
   '/queues/stats',
+  requireRole('admin'),
   asyncHandler(async (req, res) => {
     const queues = [
       { name: 'ucc-ingestion', queue: getIngestionQueue() },
@@ -225,13 +250,14 @@ router.get(
   })
 )
 
-// GET /api/jobs/queues/:queueName - Get jobs in a specific queue
+// GET /api/jobs/queues/:queueName - Get jobs in a specific queue (admin-only)
 router.get(
   '/queues/:queueName',
+  requireRole('admin'),
+  validateRequest({ params: queueNameSchema, query: queueListQuerySchema }),
   asyncHandler(async (req, res) => {
     const { queueName } = req.params
-    const status = (req.query.status as string) || 'waiting'
-    const limit = parseInt(req.query.limit as string) || 20
+    const { status, limit } = req.query as z.infer<typeof queueListQuerySchema>
 
     const queues = {
       'ucc-ingestion': getIngestionQueue(),
@@ -291,9 +317,12 @@ router.get(
   })
 )
 
-// DELETE /api/jobs/:jobId - Remove a job
+// DELETE /api/jobs/:jobId - Remove a job (admin-only; jobs are not tenant-scoped)
+// TODO(security): scope deletion to the owning org/user once jobs carry that
+// metadata, instead of requiring the admin role.
 router.delete(
   '/:jobId',
+  requireRole('admin'),
   validateRequest({ params: jobIdSchema }),
   asyncHandler(async (req, res) => {
     const { jobId } = req.params

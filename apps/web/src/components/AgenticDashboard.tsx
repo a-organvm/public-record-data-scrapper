@@ -239,7 +239,7 @@ function ImprovementCard({
   const [isExpanded, setIsExpanded] = useState(false)
   const { suggestion, status } = improvement
 
-  const statusColors = {
+  const statusColors: Record<string, string> = {
     detected: 'bg-blue-500',
     analyzing: 'bg-cyan-500',
     approved: 'bg-yellow-500',
@@ -249,22 +249,30 @@ function ImprovementCard({
     rejected: 'bg-red-500'
   }
 
+  // Persisted improvements may carry enum values no longer present in code.
+  // Fall back to neutral defaults instead of crashing on undefined lookups.
+  const DEFAULT_BADGE_COLOR = 'bg-gray-500'
+  const category = categoryDetails[suggestion.category] ?? {
+    icon: <Sparkle className="w-4 h-4" />,
+    label: suggestion.category ?? 'Unknown'
+  }
+  const priorityColor = priorityColors[suggestion.priority] ?? DEFAULT_BADGE_COLOR
+  const statusColor = statusColors[status] ?? DEFAULT_BADGE_COLOR
+
   return (
     <Card className="p-4 hover:shadow-md transition-shadow">
       <div className="space-y-3">
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-3 flex-1">
             <div className="mt-1 flex flex-col items-center gap-1 text-center text-muted-foreground min-w-[120px]">
-              {categoryDetails[suggestion.category].icon}
-              <span className="text-xs font-medium">
-                {categoryDetails[suggestion.category].label}
-              </span>
+              {category.icon}
+              <span className="text-xs font-medium">{category.label}</span>
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1">
                 <h3 className="font-semibold">{suggestion.title}</h3>
-                <Badge className={priorityColors[suggestion.priority]}>{suggestion.priority}</Badge>
-                <Badge className={statusColors[status]}>{status}</Badge>
+                <Badge className={priorityColor}>{suggestion.priority}</Badge>
+                <Badge className={statusColor}>{status}</Badge>
               </div>
               <p className="text-sm text-muted-foreground">{suggestion.description}</p>
             </div>

@@ -66,7 +66,8 @@ describe('Deals API', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     app = createTestApp()
-    authHeader = createAuthHeader()
+    // Mint a token bound to the test org so multi-tenant isolation passes.
+    authHeader = createAuthHeader('test-user-123', { orgId: mockOrgId })
   })
 
   describe('GET /api/deals', () => {
@@ -95,11 +96,35 @@ describe('Deals API', () => {
       expect(response.body.pagination.total).toBe(2)
     })
 
-    it('should require org_id query parameter', async () => {
+    it('should derive org from the token when no org_id query param is given', async () => {
+      mockList.mockResolvedValueOnce({ deals: [], page: 1, limit: 20, total: 0 })
+
       const response = await request(app).get('/api/deals').set('Authorization', authHeader)
 
-      expect(response.status).toBe(400)
-      expect(response.body.error).toBeDefined()
+      expect(response.status).toBe(200)
+      expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ orgId: mockOrgId }))
+    })
+
+    it('should fail closed (403) when the token has no org', async () => {
+      const noOrgHeader = createAuthHeader('test-user-123', { orgId: null })
+
+      const response = await request(app)
+        .get('/api/deals')
+        .set('Authorization', noOrgHeader)
+
+      expect(response.status).toBe(403)
+      expect(response.body.error.code).toBe('FORBIDDEN')
+    })
+
+    it('should reject a mismatched org_id query param (403)', async () => {
+      const otherOrg = '550e8400-e29b-41d4-a716-4466554409ff'
+
+      const response = await request(app)
+        .get(`/api/deals?org_id=${otherOrg}`)
+        .set('Authorization', authHeader)
+
+      expect(response.status).toBe(403)
+      expect(response.body.error.code).toBe('FORBIDDEN')
     })
 
     it('should filter by stage_id', async () => {
@@ -313,13 +338,25 @@ describe('Deals API', () => {
       expect(response.body.amount_requested).toBe(50000)
     })
 
-    it('should validate required org_id', async () => {
+    it('should derive org from token (no org_id required in body)', async () => {
+      mockCreate.mockResolvedValueOnce({ id: mockDealId, amount_requested: 50000 })
+
       const response = await request(app).post('/api/deals').set('Authorization', authHeader).send({
         amount_requested: 50000
       })
 
-      expect(response.status).toBe(400)
-      expect(response.body.error).toBeDefined()
+      expect(response.status).toBe(201)
+      expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ orgId: mockOrgId }))
+    })
+
+    it('should reject a body org_id that does not match the token (403)', async () => {
+      const response = await request(app).post('/api/deals').set('Authorization', authHeader).send({
+        org_id: '550e8400-e29b-41d4-a716-4466554409ff',
+        amount_requested: 50000
+      })
+
+      expect(response.status).toBe(403)
+      expect(response.body.error.code).toBe('FORBIDDEN')
     })
 
     it('should validate priority enum', async () => {
@@ -493,6 +530,8 @@ describe('Deals API', () => {
         created_at: new Date().toISOString()
       }
 
+      // Deal must be owned by the caller's org before a document can be attached.
+      mockGetById.mockResolvedValueOnce({ id: mockDealId, org_id: mockOrgId })
       mockUploadDocument.mockResolvedValueOnce(mockDocument)
 
       const response = await request(app)
@@ -538,6 +577,7 @@ describe('Deals API', () => {
         { id: '2', document_type: 'application', file_name: 'application.pdf' }
       ]
 
+      mockGetById.mockResolvedValueOnce({ id: mockDealId, org_id: mockOrgId })
       mockGetDocuments.mockResolvedValueOnce(mockDocuments)
 
       const response = await request(app)
@@ -545,8 +585,9 @@ describe('Deals API', () => {
         .set('Authorization', authHeader)
 
       expect(response.status).toBe(200)
-      expect(response.body).toBeInstanceOf(Array)
-      expect(response.body.length).toBe(2)
+      expect(response.body).toHaveProperty('documents')
+      expect(response.body.documents).toBeInstanceOf(Array)
+      expect(response.body.documents.length).toBe(2)
     })
   })
 
@@ -558,29 +599,47 @@ describe('Deals API', () => {
         verified_at: new Date().toISOString()
       }
 
+      // Ownership: deal belongs to org, document belongs to deal.
+      mockGetById.mockResolvedValueOnce({ id: mockDealId, org_id: mockOrgId })
+      mockGetDocuments.mockResolvedValueOnce([{ id: mockDocumentId, dealId: mockDealId }])
       mockVerifyDocument.mockResolvedValueOnce(mockVerified)
 
       const response = await request(app)
         .patch(`/api/deals/${mockDealId}/documents/${mockDocumentId}/verify`)
         .set('Authorization', authHeader)
+        .send({ verified_by: '550e8400-e29b-41d4-a716-446655440099' })
 
       expect(response.status).toBe(200)
       expect(response.body.verified).toBe(true)
     })
 
-    it('should return 404 for non-existent document', async () => {
-      mockVerifyDocument.mockRejectedValueOnce(new NotFoundError('Document', mockDocumentId))
+    it('should reject a document that does not belong to the org deal (404)', async () => {
+      // Deal not found for this org -> ownership check fails before mutating.
+      mockGetById.mockResolvedValueOnce(null)
 
       const response = await request(app)
         .patch(`/api/deals/${mockDealId}/documents/${mockDocumentId}/verify`)
         .set('Authorization', authHeader)
+        .send({ verified_by: '550e8400-e29b-41d4-a716-446655440099' })
 
       expect(response.status).toBe(404)
+      expect(mockVerifyDocument).not.toHaveBeenCalled()
+    })
+
+    it('should reject a non-UUID documentId (400)', async () => {
+      const response = await request(app)
+        .patch(`/api/deals/${mockDealId}/documents/not-a-uuid/verify`)
+        .set('Authorization', authHeader)
+        .send({ verified_by: '550e8400-e29b-41d4-a716-446655440099' })
+
+      expect(response.status).toBe(400)
     })
   })
 
   describe('DELETE /api/deals/:id/documents/:documentId', () => {
     it('should delete document', async () => {
+      mockGetById.mockResolvedValueOnce({ id: mockDealId, org_id: mockOrgId })
+      mockGetDocuments.mockResolvedValueOnce([{ id: mockDocumentId, dealId: mockDealId }])
       mockDeleteDocument.mockResolvedValueOnce(true)
 
       const response = await request(app)
@@ -590,14 +649,17 @@ describe('Deals API', () => {
       expect(response.status).toBe(204)
     })
 
-    it('should return 404 for non-existent document', async () => {
-      mockDeleteDocument.mockRejectedValueOnce(new NotFoundError('Document', mockDocumentId))
+    it('should reject a document that does not belong to the org deal (404)', async () => {
+      mockGetById.mockResolvedValueOnce({ id: mockDealId, org_id: mockOrgId })
+      // Deal owned, but document not among the deal's documents.
+      mockGetDocuments.mockResolvedValueOnce([{ id: 'other-doc', dealId: mockDealId }])
 
       const response = await request(app)
         .delete(`/api/deals/${mockDealId}/documents/${mockDocumentId}`)
         .set('Authorization', authHeader)
 
       expect(response.status).toBe(404)
+      expect(mockDeleteDocument).not.toHaveBeenCalled()
     })
   })
 })

@@ -165,20 +165,23 @@ export class DealsService {
       stageId: row.stage_id,
       assignedTo: row.assigned_to,
       dealNumber: row.deal_number,
-      amountRequested: row.amount_requested ? Number(row.amount_requested) : undefined,
-      amountApproved: row.amount_approved ? Number(row.amount_approved) : undefined,
-      amountFunded: row.amount_funded ? Number(row.amount_funded) : undefined,
+      // Use == null (not falsy) so a legitimately stored 0 is preserved rather
+      // than coerced to undefined.
+      amountRequested: row.amount_requested == null ? undefined : Number(row.amount_requested),
+      amountApproved: row.amount_approved == null ? undefined : Number(row.amount_approved),
+      amountFunded: row.amount_funded == null ? undefined : Number(row.amount_funded),
       termMonths: row.term_months,
-      factorRate: row.factor_rate ? Number(row.factor_rate) : undefined,
-      dailyPayment: row.daily_payment ? Number(row.daily_payment) : undefined,
-      weeklyPayment: row.weekly_payment ? Number(row.weekly_payment) : undefined,
-      totalPayback: row.total_payback ? Number(row.total_payback) : undefined,
-      commissionAmount: row.commission_amount ? Number(row.commission_amount) : undefined,
+      factorRate: row.factor_rate == null ? undefined : Number(row.factor_rate),
+      dailyPayment: row.daily_payment == null ? undefined : Number(row.daily_payment),
+      weeklyPayment: row.weekly_payment == null ? undefined : Number(row.weekly_payment),
+      totalPayback: row.total_payback == null ? undefined : Number(row.total_payback),
+      commissionAmount: row.commission_amount == null ? undefined : Number(row.commission_amount),
       useOfFunds: row.use_of_funds,
       useOfFundsDetails: row.use_of_funds_details,
       bankConnected: row.bank_connected,
-      averageDailyBalance: row.average_daily_balance ? Number(row.average_daily_balance) : undefined,
-      monthlyRevenue: row.monthly_revenue ? Number(row.monthly_revenue) : undefined,
+      averageDailyBalance:
+        row.average_daily_balance == null ? undefined : Number(row.average_daily_balance),
+      monthlyRevenue: row.monthly_revenue == null ? undefined : Number(row.monthly_revenue),
       nsfCount: row.nsf_count,
       existingPositions: row.existing_positions,
       priority: row.priority as DealPriority,
@@ -585,6 +588,11 @@ export class DealsService {
       if (newStage.slug === 'funded' && !deal.fundedAt) {
         additionalUpdates.push(`funded_at = CURRENT_TIMESTAMP`)
         additionalUpdates.push(`actual_close_date = CURRENT_DATE`)
+      } else if (newStage.slug !== 'funded' && deal.fundedAt) {
+        // Moving backward out of the funded stage: clear the funded markers so a
+        // deal isn't reported as funded/closed while sitting in an earlier stage.
+        additionalUpdates.push(`funded_at = NULL`)
+        additionalUpdates.push(`actual_close_date = NULL`)
       }
 
       const setClause = [
@@ -600,6 +608,10 @@ export class DealsService {
          RETURNING *`,
         [id, orgId, newStageId, ...additionalValues]
       )
+
+      if (!results[0]) {
+        throw new NotFoundError('Deal', id)
+      }
 
       return this.transformDeal(results[0])
     } catch (error) {
@@ -797,9 +809,12 @@ export class DealsService {
       const convFunded = parseInt(conversionResult[0]?.funded || '0')
       const conversionRate = convTotal > 0 ? (convFunded / convTotal) * 100 : 0
 
-      // Avg time to close
+      // Avg time to close. Use EPOCH/86400 (full elapsed days incl. fractional)
+      // rather than EXTRACT(DAY FROM interval), which only returns the integer
+      // "days" component of the interval (e.g. 36h -> 1, and a '1 month 5 days'
+      // interval -> 5), badly understating the true time to close.
       const timeToClose = await database.query<{ avg_days: string }>(
-        `SELECT AVG(EXTRACT(DAY FROM (funded_at - created_at))) as avg_days
+        `SELECT AVG(EXTRACT(EPOCH FROM (funded_at - created_at)) / 86400.0) as avg_days
          FROM deals
          WHERE org_id = $1 AND funded_at IS NOT NULL`,
         [orgId]

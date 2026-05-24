@@ -40,7 +40,21 @@ const customFormat = winston.format.combine(
 const consoleFormat = winston.format.combine(
   winston.format.colorize(),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-  winston.format.printf(({ timestamp, level, message, ...meta }) => {
+  winston.format.printf((info) => {
+    const { timestamp, level, message, metadata, ...rest } = info as winston.Logform.TransformableInfo & {
+      metadata?: Record<string, unknown>
+    }
+
+    // winston.format.metadata() collects user-provided fields (correlationId,
+    // userId, etc.) under a nested `metadata` key. The previous printf only
+    // spread the top-level fields, so those values never reached the console.
+    // Merge the nested metadata back in (plus any stray top-level extras) so
+    // correlationId/userId are always visible.
+    const meta: Record<string, unknown> = {
+      ...(metadata && typeof metadata === 'object' ? metadata : {}),
+      ...rest
+    }
+
     let metaStr = ''
     if (Object.keys(meta).length > 0) {
       metaStr = `\n${JSON.stringify(meta, null, 2)}`

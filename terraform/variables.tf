@@ -84,11 +84,10 @@ variable "db_maintenance_window" {
   default     = "sun:04:00-sun:05:00"
 }
 
-variable "db_master_password" {
-  description = "Master password for RDS PostgreSQL (use workspace variables for production)"
-  type        = string
-  sensitive   = true
-}
+# NOTE: db_master_password has been removed. The RDS master password is now
+# managed by AWS Secrets Manager via `manage_master_user_password = true` in
+# main.tf, so no plaintext password is passed through Terraform variables/state.
+# Consumers should read credentials from the `db_master_user_secret_arn` output.
 
 variable "db_master_username" {
   description = "Master username for RDS PostgreSQL"

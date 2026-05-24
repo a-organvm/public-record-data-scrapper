@@ -80,6 +80,12 @@ export interface AgentAnalysis {
   findings: Finding[]
   improvements: ImprovementSuggestion[]
   timestamp: string
+  /**
+   * Populated when the agent crashed during analysis. When set, the findings
+   * represent a failure marker rather than a clean "no issues" result, so this
+   * MUST be checked before treating an empty findings list as "all clear".
+   */
+  error?: string
 }
 
 export interface Finding {

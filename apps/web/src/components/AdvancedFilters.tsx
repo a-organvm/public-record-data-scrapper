@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@public-records/ui/button'
 import { Label } from '@public-records/ui/label'
 import { Slider } from '@public-records/ui/slider'
@@ -27,6 +27,13 @@ export function AdvancedFilters({
 }: AdvancedFiltersProps) {
   const [open, setOpen] = useState(false)
   const [localFilters, setLocalFilters] = useState<AdvancedFilterState>(filters)
+
+  // Re-sync local draft state when the controlling `filters` prop changes (e.g.
+  // a parent-driven reset). Without this, stale local state would clobber the
+  // parent's value the next time Apply is clicked.
+  useEffect(() => {
+    setLocalFilters(filters)
+  }, [filters])
 
   const handleApply = () => {
     onFiltersChange(localFilters)

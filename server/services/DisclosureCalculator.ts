@@ -221,6 +221,11 @@ export class DisclosureCalculator {
         }
         // Estimate based on average monthly payment
         const avgMonthlyPayment = input.estimatedMonthlyRevenue * (input.holdbackPercentage / 100)
+        if (avgMonthlyPayment <= 0) {
+          throw new ValidationError(
+            'Estimated monthly payment for split frequency must be greater than 0'
+          )
+        }
         numberOfPayments = Math.ceil(totalPayback / avgMonthlyPayment)
         paymentAmount = avgMonthlyPayment
         paymentIntervalDays = 30
@@ -230,10 +235,33 @@ export class DisclosureCalculator {
         throw new ValidationError(`Unknown payment frequency: ${input.paymentFrequency}`)
     }
 
-    // Build payment schedule
+    // Guard against pathological inputs (e.g. a tiny split holdback) that would
+    // produce a runaway number of payment entries and exhaust memory (DoS). Cap
+    // the generated schedule; a real MCA never exceeds a few hundred payments.
+    if (!Number.isFinite(numberOfPayments) || numberOfPayments < 1) {
+      numberOfPayments = 1
+    }
+    const MAX_PAYMENTS = 1000
+    if (numberOfPayments > MAX_PAYMENTS) {
+      numberOfPayments = MAX_PAYMENTS
+    }
+    // Recompute the level payment so it stays consistent with the (possibly
+    // capped) payment count for non-split schedules.
+    if (input.paymentFrequency !== 'split') {
+      paymentAmount = totalPayback / numberOfPayments
+    }
+
+    // Build payment schedule.
+    // Total interest (finance charge excluding fees) and principal are allocated
+    // proportionally to each payment so that, per entry,
+    // principalPortion + interestPortion === paymentAmount, and the portions sum
+    // to the totals across the schedule. The previous flat per-payment split
+    // contradicted the actual (possibly capped/last-balloon) payment amounts.
+    const totalInterest = totalPayback - input.fundingAmount
+    const interestShare = totalPayback > 0 ? totalInterest / totalPayback : 0
     let remainingBalance = totalPayback
-    const interestPerPayment = (totalPayback - input.fundingAmount) / numberOfPayments
-    const principalPerPayment = input.fundingAmount / numberOfPayments
+    let allocatedPrincipal = 0
+    let allocatedInterest = 0
     let currentDate = new Date()
 
     for (let i = 1; i <= numberOfPayments; i++) {
@@ -251,12 +279,27 @@ export class DisclosureCalculator {
 
       remainingBalance -= actualPayment
 
+      // Allocate this payment between interest and principal so the two always
+      // sum to the actual payment. The final payment absorbs rounding so totals
+      // reconcile exactly to fundingAmount / totalInterest.
+      let interestPortion: number
+      let principalPortion: number
+      if (isLastPayment) {
+        interestPortion = totalInterest - allocatedInterest
+        principalPortion = input.fundingAmount - allocatedPrincipal
+      } else {
+        interestPortion = actualPayment * interestShare
+        principalPortion = actualPayment - interestPortion
+      }
+      allocatedInterest += interestPortion
+      allocatedPrincipal += principalPortion
+
       schedule.push({
         paymentNumber: i,
         paymentDate: new Date(currentDate),
         paymentAmount: this.roundToTwoDecimals(actualPayment),
-        principalPortion: this.roundToTwoDecimals(principalPerPayment),
-        interestPortion: this.roundToTwoDecimals(interestPerPayment),
+        principalPortion: this.roundToTwoDecimals(principalPortion),
+        interestPortion: this.roundToTwoDecimals(interestPortion),
         remainingBalance: this.roundToTwoDecimals(Math.max(0, remainingBalance))
       })
     }
@@ -295,28 +338,60 @@ export class DisclosureCalculator {
     termDays: number,
     method: 'annualized_rate' | 'true_apr'
   ): number {
+    // The merchant's net disbursement (principal minus prepaid fees) is the true
+    // amount financed. If fees meet or exceed the principal the deal is
+    // economically invalid and dividing by it would yield Infinity/NaN, so
+    // reject it rather than emit a garbage APR.
     const effectivePrincipal = principal - fees
+    if (effectivePrincipal <= 0) {
+      throw new ValidationError(
+        'Total fees must be less than the funding amount (net disbursement must be positive)'
+      )
+    }
     return this.calculateApr(effectivePrincipal, totalPayback, termDays, method)
   }
 
   /**
-   * Calculate true APR using iterative method (Newton-Raphson approximation)
-   * This gives a more accurate APR that accounts for payment timing
+   * Calculate the "true APR" for an MCA.
+   *
+   * Method (documented): MCAs amortize over the term via frequent (daily/
+   * weekly) payments rather than a single balloon at maturity. The previous
+   * implementation treated the entire cost as one balloon and applied effective
+   * annual compounding — (1 + totalCost/principal)^(365/termDays) — which
+   * over-compounds dramatically for short terms (e.g. a 100-day, 1.30-factor
+   * advance reported a multi-hundred-percent APR).
+   *
+   * Because payments are made steadily across the term, the average
+   * outstanding principal over the life of the advance is roughly half of the
+   * original principal. We therefore approximate the APR as the simple
+   * (non-compounded) cost annualized against the average outstanding balance:
+   *
+   *   APR ≈ (totalCost / averageOutstandingPrincipal) * (365 / termDays)
+   *
+   * with averageOutstandingPrincipal ≈ principal / 2 for a level-amortizing
+   * schedule. This yields a defensible, non-runaway APR that better reflects the
+   * actual cost of capital. For exact regulatory APR (NY CFDL), a full payment-
+   * schedule IRR (Newton-Raphson over actual cash flows) would be required.
+   *
+   * TODO(disclosure): replace this approximation with a true IRR over the
+   * generated payment schedule for exact NY CFDL / Reg-Z-style APR compliance.
    */
   private calculateTrueApr(
     principal: number,
     totalPayback: number,
     termDays: number
   ): number {
-    // For MCAs with daily/weekly payments, approximate using effective annual rate
-    const periodsPerYear = 365 / termDays
+    if (principal <= 0 || termDays <= 0) {
+      return 0
+    }
+
     const totalCost = totalPayback - principal
-    const periodicRate = totalCost / principal
+    // Average outstanding principal across a level-amortizing term is ~half.
+    const averageOutstandingPrincipal = principal / 2
+    const periodicRate = totalCost / averageOutstandingPrincipal
+    const annualizationFactor = 365 / termDays
 
-    // Convert to APR: (1 + periodic rate)^periods - 1
-    const effectiveAnnualRate = Math.pow(1 + periodicRate, periodsPerYear) - 1
-
-    return effectiveAnnualRate
+    return periodicRate * annualizationFactor
   }
 
   /**

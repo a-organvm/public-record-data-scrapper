@@ -280,6 +280,34 @@ describe('RateLimiter', () => {
       const stats = limiter.getStats()
       expect(stats.perMinute.current).toBe(3)
     })
+
+    it('should not exceed the per-minute limit under concurrency', async () => {
+      const limiter = new RateLimiter({
+        requestsPerMinute: 3,
+        requestsPerHour: 100,
+        requestsPerDay: 1000
+      })
+
+      // Fire 5 acquisitions in parallel against a limit of 3. Only 3 should be
+      // granted within the current minute; the rest must wait.
+      const promises = Array.from({ length: 5 }, () => limiter.acquire())
+
+      // Let microtasks/timers settle for the slots that fit immediately.
+      await vi.advanceTimersByTimeAsync(10)
+
+      // The window must never report more than the configured limit.
+      expect(limiter.getStats().perMinute.current).toBe(3)
+      expect(limiter.getStats().perMinute.available).toBe(0)
+
+      // Advance past the minute so the remaining 2 can be recorded.
+      await vi.advanceTimersByTimeAsync(61 * 1000)
+      await Promise.all(promises)
+
+      // All 5 requests eventually recorded, and at no point did the window
+      // exceed the limit of 3 (the two stragglers landed in a fresh minute).
+      expect(limiter.getStats().perMinute.current).toBeLessThanOrEqual(3)
+      expect(limiter.getStats().perHour.current).toBe(5)
+    })
   })
 
   describe('real-world scenarios', () => {

@@ -54,10 +54,15 @@ function deleteFromStorage(key: string) {
 }
 
 export function useSafeKV<T>(key: string, initialValue: T): UseSafeKVReturn<T> {
-  const triedSparkRef = useRef(false)
-  const usingFallbackRef = useRef(false)
   const initialValueRef = useRef(initialValue)
+  // Tracks whether we have already logged a Spark-unavailable warning so we do
+  // not spam the console on every render of the fallback path.
+  const warnedRef = useRef(false)
 
+  // --- Fallback hooks (always called, in a fixed order) -------------------
+  // These hooks are invoked on EVERY render regardless of whether Spark is
+  // available. This guarantees a stable hook order (Rules of Hooks) instead of
+  // conditionally calling hooks / returning early as the previous version did.
   const [fallbackValue, setFallbackValue] = useState<T>(() =>
     readFromStorage(key, initialValueRef.current)
   )
@@ -91,23 +96,22 @@ export function useSafeKV<T>(key: string, initialValue: T): UseSafeKVReturn<T> {
     [fallbackValue, setFallback, deleteFallback]
   )
 
-  if (!triedSparkRef.current) {
-    triedSparkRef.current = true
-    try {
-      const result = sparkUseKV<T>(key, initialValue)
-      usingFallbackRef.current = false
-      return result as UseSafeKVReturn<T>
-    } catch (error) {
-      usingFallbackRef.current = true
+  // --- Spark attempt (also called unconditionally on every render) --------
+  // Attempt Spark on every render so its internal hooks are registered in the
+  // same order each time. Whether Spark is available is an environment-level
+  // invariant, so it either consistently succeeds (always registering its
+  // hooks) or consistently throws before registering any hook.
+  let sparkResult: UseSafeKVReturn<T> | null = null
+  try {
+    sparkResult = sparkUseKV<T>(key, initialValue) as UseSafeKVReturn<T>
+  } catch (error) {
+    if (!warnedRef.current) {
+      warnedRef.current = true
       console.warn(`[useSafeKV] Falling back to local storage for key "${key}".`, error)
     }
   }
 
-  if (!usingFallbackRef.current) {
-    return sparkUseKV<T>(key, initialValue) as UseSafeKVReturn<T>
-  }
-
-  return fallbackResult
+  return sparkResult ?? fallbackResult
 }
 
 export default useSafeKV

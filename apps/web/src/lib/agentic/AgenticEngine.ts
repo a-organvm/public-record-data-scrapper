@@ -38,7 +38,17 @@ export class AgenticEngine {
       autonomousExecutionEnabled: false, // Disabled by default for safety
       safetyThreshold: 80, // Only auto-execute if safety score >= 80
       maxDailyImprovements: 3,
-      reviewRequired: ['security', 'data-quality', 'threat-analysis', 'strategic-recommendation'], // These always need review
+      reviewRequired: [
+        // Sensitive categories that must NEVER auto-execute and always require
+        // manual review, regardless of safety score.
+        'security',
+        'data-quality',
+        'threat-analysis',
+        'strategic-recommendation',
+        'competitor-intelligence',
+        'opportunity-analysis',
+        'competitor-analysis'
+      ],
       enabledAgents: ['data-analyzer', 'optimizer', 'security', 'ux-enhancer', 'competitor-agent'],
       ...config
     }
@@ -243,6 +253,23 @@ export class AgenticEngine {
    */
   getImprovements(): Improvement[] {
     return Array.from(this.improvements.values())
+  }
+
+  /**
+   * Rehydrates the engine's internal improvement map from a persisted list.
+   *
+   * After a page reload the React layer restores improvements from storage, but
+   * the engine's in-memory Map starts empty — which previously caused
+   * approveAndExecute() to throw "not found". Call this on init to keep the
+   * engine consistent with persisted state. Existing entries with the same id
+   * are overwritten with the persisted version.
+   */
+  setImprovements(improvements: Improvement[]): void {
+    for (const improvement of improvements) {
+      if (improvement && typeof improvement.id === 'string') {
+        this.improvements.set(improvement.id, improvement)
+      }
+    }
   }
 
   /**

@@ -12,6 +12,8 @@
 
 import { Request, Response, NextFunction, RequestHandler } from 'express'
 import crypto from 'crypto'
+import jwt from 'jsonwebtoken'
+import { config } from '../config'
 
 // Configuration from environment
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || ''
@@ -23,6 +25,19 @@ const PLAID_WEBHOOK_SECRET = process.env.PLAID_WEBHOOK_SECRET || ''
  */
 export interface WebhookRequest extends Request {
   rawBody?: Buffer
+}
+
+/**
+ * Standard 401 fail-closed response for webhook auth failures.
+ */
+function webhookUnauthorized(res: Response, message: string): Response {
+  return res.status(401).json({
+    error: {
+      message,
+      code: 'WEBHOOK_AUTH_FAILED',
+      statusCode: 401
+    }
+  })
 }
 
 /**
@@ -38,30 +53,35 @@ export const verifyTwilioSignature: RequestHandler = (
   res: Response,
   next: NextFunction
 ) => {
-  // Skip verification in development if no auth token configured
+  // FAIL CLOSED: never accept a Twilio webhook when no auth token is configured.
   if (!TWILIO_AUTH_TOKEN) {
-    console.warn('[webhookAuth] Twilio auth token not configured - skipping verification')
-    return next()
+    console.error('[webhookAuth] Twilio auth token not configured - rejecting webhook')
+    return webhookUnauthorized(res, 'Twilio webhook verification not configured')
   }
 
   const signature = req.headers['x-twilio-signature'] as string
   if (!signature) {
     console.error('[webhookAuth] Missing X-Twilio-Signature header')
-    return res.status(401).json({
-      error: {
-        message: 'Missing Twilio signature',
-        code: 'WEBHOOK_AUTH_FAILED',
-        statusCode: 401
-      }
-    })
+    return webhookUnauthorized(res, 'Missing Twilio signature')
   }
 
-  // Build the full URL (including protocol, host, and path)
-  const protocol = req.headers['x-forwarded-proto'] || req.protocol
-  const host = req.headers.host || ''
-  const url = `${protocol}://${host}${req.originalUrl}`
+  // Build the full URL. Use the configured canonical public URL as the base so
+  // the signed URL is NOT derived from the attacker-controlled Host /
+  // X-Forwarded-* headers (Twilio signs the exact URL it was configured with).
+  // Falls back to req.protocol/req.host (Express-derived, honoring trust proxy)
+  // only when no canonical URL is configured.
+  let baseUrl: string
+  if (config.app.publicUrl) {
+    baseUrl = config.app.publicUrl.replace(/\/+$/, '')
+  } else {
+    // TODO(security): set PUBLIC_URL/APP_URL so Twilio signature verification
+    // does not rely on request-derived host. req.host honors `trust proxy`.
+    baseUrl = `${req.protocol}://${req.get('host') || ''}`
+  }
+  const url = `${baseUrl}${req.originalUrl}`
 
-  // Sort and concatenate POST parameters
+  // Twilio signs the URL plus the sorted POST parameters. Twilio sends
+  // application/x-www-form-urlencoded, so req.body holds the parsed params.
   const sortedParams = Object.keys(req.body || {})
     .sort()
     .reduce((acc, key) => acc + key + req.body[key], '')
@@ -76,13 +96,7 @@ export const verifyTwilioSignature: RequestHandler = (
   // Timing-safe comparison to prevent timing attacks
   if (!timingSafeEqual(signature, expectedSignature)) {
     console.error('[webhookAuth] Invalid Twilio signature')
-    return res.status(401).json({
-      error: {
-        message: 'Invalid Twilio signature',
-        code: 'WEBHOOK_AUTH_FAILED',
-        statusCode: 401
-      }
-    })
+    return webhookUnauthorized(res, 'Invalid Twilio signature')
   }
 
   next()
@@ -101,10 +115,10 @@ export const verifySendGridSignature: RequestHandler = (
   res: Response,
   next: NextFunction
 ) => {
-  // Skip verification in development if no verification key configured
+  // FAIL CLOSED: never accept a SendGrid webhook when no verification key is set.
   if (!SENDGRID_WEBHOOK_VERIFICATION_KEY) {
-    console.warn('[webhookAuth] SendGrid verification key not configured - skipping verification')
-    return next()
+    console.error('[webhookAuth] SendGrid verification key not configured - rejecting webhook')
+    return webhookUnauthorized(res, 'SendGrid webhook verification not configured')
   }
 
   const signature = req.headers['x-twilio-email-event-webhook-signature'] as string
@@ -112,17 +126,17 @@ export const verifySendGridSignature: RequestHandler = (
 
   if (!signature || !timestamp) {
     console.error('[webhookAuth] Missing SendGrid signature headers')
-    return res.status(401).json({
-      error: {
-        message: 'Missing SendGrid signature',
-        code: 'WEBHOOK_AUTH_FAILED',
-        statusCode: 401
-      }
-    })
+    return webhookUnauthorized(res, 'Missing SendGrid signature')
   }
 
-  // Get the raw body for signature verification
-  const rawBody = req.rawBody?.toString('utf8') || JSON.stringify(req.body)
+  // Require the RAW body for signature verification. JSON.stringify(req.body)
+  // is NOT byte-identical to what SendGrid signed (key order/whitespace), so a
+  // re-serialized fallback would make verification meaningless. Fail closed.
+  if (!req.rawBody) {
+    console.error('[webhookAuth] SendGrid raw body unavailable - cannot verify signature')
+    return webhookUnauthorized(res, 'SendGrid raw body unavailable for verification')
+  }
+  const rawBody = req.rawBody.toString('utf8')
 
   // Construct the payload to verify (timestamp + payload)
   const payload = timestamp + rawBody
@@ -139,25 +153,13 @@ export const verifySendGridSignature: RequestHandler = (
 
     if (!isValid) {
       console.error('[webhookAuth] Invalid SendGrid signature')
-      return res.status(401).json({
-        error: {
-          message: 'Invalid SendGrid signature',
-          code: 'WEBHOOK_AUTH_FAILED',
-          statusCode: 401
-        }
-      })
+      return webhookUnauthorized(res, 'Invalid SendGrid signature')
     }
 
     next()
   } catch (error) {
     console.error('[webhookAuth] SendGrid signature verification error:', error)
-    return res.status(401).json({
-      error: {
-        message: 'SendGrid signature verification failed',
-        code: 'WEBHOOK_AUTH_FAILED',
-        statusCode: 401
-      }
-    })
+    return webhookUnauthorized(res, 'SendGrid signature verification failed')
   }
 }
 
@@ -174,84 +176,81 @@ export const verifyPlaidSignature: RequestHandler = (
   res: Response,
   next: NextFunction
 ) => {
-  // Skip verification in development if no webhook secret configured
+  // FAIL CLOSED: never accept a Plaid webhook when no verification secret is set.
   if (!PLAID_WEBHOOK_SECRET) {
-    console.warn('[webhookAuth] Plaid webhook secret not configured - skipping verification')
-    return next()
+    console.error('[webhookAuth] Plaid webhook secret not configured - rejecting webhook')
+    return webhookUnauthorized(res, 'Plaid webhook verification not configured')
   }
 
   const signedJwt = req.headers['plaid-verification'] as string
 
   if (!signedJwt) {
     console.error('[webhookAuth] Missing Plaid-Verification header')
-    return res.status(401).json({
-      error: {
-        message: 'Missing Plaid verification',
-        code: 'WEBHOOK_AUTH_FAILED',
-        statusCode: 401
-      }
-    })
+    return webhookUnauthorized(res, 'Missing Plaid verification')
   }
 
-  try {
-    // Get the raw body for signature verification
-    const rawBody = req.rawBody?.toString('utf8') || JSON.stringify(req.body)
+  // Require the RAW body so the body-hash check is meaningful (re-serialized
+  // JSON is not byte-identical to what Plaid hashed). Fail closed otherwise.
+  if (!req.rawBody) {
+    console.error('[webhookAuth] Plaid raw body unavailable - cannot verify webhook')
+    return webhookUnauthorized(res, 'Plaid raw body unavailable for verification')
+  }
+  const rawBody = req.rawBody.toString('utf8')
 
-    // Parse the JWT header to get the key ID
+  try {
     const jwtParts = signedJwt.split('.')
     if (jwtParts.length !== 3) {
       throw new Error('Invalid JWT format')
     }
 
-    // Decode the JWT payload (header not used for basic validation)
-    const payload = JSON.parse(Buffer.from(jwtParts[1], 'base64').toString())
+    // Verify the JWT SIGNATURE — not just decode it. Plaid production uses
+    // ES256 with rotating public keys served from
+    // /webhook_verification_key/get, which requires fetching/caching a JWK and
+    // an ES256 verify. `jose` (the recommended library) is not a dependency
+    // here, so we verify the HMAC signature against the configured shared
+    // secret (PLAID_WEBHOOK_SECRET) and pin the algorithm to HS256. If the
+    // signature does not verify, jwt.verify throws and we fail closed below.
+    //
+    // TODO(security): when running against real Plaid, add `jose`, fetch the
+    // JWK by the JWT header `kid` from /webhook_verification_key/get, and verify
+    // with ES256. Until then HS256-with-shared-secret is the fail-closed path.
+    let payload: { iat?: number; request_body_sha256?: string }
+    try {
+      payload = jwt.verify(signedJwt, PLAID_WEBHOOK_SECRET, {
+        algorithms: ['HS256']
+      }) as { iat?: number; request_body_sha256?: string }
+    } catch (verifyError) {
+      console.error('[webhookAuth] Plaid JWT signature verification failed:', verifyError)
+      return webhookUnauthorized(res, 'Invalid Plaid signature')
+    }
 
     // Verify the claims
     const now = Math.floor(Date.now() / 1000)
 
-    // Check expiration (5 minutes tolerance)
+    // Check freshness (5 minutes tolerance on issued-at)
     if (payload.iat && now - payload.iat > 300) {
       console.error('[webhookAuth] Plaid webhook JWT expired')
-      return res.status(401).json({
-        error: {
-          message: 'Plaid webhook JWT expired',
-          code: 'WEBHOOK_AUTH_FAILED',
-          statusCode: 401
-        }
-      })
+      return webhookUnauthorized(res, 'Plaid webhook JWT expired')
     }
 
-    // Verify the request body hash matches
+    // Verify the request body hash matches the signed claim.
     const bodyHash = crypto.createHash('sha256').update(rawBody).digest('hex')
 
-    if (payload.request_body_sha256 !== bodyHash) {
+    if (
+      !payload.request_body_sha256 ||
+      !timingSafeEqual(payload.request_body_sha256, bodyHash)
+    ) {
       console.error('[webhookAuth] Plaid webhook body hash mismatch')
-      return res.status(401).json({
-        error: {
-          message: 'Plaid webhook body hash mismatch',
-          code: 'WEBHOOK_AUTH_FAILED',
-          statusCode: 401
-        }
-      })
+      return webhookUnauthorized(res, 'Plaid webhook body hash mismatch')
     }
 
-    // In production, you would verify the JWT signature using Plaid's public keys
-    // fetched from their /webhook_verification_key/get endpoint
-    // For now, we've verified the basic structure and body hash
-
-    // Attach the verified payload to the request for use in handlers
+    // Attach the verified flag to the request for use in handlers
     ;(req as WebhookRequest & { plaidVerified: boolean }).plaidVerified = true
 
     next()
   } catch (error) {
     console.error('[webhookAuth] Plaid signature verification error:', error)
-    return res.status(401).json({
-      error: {
-        message: 'Plaid signature verification failed',
-        code: 'WEBHOOK_AUTH_FAILED',
-        statusCode: 401
-      }
-    })
+    return webhookUnauthorized(res, 'Plaid signature verification failed')
   }
 }
 
@@ -282,15 +281,28 @@ export const captureRawBody: RequestHandler = (
 }
 
 /**
- * Timing-safe string comparison to prevent timing attacks
+ * Timing-safe string comparison to prevent timing attacks.
+ *
+ * crypto.timingSafeEqual throws on unequal-length buffers, so we cannot call it
+ * directly on differently sized inputs. We also avoid the previous buggy
+ * "compare a buffer to itself" pattern (which leaked length and always burned
+ * the same time regardless of input). Instead, on a length mismatch we return
+ * false immediately — the lengths of HMAC/HMAC-style digests are public, so
+ * revealing a length mismatch does not leak secret content.
  */
 function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    // Perform comparison anyway to maintain constant time
-    crypto.timingSafeEqual(Buffer.from(a), Buffer.from(a))
+  const bufA = Buffer.from(a, 'utf8')
+  const bufB = Buffer.from(b, 'utf8')
+  if (bufA.length !== bufB.length) {
     return false
   }
-  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b))
+  try {
+    return crypto.timingSafeEqual(bufA, bufB)
+  } catch {
+    // Defensive: timingSafeEqual can throw if buffer construction differed;
+    // never treat a thrown comparison as a match.
+    return false
+  }
 }
 
 /**

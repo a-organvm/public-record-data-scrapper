@@ -25,6 +25,9 @@ const industryIcons: Record<string, string> = {
   technology: '💻'
 }
 
+// Fallback so unknown/unmapped industries still render an icon instead of blank.
+const DEFAULT_INDUSTRY_ICON = '🏢'
+
 export function ProspectCard({ prospect, onSelect }: ProspectCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const isMobile = useIsMobile()
@@ -64,7 +67,7 @@ export function ProspectCard({ prospect, onSelect }: ProspectCardProps) {
                     ease: 'easeInOut'
                   }}
                 >
-                  {industryIcons[prospect.industry]}
+                  {industryIcons[prospect.industry] ?? DEFAULT_INDUSTRY_ICON}
                 </motion.div>
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-base sm:text-lg leading-tight mb-1 truncate">
@@ -205,7 +208,7 @@ export function ProspectCard({ prospect, onSelect }: ProspectCardProps) {
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 flex-1 min-w-0">
                 <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10 text-xl flex-shrink-0">
-                  {industryIcons[prospect.industry]}
+                  {industryIcons[prospect.industry] ?? DEFAULT_INDUSTRY_ICON}
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-base leading-tight truncate">

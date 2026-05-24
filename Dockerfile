@@ -13,6 +13,18 @@ COPY scripts/ensure-main-branch.mjs ./scripts/ensure-main-branch.mjs
 # Install all dependencies (including dev for build)
 RUN npm ci
 
+# Stage 1b: Production-only dependencies (no dev tooling)
+# Produces a node_modules tree containing only runtime deps for the final image.
+FROM node:20-alpine AS prod-deps
+WORKDIR /app
+
+RUN apk add --no-cache libc6-compat
+
+COPY package.json package-lock.json ./
+COPY scripts/ensure-main-branch.mjs ./scripts/ensure-main-branch.mjs
+
+RUN npm ci --omit=dev
+
 # Stage 2: Builder
 FROM node:20-alpine AS builder
 WORKDIR /app
@@ -40,8 +52,8 @@ RUN addgroup --system --gid 1001 nodejs && \
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Copy only production dependencies
-COPY --from=deps /app/node_modules ./node_modules
+# Copy only production dependencies (no dev tooling ships to the runtime image)
+COPY --from=prod-deps /app/node_modules ./node_modules
 
 # Copy built application (frontend dist + server bundle)
 COPY --from=builder /app/dist ./dist

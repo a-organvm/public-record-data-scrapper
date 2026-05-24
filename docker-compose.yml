@@ -1,7 +1,9 @@
 # Docker Compose for local development
 # Usage: docker-compose up -d
-
-version: '3.8'
+#
+# NOTE: This file is for LOCAL DEVELOPMENT ONLY. The postgres user/password
+# (postgres/postgres) below are dev-only placeholders and must never be used in
+# any shared or production environment.
 
 services:
   # Application server
@@ -15,7 +17,8 @@ services:
       - NODE_ENV=development
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/ucc_mca
       - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=${JWT_SECRET:-development-secret-change-in-production}
+      # No insecure default: JWT_SECRET must be provided via the environment / .env.
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set (e.g. in a local .env file)}
       - CORS_ORIGIN=http://localhost:5000,http://localhost:3000
       - LOG_LEVEL=debug
     depends_on:

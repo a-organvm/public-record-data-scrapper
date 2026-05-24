@@ -346,7 +346,9 @@ export class ScoringService {
     // Intent insight
     if (result.intentScore >= 70) {
       parts.push(`Recent UCC activity suggests active financing interest.`)
-    } else if (daysSinceDefault > 1095) { // 3+ years
+    } else if (Number.isFinite(daysSinceDefault) && daysSinceDefault > 1095) { // 3+ years
+      // Guard against missing/NULL time_since_default so we never render
+      // "NaN years ago".
       parts.push(`Last default was ${Math.round(daysSinceDefault / 365)} years ago, indicating potential recovery.`)
     }
 
@@ -468,7 +470,13 @@ export class ScoringService {
 
     const healthScore = this.calculateHealthScore({
       reviewCount: healthData?.review_count || 0,
-      avgRating: healthData?.avg_sentiment ? healthData.avg_sentiment * 5 : 3,
+      // avg_sentiment is stored on a 0..1 scale (see schema CHECK), but
+      // calculateHealthScore expects avgRating on a 1..5 star scale. Map
+      // linearly: 0 -> 1 star, 1 -> 5 stars (rating = 1 + sentiment*4). The old
+      // `sentiment * 5` produced 0..5, wrongly pushing a neutral 0.5 sentiment
+      // to 2.5 stars (a penalty). Use == null so a legitimate 0 sentiment is
+      // honored rather than defaulting to a neutral 3.
+      avgRating: healthData?.avg_sentiment == null ? 3 : 1 + healthData.avg_sentiment * 4,
       sentimentTrend: (healthData?.sentiment_trend as 'improving' | 'stable' | 'declining') || 'stable',
       violationCount: healthData?.violation_count || 0,
       yearsInBusiness: 3, // Default, would need enrichment
@@ -571,7 +579,9 @@ export class ScoringService {
     const narrative = this.generateNarrative(
       result,
       prospect.company_name,
-      prospect.time_since_default
+      // time_since_default may be missing/NULL; coerce to a finite number so
+      // narrative generation never produces "NaN years ago".
+      Number.isFinite(prospect.time_since_default) ? prospect.time_since_default : 0
     )
 
     return { ...result, narrative }

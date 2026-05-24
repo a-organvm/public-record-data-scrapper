@@ -824,14 +824,55 @@ export class StackAnalysisService {
       return this.funderIndex.get(normalized)
     }
 
-    // Partial match
-    for (const [key, funder] of this.funderIndex.entries()) {
-      if (normalized.includes(key) || key.includes(normalized)) {
-        return funder
+    // Word-boundary partial match. The previous logic used naive substring
+    // containment (`normalized.includes(key) || key.includes(normalized)`),
+    // which produced false positives for short aliases (e.g. 'cit' matching
+    // 'capacity', 'pnc'/'sba' matching unrelated names) and depended on Map
+    // iteration order for which funder won. We instead:
+    //   1. iterate keys deterministically, longest-first (then alphabetically),
+    //      so the most specific alias wins regardless of insertion order, and
+    //   2. require the key to appear as a whole word (token) within the name,
+    //      eliminating accidental mid-word substring hits.
+    const nameTokens = new Set(normalized.split(' ').filter(Boolean))
+
+    const sortedKeys = Array.from(this.funderIndex.keys()).sort((a, b) => {
+      if (b.length !== a.length) return b.length - a.length
+      return a.localeCompare(b)
+    })
+
+    for (const key of sortedKeys) {
+      if (this.keyMatchesAsWords(key, normalized, nameTokens)) {
+        return this.funderIndex.get(key)
       }
     }
 
     return undefined
+  }
+
+  /**
+   * Determine whether a normalized funder key matches a normalized name on
+   * word boundaries. A multi-word key must appear as a contiguous phrase; a
+   * single-word key must appear as a full token (not a mid-word substring).
+   */
+  private keyMatchesAsWords(
+    key: string,
+    normalizedName: string,
+    nameTokens: Set<string>
+  ): boolean {
+    if (!key) return false
+    if (key.includes(' ')) {
+      // Multi-word alias: match as a bounded phrase within the name.
+      return new RegExp(`(^|\\s)${this.escapeRegExp(key)}(\\s|$)`).test(normalizedName)
+    }
+    // Single-word alias: must be a whole token in the name.
+    return nameTokens.has(key)
+  }
+
+  /**
+   * Escape a string for safe use inside a RegExp.
+   */
+  private escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   }
 
   /**

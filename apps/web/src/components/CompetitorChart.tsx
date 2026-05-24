@@ -53,7 +53,7 @@ export function CompetitorChart({ data }: CompetitorChartProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
         {top10.map((competitor, index) => (
           <motion.div
-            key={competitor.lenderName}
+            key={`${competitor.lenderName}-${index}`}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: index * 0.05 }}
@@ -98,9 +98,9 @@ export function CompetitorChart({ data }: CompetitorChartProps) {
               <div className="mb-3">
                 <div className="text-xs text-white/70 mb-1">Industries</div>
                 <div className="flex flex-wrap gap-1">
-                  {competitor.industries.map((ind) => (
+                  {competitor.industries.map((ind, indIndex) => (
                     <Badge
-                      key={ind}
+                      key={`${ind}-${indIndex}`}
                       variant="secondary"
                       className="text-xs capitalize glass-effect border-white/30"
                     >

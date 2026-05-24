@@ -12,7 +12,8 @@ import {
   SystemContext,
   ImprovementStatus,
   AgentRole,
-  CouncilReview
+  CouncilReview,
+  Finding
 } from './types'
 import { DataAnalyzerAgent } from './agents/DataAnalyzerAgent'
 import { OptimizerAgent } from './agents/OptimizerAgent'
@@ -98,20 +99,44 @@ export class AgenticCouncil {
   }
 
   /**
-   * Performs analysis by a single agent with error handling
+   * Performs analysis by a single agent with error handling.
+   *
+   * On failure we do NOT return a silent "all clear" empty analysis (which
+   * previously made e.g. a crashing SecurityAgent look like it found no
+   * problems). Instead we surface the failure as a CRITICAL finding so it is
+   * visible to downstream consumers and dashboards, while still allowing the
+   * remaining agents in the sequence to run.
    */
   private async performAgentAnalysis(agent: Agent, context: SystemContext): Promise<AgentAnalysis> {
     try {
       return await agent.analyze(context)
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
       console.error(`⚠️ ${agent.name} encountered error during analysis:`, error)
-      // Return empty analysis on error to allow other agents to continue
+
+      const failureFinding: Finding = {
+        id: uuidv4(),
+        // 'data-quality' is in reviewRequired, so a failure marker can never be
+        // mistaken for an auto-executable improvement.
+        category: 'data-quality',
+        severity: 'critical',
+        description: `Agent "${agent.name}" (${agent.role}) failed during analysis: ${errorMessage}. Its findings are UNKNOWN, not clear.`,
+        evidence: {
+          agentId: agent.id,
+          agentRole: agent.role,
+          error: errorMessage
+        }
+      }
+
       return {
         agentId: agent.id,
         agentRole: agent.role,
-        findings: [],
+        findings: [failureFinding],
         improvements: [],
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        // Mark the analysis as errored so consumers can distinguish "ran clean"
+        // from "crashed". This is an additive optional field.
+        error: errorMessage
       }
     }
   }

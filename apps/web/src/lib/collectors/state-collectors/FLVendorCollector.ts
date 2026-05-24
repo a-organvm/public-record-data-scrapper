@@ -354,7 +354,9 @@ export class FLVendorCollector implements StateCollector {
     this.requireContract()
 
     try {
-      const response = await this.request<FLVendorFilingResponse>(`/ucc/filing/${filingNumber}`)
+      const response = await this.request<FLVendorFilingResponse>(
+        `/ucc/filing/${encodeURIComponent(filingNumber)}`
+      )
       const filing = this.transformFiling(response)
       this.stats.totalCollected++
       this.stats.lastCollectionTime = new Date().toISOString()
@@ -373,9 +375,12 @@ export class FLVendorCollector implements StateCollector {
   async getFilingDetails(filingNumber: string): Promise<UCCFiling> {
     this.requireContract()
 
-    const response = await this.request<FLVendorFilingResponse>(`/ucc/filing/${filingNumber}`, {
-      params: { include_amendments: 'true', include_images: 'false' }
-    })
+    const response = await this.request<FLVendorFilingResponse>(
+      `/ucc/filing/${encodeURIComponent(filingNumber)}`,
+      {
+        params: { include_amendments: 'true', include_images: 'false' }
+      }
+    )
 
     return this.transformFiling(response)
   }

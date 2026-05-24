@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Prospect } from '@public-records/core'
 import { DataRefreshScheduler, SchedulerStatus } from '@/lib/services'
-import { featureFlags } from '@/lib/config/dataPipeline'
+import { featureFlags, getDataPipelineConfig } from '@/lib/config/dataPipeline'
 import { generateProspects } from '@/lib/demoData'
 import { useDataTier } from '@/hooks/useDataTier'
 import {
@@ -44,6 +44,30 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
   const demoDataEnabled = featureFlags.useDemoData
 
   /**
+   * Lazily instantiate the scheduler so startScheduler/stopScheduler/
+   * triggerIngestion/refreshProspect operate on a real instance instead of a
+   * permanently-null ref. Demo mode never needs a scheduler.
+   */
+  const ensureScheduler = useCallback((): DataRefreshScheduler | null => {
+    if (demoDataEnabled) {
+      return null
+    }
+
+    if (!schedulerRef.current) {
+      const { schedule, ingestion, enrichment } = getDataPipelineConfig()
+      // autoStart is forced off here: the hook controls lifecycle explicitly
+      // via startScheduler()/stopScheduler() so it can sync React state.
+      schedulerRef.current = new DataRefreshScheduler(
+        { ...schedule, autoStart: false },
+        ingestion,
+        enrichment
+      )
+    }
+
+    return schedulerRef.current
+  }, [demoDataEnabled])
+
+  /**
    * Initialize data pipeline
    */
   useEffect(() => {
@@ -58,6 +82,8 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
           setProspects(previewProspects)
           setLastUpdate(new Date().toISOString())
         } else {
+          // Ensure the scheduler instance exists for non-demo data flows
+          ensureScheduler()
           // Use database
           console.log('Initializing database connection...')
 
@@ -89,12 +115,12 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
 
     initialize()
 
-    // Cleanup
-    const scheduler = schedulerRef.current
+    // Cleanup: read the ref lazily so we stop whatever instance exists at
+    // teardown time (the instance may be created after this effect runs).
     return () => {
-      scheduler?.stop()
+      schedulerRef.current?.stop()
     }
-  }, [dataTier, demoDataEnabled])
+  }, [dataTier, demoDataEnabled, ensureScheduler])
 
   /**
    * Manually refresh all data
@@ -128,11 +154,12 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
    * Start the scheduler
    */
   const startScheduler = useCallback(() => {
-    if (schedulerRef.current && !demoDataEnabled) {
-      schedulerRef.current.start()
-      setSchedulerStatus(schedulerRef.current.getStatus())
+    const scheduler = ensureScheduler()
+    if (scheduler) {
+      scheduler.start()
+      setSchedulerStatus(scheduler.getStatus())
     }
-  }, [demoDataEnabled])
+  }, [ensureScheduler])
 
   /**
    * Stop the scheduler
@@ -150,8 +177,9 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
   const refreshProspect = useCallback(
     async (prospectId: string) => {
       try {
-        if (!demoDataEnabled && schedulerRef.current) {
-          const refreshed = await schedulerRef.current.refreshProspect(prospectId)
+        const scheduler = ensureScheduler()
+        if (scheduler) {
+          const refreshed = await scheduler.refreshProspect(prospectId)
           if (refreshed) {
             setProspects((prev) => prev.map((p) => (p.id === prospectId ? refreshed : p)))
             setLastUpdate(new Date().toISOString())
@@ -162,7 +190,7 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
         setError(err instanceof Error ? err.message : 'Failed to refresh prospect')
       }
     },
-    [demoDataEnabled]
+    [ensureScheduler]
   )
 
   /**
@@ -173,10 +201,11 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
       setLoading(true)
       setError(null)
 
-      if (!demoDataEnabled && schedulerRef.current) {
-        await schedulerRef.current.triggerIngestion()
-        setProspects(schedulerRef.current.getProspects())
-        setSchedulerStatus(schedulerRef.current.getStatus())
+      const scheduler = ensureScheduler()
+      if (scheduler) {
+        await scheduler.triggerIngestion()
+        setProspects(scheduler.getProspects())
+        setSchedulerStatus(scheduler.getStatus())
         setLastUpdate(new Date().toISOString())
       }
 
@@ -186,7 +215,7 @@ export function useDataPipeline(): DataPipelineState & DataPipelineActions {
       setError(err instanceof Error ? err.message : 'Failed to trigger ingestion')
       setLoading(false)
     }
-  }, [demoDataEnabled])
+  }, [ensureScheduler])
 
   return {
     prospects,

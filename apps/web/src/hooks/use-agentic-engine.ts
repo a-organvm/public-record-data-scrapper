@@ -4,7 +4,7 @@
  * Provides React integration for the agentic system
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { AgenticEngine } from '@/lib/agentic/AgenticEngine'
 import { AgentCallbackClient } from '@/lib/agentic/AgentCallbackClient'
 import { SystemContext, Improvement, ImprovementStatus, AgenticConfig } from '@/lib/agentic/types'
@@ -39,6 +39,36 @@ export function useAgenticEngine(
   )
   const [lastRunTime, setLastRunTime] = usePersistentState<string>('agentic-last-run', '')
   const [systemHealth, setSystemHealth] = useState(engine.getSystemHealth())
+
+  // Guards against the auto-run effect double-firing (e.g. when context
+  // identity changes before the persisted lastRunTime has been written back).
+  const autoRunStartedRef = useRef(false)
+  // Ensures the one-time rehydration of persisted improvements only happens once.
+  const rehydratedRef = useRef(false)
+
+  // Rehydrate the engine's internal improvement map from persisted state on
+  // init so approveImprovement() does not throw "not found" after a reload.
+  if (!rehydratedRef.current) {
+    rehydratedRef.current = true
+    if (improvements.length > 0) {
+      engine.setImprovements(improvements)
+    }
+  }
+
+  // Apply configuration changes to the existing engine instead of recreating
+  // it. The engine is created once (above) with the initial config; subsequent
+  // config changes are forwarded via updateConfig so they are not ignored.
+  // Serialize the config so the effect only fires on actual value changes.
+  const configKey = config ? JSON.stringify(config) : ''
+  useEffect(() => {
+    if (config) {
+      engine.updateConfig(config)
+      setSystemHealth(engine.getSystemHealth())
+    }
+    // configKey captures the meaningful change; config object identity is not
+    // a reliable dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine, configKey])
 
   useEffect(() => {
     engine.setCallbackClient(options?.callbackClient ?? null)
@@ -91,9 +121,13 @@ export function useAgenticEngine(
 
   useEffect(() => {
     const hasProspects = context.prospects.length > 0
-    const shouldAutoRun = !lastRunTime && engine.getConfig().enabled && hasProspects
+    const shouldAutoRun =
+      !autoRunStartedRef.current && !lastRunTime && engine.getConfig().enabled && hasProspects
 
     if (shouldAutoRun) {
+      // Latch immediately (synchronously) so a re-render triggered by a context
+      // change before `lastRunTime` is persisted cannot kick off a second cycle.
+      autoRunStartedRef.current = true
       console.log('🤖 Auto-running initial agentic cycle...')
       runCycle()
     }

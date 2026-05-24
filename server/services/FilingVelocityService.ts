@@ -13,33 +13,46 @@ export class FilingVelocityService {
     const metrics: VelocityMetric[] = []
 
     for (const windowDays of windows) {
-      // Count filings in current window
+      // Count filings in current window. Use half-open intervals so the
+      // boundary day (exactly windowDays ago) belongs to EXACTLY ONE window and
+      // is never counted in both current and prior:
+      //   current = ( now - windowDays, now ]
+      //   prior   = ( now - 2*windowDays, now - windowDays ]
       const currentRows = await this.db.query<{ count: string }>(
         `SELECT COUNT(*)::text as count FROM ucc_filings uf
          JOIN prospect_ucc_filings puf ON uf.id = puf.ucc_filing_id
          WHERE puf.prospect_id = $1
-           AND uf.filing_date >= CURRENT_DATE - $2::integer * INTERVAL '1 day'`,
+           AND uf.filing_date > CURRENT_DATE - $2::integer * INTERVAL '1 day'`,
         [prospectId, windowDays]
       )
       const currentCount = parseInt(currentRows[0]?.count ?? '0', 10)
 
-      // Count filings in prior window (same length, shifted back)
+      // Count filings in prior window (same length, shifted back; half-open).
       const priorRows = await this.db.query<{ count: string }>(
         `SELECT COUNT(*)::text as count FROM ucc_filings uf
          JOIN prospect_ucc_filings puf ON uf.id = puf.ucc_filing_id
          WHERE puf.prospect_id = $1
-           AND uf.filing_date >= CURRENT_DATE - $2::integer * INTERVAL '1 day' * 2
-           AND uf.filing_date < CURRENT_DATE - $2::integer * INTERVAL '1 day'`,
+           AND uf.filing_date > CURRENT_DATE - $2::integer * INTERVAL '1 day' * 2
+           AND uf.filing_date <= CURRENT_DATE - $2::integer * INTERVAL '1 day'`,
         [prospectId, windowDays]
       )
       const priorCount = parseInt(priorRows[0]?.count ?? '0', 10)
 
-      // Determine trend
+      // Determine trend using proportional thresholds so MODERATE declines are
+      // not lumped into 'stable'. Previously only a >50% drop (current <
+      // prior/2) counted as decelerating, so e.g. 5 -> 3 (a 40% drop) was
+      // wrongly reported as stable. We treat a >=20% change as a real trend.
       let trend: VelocityMetric['trend'] = 'stable'
-      if (currentCount > priorCount && currentCount > 0) {
-        trend = 'accelerating'
-      } else if (priorCount > 0 && currentCount < priorCount / 2) {
-        trend = 'decelerating'
+      if (priorCount === 0) {
+        // No prior activity: any new filings are acceleration; otherwise stable.
+        trend = currentCount > 0 ? 'accelerating' : 'stable'
+      } else {
+        const ratio = currentCount / priorCount
+        if (ratio >= 1.2) {
+          trend = 'accelerating'
+        } else if (ratio <= 0.8) {
+          trend = 'decelerating'
+        }
       }
 
       const avgFilingsPerMonth = windowDays > 0 ? (currentCount / windowDays) * 30 : 0

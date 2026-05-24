@@ -49,6 +49,11 @@ export class DataAnalyzerAgent extends BaseAgent {
   }
 
   private checkDataFreshness(context: SystemContext): Finding | null {
+    // Nothing to analyze (and avoids division by zero below).
+    if (context.prospects.length === 0) {
+      return null
+    }
+
     const now = new Date()
     let staleCount = 0
 
@@ -111,6 +116,12 @@ export class DataAnalyzerAgent extends BaseAgent {
   }
 
   private checkDataCompleteness(context: SystemContext): Finding | null {
+    // No prospects means no completeness to measure; returning early avoids a
+    // NaN result from dividing by zero.
+    if (context.prospects.length === 0) {
+      return null
+    }
+
     const totalFields = 10 // Expected fields per prospect
     let totalCompleteness = 0
 

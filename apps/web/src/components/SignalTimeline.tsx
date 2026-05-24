@@ -1,14 +1,16 @@
 import { GrowthSignal, SignalType } from '@public-records/core'
 import { Card } from '@public-records/ui/card'
 import { Badge } from '@public-records/ui/badge'
-import { useState } from 'react'
-import { Briefcase, Certificate, Handshake, TrendUp, Toolbox } from '@phosphor-icons/react'
+import { Briefcase, Certificate, Handshake, TrendUp, Toolbox, Pulse } from '@phosphor-icons/react'
+import { useEffect, useState } from 'react'
 
 interface SignalTimelineProps {
   signals: GrowthSignal[]
 }
 
-const signalConfig: Record<SignalType, { icon: typeof Briefcase; color: string; label: string }> = {
+type SignalConfigEntry = { icon: typeof Briefcase; color: string; label: string }
+
+const signalConfig: Record<SignalType, SignalConfigEntry> = {
   hiring: { icon: Briefcase, color: 'text-secondary', label: 'Hiring' },
   permit: { icon: Certificate, color: 'text-accent', label: 'Permit' },
   contract: { icon: Handshake, color: 'text-success', label: 'Contract' },
@@ -16,10 +18,21 @@ const signalConfig: Record<SignalType, { icon: typeof Briefcase; color: string; 
   equipment: { icon: Toolbox, color: 'text-warning', label: 'Equipment' }
 }
 
-const getNow = () => Date.now()
+// Fallback for unknown/legacy signal types so config.icon/.color/.label never throw.
+const DEFAULT_SIGNAL_CONFIG: SignalConfigEntry = {
+  icon: Pulse,
+  color: 'text-muted-foreground',
+  label: 'Signal'
+}
 
 export function SignalTimeline({ signals }: SignalTimelineProps) {
-  const [now] = useState(getNow)
+  // Refresh `now` periodically so relative "Nd ago" labels don't freeze at mount
+  // time. Lazy initializer keeps the render itself pure.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [])
 
   if (signals.length === 0) {
     return (
@@ -32,7 +45,7 @@ export function SignalTimeline({ signals }: SignalTimelineProps) {
   return (
     <div className="space-y-3">
       {signals.map((signal) => {
-        const config = signalConfig[signal.type]
+        const config = signalConfig[signal.type] ?? DEFAULT_SIGNAL_CONFIG
         const Icon = config.icon
         const date = new Date(signal.detectedDate)
         const daysAgo = Math.floor((now - date.getTime()) / (1000 * 60 * 60 * 24))

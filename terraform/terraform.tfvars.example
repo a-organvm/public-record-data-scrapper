@@ -6,8 +6,9 @@
 # REQUIRED VARIABLES - Must be set
 # ============================================================================
 
-# PostgreSQL master password (minimum 8 characters, use strong password)
-db_master_password = "CHANGE_ME_SecurePassword123!"
+# NOTE: db_master_password is no longer used. The RDS master password is
+# managed by AWS Secrets Manager (manage_master_user_password = true). Read the
+# generated credential from the `db_master_user_secret_arn` output.
 
 # Redis authentication token (minimum 16 characters)
 redis_auth_token = "CHANGE_ME_SecureRedisToken456789!"

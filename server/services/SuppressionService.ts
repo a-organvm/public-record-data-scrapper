@@ -254,6 +254,19 @@ export class SuppressionService {
     const normalizedPhone = input.phone ? this.normalizePhone(input.phone) : null
     const normalizedEmail = input.email ? this.normalizeEmail(input.email) : null
 
+    // Validate phone length on ADD. Lookups (isOnDNCList) require a 10-digit
+    // normalized number, so storing a malformed-length number would create an
+    // entry that can never match — silently failing to suppress. Reject it.
+    if (input.phone && (!normalizedPhone || normalizedPhone.length !== 10)) {
+      throw new ValidationError(
+        'Phone number must normalize to 10 digits (US format) to be suppressed'
+      )
+    }
+
+    if (input.email && (!normalizedEmail || !normalizedEmail.includes('@'))) {
+      throw new ValidationError('A valid email address is required to be suppressed')
+    }
+
     // Calculate expiration if specified
     let expiresAt: string | null = null
     if (input.expiresInDays) {
@@ -262,15 +275,21 @@ export class SuppressionService {
       expiresAt = expDate.toISOString()
     }
 
+    const targetChannel = input.channel || 'all'
+
     try {
-      // Check if already exists
+      // Check if already exists. A specific-channel add is considered already
+      // covered by an existing 'all' entry, so we dedupe against that overlap
+      // instead of creating a redundant narrower row. ('all' adds only match
+      // an existing 'all' row.)
       const existing = await database.query<DNCListRow>(
         `SELECT * FROM dnc_list
         WHERE org_id = $1
           AND (($2::varchar IS NOT NULL AND phone = $2) OR ($3::varchar IS NOT NULL AND email = $3))
-          AND channel = $4
+          AND (channel = $4 OR channel = 'all')
+        ORDER BY CASE WHEN channel = 'all' THEN 0 ELSE 1 END
         LIMIT 1`,
-        [input.orgId, normalizedPhone, normalizedEmail, input.channel || 'all']
+        [input.orgId, normalizedPhone, normalizedEmail, targetChannel]
       )
 
       if (existing[0]) {
@@ -298,7 +317,7 @@ export class SuppressionService {
           normalizedPhone,
           normalizedEmail,
           input.source || 'internal',
-          input.channel || 'all',
+          targetChannel,
           input.reason,
           input.addedBy,
           expiresAt
@@ -325,26 +344,67 @@ export class SuppressionService {
     // Determine if identifier is phone or email
     const isEmail = identifier.includes('@')
     const normalized = isEmail ? this.normalizeEmail(identifier) : this.normalizePhone(identifier)
+    const identifierColumn = isEmail ? 'email' : 'phone'
 
     try {
-      let query = `DELETE FROM dnc_list WHERE org_id = $1`
-      const values: unknown[] = [orgId]
-      let paramCount = 2
-
-      if (isEmail) {
-        query += ` AND email = $${paramCount++}`
-      } else {
-        query += ` AND phone = $${paramCount++}`
-      }
-      values.push(normalized)
-
-      if (channel) {
-        query += ` AND channel = $${paramCount++}`
-        values.push(channel)
+      // Case 1: no channel or 'all' → remove every suppression entry for the
+      // identifier (the broadest removal).
+      if (!channel || channel === 'all') {
+        const results = await database.query(
+          `DELETE FROM dnc_list WHERE org_id = $1 AND ${identifierColumn} = $2`,
+          [orgId, normalized]
+        )
+        return (results as { rowCount: number }).rowCount > 0
       }
 
-      const results = await database.query(query, values)
-      return (results as { rowCount: number }).rowCount > 0
+      // Case 2: a specific channel. Remove exact-channel entries AND narrow any
+      // overlapping 'all' entry so we don't leave the channel still suppressed
+      // via the broad grant. Narrowing replaces an 'all' entry with explicit
+      // entries for the remaining channels, preserving suppression elsewhere.
+      let affected = 0
+
+      const exactDelete = await database.query(
+        `DELETE FROM dnc_list
+         WHERE org_id = $1 AND ${identifierColumn} = $2 AND channel = $3`,
+        [orgId, normalized, channel]
+      )
+      affected += (exactDelete as { rowCount: number }).rowCount
+
+      // Find overlapping 'all' entries and split them into remaining channels.
+      const allEntries = await database.query<DNCListRow>(
+        `SELECT * FROM dnc_list
+         WHERE org_id = $1 AND ${identifierColumn} = $2 AND channel = 'all'`,
+        [orgId, normalized]
+      )
+
+      const remainingChannels: DNCChannel[] = (['call', 'sms', 'email'] as DNCChannel[]).filter(
+        (c) => c !== channel
+      )
+
+      for (const entry of allEntries) {
+        // Delete the broad 'all' entry and re-insert explicit entries for the
+        // channels that should remain suppressed.
+        await database.query(`DELETE FROM dnc_list WHERE id = $1`, [entry.id])
+        affected += 1
+        for (const c of remainingChannels) {
+          await database.query(
+            `INSERT INTO dnc_list (org_id, phone, email, source, channel, reason, added_by, expires_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [
+              entry.org_id,
+              entry.phone,
+              entry.email,
+              entry.source,
+              c,
+              entry.reason,
+              entry.added_by,
+              entry.expires_at
+            ]
+          )
+        }
+      }
+
+      return affected > 0
     } catch (error) {
       throw new DatabaseError(
         'Failed to remove from suppression list',

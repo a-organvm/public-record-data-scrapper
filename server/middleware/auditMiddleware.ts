@@ -158,43 +158,74 @@ async function writeAuditLog(context: AuditContext): Promise<void> {
   }
 }
 
+const SENSITIVE_FIELDS = [
+  'password',
+  'ssn',
+  'socialSecurityNumber',
+  'bankAccount',
+  'accountNumber',
+  'routingNumber',
+  'creditCard',
+  'cardNumber',
+  'cvv',
+  'pin',
+  'secret',
+  'token',
+  'apiKey'
+]
+
+// Pre-compute the normalized set of sensitive key names (lowercased, with both
+// camelCase and snake_case variants) for efficient recursive matching.
+const SENSITIVE_KEY_SET = new Set<string>(
+  SENSITIVE_FIELDS.flatMap((field) => {
+    const snakeCase = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
+    return [field.toLowerCase(), snakeCase.toLowerCase()]
+  })
+)
+
+function isSensitiveKey(key: string): boolean {
+  return SENSITIVE_KEY_SET.has(key.toLowerCase())
+}
+
 /**
- * Redact sensitive fields from audit logs
+ * Recursively redact a single value (handles objects and arrays).
+ */
+function redactValue(value: unknown, depth: number): unknown {
+  // Guard against deeply nested / cyclic-like structures.
+  if (depth > 8) return '[TRUNCATED]'
+
+  if (Array.isArray(value)) {
+    return value.map((item) => redactValue(item, depth + 1))
+  }
+
+  if (value && typeof value === 'object') {
+    const source = value as Record<string, unknown>
+    const out: Record<string, unknown> = {}
+    for (const [key, val] of Object.entries(source)) {
+      if (isSensitiveKey(key)) {
+        out[key] = '[REDACTED]'
+      } else {
+        out[key] = redactValue(val, depth + 1)
+      }
+    }
+    return out
+  }
+
+  return value
+}
+
+/**
+ * Redact sensitive fields from audit logs.
+ *
+ * Recurses into nested objects and arrays so sensitive values are masked at any
+ * depth (the previous implementation only redacted top-level keys, leaking e.g.
+ * `payment.cardNumber`).
  */
 function redactSensitiveData(
   data: Record<string, unknown> | undefined
 ): Record<string, unknown> | undefined {
   if (!data) return undefined
-
-  const sensitiveFields = [
-    'password',
-    'ssn',
-    'socialSecurityNumber',
-    'bankAccount',
-    'accountNumber',
-    'routingNumber',
-    'creditCard',
-    'cardNumber',
-    'cvv',
-    'pin',
-    'secret',
-    'token',
-    'apiKey'
-  ]
-
-  const redacted = { ...data }
-  for (const field of sensitiveFields) {
-    if (field in redacted) {
-      redacted[field] = '[REDACTED]'
-    }
-    // Check camelCase and snake_case variants
-    const snakeCase = field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
-    if (snakeCase in redacted) {
-      redacted[snakeCase] = '[REDACTED]'
-    }
-  }
-
-  return redacted
+  return redactValue(data, 0) as Record<string, unknown>
 }
 
 /**
@@ -234,35 +265,55 @@ export const auditMiddleware = (
   // Store original body for before state comparison
   const originalBody = req.body ? { ...req.body } : undefined
 
-  // Capture original json method
-  const originalJson = res.json.bind(res)
+  // Ensure we only write a single audit record even if both res.json and
+  // res.send are invoked for the same response.
+  let audited = false
 
-  // Override res.json to capture response
-  res.json = function (body: Record<string, unknown>): Response {
-    // Process audit after response is sent (async)
+  /**
+   * Build and persist the audit record from the (optional) response body.
+   * `body` may be a parsed object (from res.json) or undefined (e.g. a 204
+   * res.send() with no payload).
+   */
+  const processAudit = (body: unknown): void => {
+    if (audited) return
+    audited = true
+
     setImmediate(async () => {
       try {
+        const responseObject =
+          body && typeof body === 'object' && !Array.isArray(body)
+            ? (body as Record<string, unknown>)
+            : undefined
+        const isErrorResponse = !!responseObject && 'error' in responseObject
+
         // For creates, the response body is the after state
-        if (auditContext.action === 'create' && body && !('error' in body)) {
-          auditContext.afterState = redactSensitiveData(body as Record<string, unknown>)
+        if (auditContext.action === 'create' && responseObject && !isErrorResponse) {
+          auditContext.afterState = redactSensitiveData(responseObject)
         }
 
         // For updates, calculate changes between request body and response
-        if (auditContext.action === 'update' && originalBody && body && !('error' in body)) {
+        if (
+          auditContext.action === 'update' &&
+          originalBody &&
+          responseObject &&
+          !isErrorResponse
+        ) {
           auditContext.beforeState = redactSensitiveData(originalBody)
-          auditContext.afterState = redactSensitiveData(body as Record<string, unknown>)
+          auditContext.afterState = redactSensitiveData(responseObject)
           auditContext.changes = calculateChanges(
             redactSensitiveData(originalBody),
-            redactSensitiveData(body as Record<string, unknown>)
+            redactSensitiveData(responseObject)
           )
         }
 
-        // For deletes, the request body or params contain the entity info
+        // For deletes, the request body or params contain the entity info.
+        // Deletes commonly return 204 with no body (res.send), so this path is
+        // essential to ensure delete mutations are audited.
         if (auditContext.action === 'delete') {
           auditContext.beforeState = redactSensitiveData(originalBody)
         }
 
-        // Only log if not an error response
+        // Only log successful (non-error) responses
         if (res.statusCode < 400) {
           await writeAuditLog(auditContext)
         }
@@ -270,8 +321,32 @@ export const auditMiddleware = (
         console.error('[AuditMiddleware] Error processing audit:', error)
       }
     })
+  }
 
+  // Capture original methods
+  const originalJson = res.json.bind(res)
+  const originalSend = res.send.bind(res)
+
+  // Override res.json to capture structured response bodies.
+  res.json = function (body: Record<string, unknown>): Response {
+    processAudit(body)
     return originalJson(body)
+  }
+
+  // Override res.send to capture responses that bypass res.json — notably 204
+  // No Content responses from DELETE handlers, which would otherwise skip audit.
+  res.send = function (body?: unknown): Response {
+    let parsed: unknown = body
+    // res.send may receive a JSON string; try to parse for richer audit data.
+    if (typeof body === 'string') {
+      try {
+        parsed = JSON.parse(body)
+      } catch {
+        parsed = undefined
+      }
+    }
+    processAudit(parsed)
+    return originalSend(body)
   }
 
   next()

@@ -65,6 +65,9 @@ interface ConsentDashboardProps {
 
 type ConsentStatusFilter = 'all' | 'active' | 'revoked' | 'expired'
 
+// Radix Select forbids empty-string item values; use a sentinel for "unspecified".
+const UNSPECIFIED_CHANNEL_VALUE = '__none__'
+
 const consentTypeLabels: Record<ConsentType, string> = {
   express_written: 'Express Written',
   prior_express: 'Prior Express',
@@ -630,12 +633,17 @@ export function ConsentDashboard({
 
             <div>
               <Label className="mb-2 block">Channel (Optional)</Label>
-              <Select value={newConsentChannel} onValueChange={setNewConsentChannel}>
+              <Select
+                value={newConsentChannel || UNSPECIFIED_CHANNEL_VALUE}
+                onValueChange={(v) =>
+                  setNewConsentChannel(v === UNSPECIFIED_CHANNEL_VALUE ? '' : v)
+                }
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select channel" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Not specified</SelectItem>
+                  <SelectItem value={UNSPECIFIED_CHANNEL_VALUE}>Not specified</SelectItem>
                   <SelectItem value="email">Email</SelectItem>
                   <SelectItem value="sms">SMS</SelectItem>
                   <SelectItem value="call">Phone Call</SelectItem>

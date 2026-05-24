@@ -156,6 +156,11 @@ vi.mock('recharts', () => ({
 const mockCreateObjectURL = vi.fn(() => 'mock-url')
 const mockRevokeObjectURL = vi.fn()
 
+// Recent date within the default 30-day range. The dashboard's date filter is
+// now functional (the previous `|| true` no-op was removed), so prospects with
+// signals must fall inside the active window to be counted.
+const recentDate = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
+
 describe('AnalyticsDashboard', () => {
   const mockProspects: Prospect[] = [
     {
@@ -181,7 +186,7 @@ describe('AnalyticsDashboard', () => {
           type: 'hiring',
           description: 'Hiring',
           confidence: 0.9,
-          detectedDate: '2024-01-01'
+          detectedDate: recentDate
         }
       ],
       uccFilings: [],
@@ -216,7 +221,7 @@ describe('AnalyticsDashboard', () => {
           type: 'expansion',
           description: 'Expanding',
           confidence: 0.8,
-          detectedDate: '2024-01-05'
+          detectedDate: recentDate
         }
       ],
       uccFilings: [],

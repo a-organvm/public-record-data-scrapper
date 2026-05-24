@@ -25,7 +25,8 @@ vi.mock('@phosphor-icons/react', () => ({
   Certificate: () => <span data-testid="icon-permit">Certificate</span>,
   Handshake: () => <span data-testid="icon-contract">Handshake</span>,
   TrendUp: () => <span data-testid="icon-expansion">TrendUp</span>,
-  Toolbox: () => <span data-testid="icon-equipment">Toolbox</span>
+  Toolbox: () => <span data-testid="icon-equipment">Toolbox</span>,
+  Pulse: () => <span data-testid="icon-default">Pulse</span>
 }))
 
 describe('SignalTimeline', () => {

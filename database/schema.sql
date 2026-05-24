@@ -2,6 +2,28 @@
 -- UCC-MCA Intelligence Platform - Database Schema
 -- PostgreSQL 14+
 -- ============================================================================
+--
+-- CANONICAL SOURCE OF TRUTH FOR A *FRESH* DATABASE BOOTSTRAP.
+--
+-- This file is the single, full-snapshot bootstrap used by docker-compose
+-- (mounted at /docker-entrypoint-initdb.d) and any "create from scratch" flow.
+-- The incremental files under database/migrations/ are the source of truth for
+-- *evolving an existing* database via `npm run migrate`.
+--
+-- IMPORTANT — avoiding drift / double-apply:
+--   * The tables for migrations 010 (ingestion telemetry), 011 (competitive
+--     intelligence), and 012 (outreach sequences) are reproduced below using
+--     IF NOT EXISTS so a fresh bootstrap has them. They are intentionally
+--     duplicated from database/migrations/0{10,11,12}_*.sql.
+--   * Do NOT run schema.sql AND then `migrate up` against the same database
+--     unless schema_migrations has been seeded; the migration runner now uses
+--     `INSERT ... ON CONFLICT (version) DO NOTHING`, and these blocks use
+--     IF NOT EXISTS, so a re-apply is a no-op rather than an error.
+--   * The matching down-migrations (010/011/012_down.sql) DROP tables that this
+--     bootstrap also "owns". Treat those rollbacks as destructive (see the
+--     WARNING headers in those files) and never run them against a database
+--     that was bootstrapped from schema.sql expecting the tables to persist.
+-- ============================================================================
 
 -- Enable necessary extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

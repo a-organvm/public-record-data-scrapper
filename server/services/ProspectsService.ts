@@ -9,7 +9,7 @@
 
 import { database } from '../database/connection'
 import type { Prospect } from '@public-records/core'
-import { NotFoundError, DatabaseError, ValidationError } from '../errors'
+import { NotFoundError, DatabaseError, ValidationError, ConflictError } from '../errors'
 
 /**
  * Allowlist of valid columns for sorting to prevent SQL injection.
@@ -269,15 +269,44 @@ export class ProspectsService {
    * @throws {DatabaseError} If the database update fails
    */
   async update(id: string, data: Partial<Prospect>): Promise<Prospect> {
-    // Build SET clause dynamically
-    const fields = Object.keys(data).filter((key) => data[key as keyof Prospect] !== undefined)
+    // Explicit camelCase -> snake_case allowlist. This prevents SQL injection
+    // via attacker-controlled keys and ensures only real, updatable columns are
+    // written (raw Object.keys(data) would have interpolated arbitrary keys and
+    // failed for camelCase keys that don't match snake_case columns). Nested /
+    // relational fields (uccFilings, growthSignals, healthScore, mlScoring) are
+    // intentionally excluded.
+    const fieldMap: Partial<Record<keyof Prospect, string>> = {
+      companyName: 'company_name',
+      industry: 'industry',
+      state: 'state',
+      status: 'status',
+      priorityScore: 'priority_score',
+      defaultDate: 'default_date',
+      timeSinceDefault: 'time_since_default',
+      lastFilingDate: 'last_filing_date',
+      narrative: 'narrative',
+      estimatedRevenue: 'estimated_revenue',
+      claimedBy: 'claimed_by',
+      claimedDate: 'claimed_date'
+    }
 
-    if (fields.length === 0) {
+    const updates: string[] = []
+    const values: unknown[] = [id]
+    let paramCount = 2
+
+    for (const [key, column] of Object.entries(fieldMap)) {
+      const value = data[key as keyof Prospect]
+      if (value !== undefined) {
+        updates.push(`${column} = $${paramCount++}`)
+        values.push(value)
+      }
+    }
+
+    if (updates.length === 0) {
       return this.getByIdOrThrow(id)
     }
 
-    const setClause = fields.map((field, i) => `${field} = $${i + 2}`).join(', ')
-    const values = [id, ...fields.map((f) => data[f as keyof Prospect])]
+    const setClause = updates.join(', ')
 
     try {
       const results = await database.query<Prospect>(
@@ -340,19 +369,38 @@ export class ProspectsService {
    */
   async claim(id: string, userId: string): Promise<Prospect> {
     try {
+      // Only claim if currently unclaimed (status != 'claimed' and no
+      // claimed_by). This precondition makes the claim atomic at the row level:
+      // if two users race, only the first UPDATE matches; the second matches no
+      // row and we surface a conflict instead of both "succeeding".
       const results = await database.query<Prospect>(
         `UPDATE prospects
          SET status = 'claimed', claimed_by = $2, claimed_date = CURRENT_DATE, updated_at = CURRENT_TIMESTAMP
          WHERE id = $1
+           AND status <> 'claimed'
+           AND claimed_by IS NULL
          RETURNING *`,
         [id, userId]
       )
+
       if (!results[0]) {
-        throw new NotFoundError('Prospect', id)
+        // Distinguish "doesn't exist" (404) from "already claimed" (409).
+        const existing = await database.query<{ claimed_by: string | null }>(
+          'SELECT claimed_by FROM prospects WHERE id = $1',
+          [id]
+        )
+        if (!existing[0]) {
+          throw new NotFoundError('Prospect', id)
+        }
+        throw new ConflictError(
+          `Prospect ${id} is already claimed`,
+          'prospect'
+        )
       }
+
       return results[0]
     } catch (error) {
-      if (error instanceof NotFoundError) {
+      if (error instanceof NotFoundError || error instanceof ConflictError) {
         throw error
       }
       throw new DatabaseError(

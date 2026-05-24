@@ -269,64 +269,69 @@ export class TwilioVoice {
   generateTwiML(instructions: TwiMLOptions[]): string {
     let twiml = '<?xml version="1.0" encoding="UTF-8"?><Response>'
 
+    // Escape EVERY interpolated value (attributes and element bodies) to
+    // prevent TwiML injection. Caller-influenced fields (voice, action, url,
+    // callerId, number, etc.) must never be concatenated raw into the XML.
+    const attr = (value: string | number | boolean): string => this.escapeXMLAttr(String(value))
+    const body = (value: string): string => this.escapeXML(value)
+
     for (const instruction of instructions) {
       if (instruction.say) {
         const voice = instruction.say.voice || 'Polly.Matthew'
         const lang = instruction.say.language || 'en-US'
-        const escapedText = this.escapeXML(instruction.say.text)
-        twiml += `<Say voice="${voice}" language="${lang}">${escapedText}</Say>`
+        twiml += `<Say voice="${attr(voice)}" language="${attr(lang)}">${body(instruction.say.text)}</Say>`
       }
 
       if (instruction.play) {
         const loop = instruction.play.loop || 1
-        twiml += `<Play loop="${loop}">${instruction.play.url}</Play>`
+        twiml += `<Play loop="${attr(loop)}">${body(instruction.play.url)}</Play>`
       }
 
       if (instruction.gather) {
         const g = instruction.gather
         let gatherAttrs = ''
-        if (g.input) gatherAttrs += ` input="${g.input}"`
-        if (g.action) gatherAttrs += ` action="${g.action}"`
-        if (g.method) gatherAttrs += ` method="${g.method}"`
-        if (g.timeout) gatherAttrs += ` timeout="${g.timeout}"`
-        if (g.numDigits) gatherAttrs += ` numDigits="${g.numDigits}"`
-        if (g.finishOnKey) gatherAttrs += ` finishOnKey="${g.finishOnKey}"`
-        if (g.speechTimeout) gatherAttrs += ` speechTimeout="${g.speechTimeout}"`
-        if (g.hints) gatherAttrs += ` hints="${g.hints}"`
+        if (g.input) gatherAttrs += ` input="${attr(g.input)}"`
+        if (g.action) gatherAttrs += ` action="${attr(g.action)}"`
+        if (g.method) gatherAttrs += ` method="${attr(g.method)}"`
+        if (g.timeout) gatherAttrs += ` timeout="${attr(g.timeout)}"`
+        if (g.numDigits) gatherAttrs += ` numDigits="${attr(g.numDigits)}"`
+        if (g.finishOnKey) gatherAttrs += ` finishOnKey="${attr(g.finishOnKey)}"`
+        if (g.speechTimeout) gatherAttrs += ` speechTimeout="${attr(g.speechTimeout)}"`
+        if (g.hints) gatherAttrs += ` hints="${attr(g.hints)}"`
         twiml += `<Gather${gatherAttrs}></Gather>`
       }
 
       if (instruction.dial) {
         const d = instruction.dial
         let dialAttrs = ''
-        if (d.callerId) dialAttrs += ` callerId="${d.callerId}"`
-        if (d.timeout) dialAttrs += ` timeout="${d.timeout}"`
-        if (d.action) dialAttrs += ` action="${d.action}"`
-        if (d.record) dialAttrs += ` record="${d.record}"`
-        twiml += `<Dial${dialAttrs}>${d.number}</Dial>`
+        if (d.callerId) dialAttrs += ` callerId="${attr(d.callerId)}"`
+        if (d.timeout) dialAttrs += ` timeout="${attr(d.timeout)}"`
+        if (d.action) dialAttrs += ` action="${attr(d.action)}"`
+        if (d.record) dialAttrs += ` record="${attr(d.record)}"`
+        twiml += `<Dial${dialAttrs}>${body(d.number)}</Dial>`
       }
 
       if (instruction.record) {
         const r = instruction.record
         let recordAttrs = ''
-        if (r.action) recordAttrs += ` action="${r.action}"`
-        if (r.method) recordAttrs += ` method="${r.method}"`
-        if (r.timeout) recordAttrs += ` timeout="${r.timeout}"`
-        if (r.maxLength) recordAttrs += ` maxLength="${r.maxLength}"`
-        if (r.transcribe !== undefined) recordAttrs += ` transcribe="${r.transcribe}"`
-        if (r.transcribeCallback) recordAttrs += ` transcribeCallback="${r.transcribeCallback}"`
-        if (r.playBeep !== undefined) recordAttrs += ` playBeep="${r.playBeep}"`
+        if (r.action) recordAttrs += ` action="${attr(r.action)}"`
+        if (r.method) recordAttrs += ` method="${attr(r.method)}"`
+        if (r.timeout) recordAttrs += ` timeout="${attr(r.timeout)}"`
+        if (r.maxLength) recordAttrs += ` maxLength="${attr(r.maxLength)}"`
+        if (r.transcribe !== undefined) recordAttrs += ` transcribe="${attr(r.transcribe)}"`
+        if (r.transcribeCallback) recordAttrs += ` transcribeCallback="${attr(r.transcribeCallback)}"`
+        if (r.playBeep !== undefined) recordAttrs += ` playBeep="${attr(r.playBeep)}"`
         twiml += `<Record${recordAttrs}/>`
       }
 
       if (instruction.pause) {
         const length = instruction.pause.length || 1
-        twiml += `<Pause length="${length}"/>`
+        twiml += `<Pause length="${attr(length)}"/>`
       }
 
       if (instruction.redirect) {
         const method = instruction.redirect.method || 'POST'
-        twiml += `<Redirect method="${method}">${instruction.redirect.url}</Redirect>`
+        twiml += `<Redirect method="${attr(method)}">${body(instruction.redirect.url)}</Redirect>`
       }
 
       if (instruction.hangup) {
@@ -467,7 +472,7 @@ export class TwilioVoice {
   }
 
   /**
-   * Escape XML special characters
+   * Escape XML special characters for use in element text content.
    */
   private escapeXML(text: string): string {
     return text
@@ -476,6 +481,18 @@ export class TwilioVoice {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&apos;')
+  }
+
+  /**
+   * Escape a value for safe interpolation into a double-quoted XML attribute.
+   *
+   * Attribute context requires escaping the same metacharacters as element
+   * text (especially `&`, `<`, and the `"` quote delimiter) so caller-supplied
+   * values cannot break out of the attribute and inject new attributes or
+   * elements (TwiML injection).
+   */
+  private escapeXMLAttr(value: string): string {
+    return this.escapeXML(value)
   }
 }
 

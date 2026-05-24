@@ -92,19 +92,35 @@ function randomElement<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 
-// Weighted random selection for MCA-suitable industries
+// Weighted random selection for MCA-suitable industries.
+// Robust against weights that do not sum to exactly 1.0 and against the
+// rand === 1.0 edge case: weights are normalized by their total and the random
+// draw is scaled to that total, so the cumulative comparison always covers the
+// full range without biasing the trailing fallback.
 function weightedIndustrySelection(): IndustryType {
-  const rand = Math.random()
+  const entries = Object.entries(MCA_INDUSTRY_WEIGHTS) as Array<[IndustryType, number]>
+  const total = entries.reduce((sum, [, weight]) => sum + Math.max(0, weight), 0)
+
+  // Degenerate config (no positive weights): fall back deterministically.
+  if (total <= 0) {
+    return 'restaurant'
+  }
+
+  // Draw in [0, total). Math.random() never returns 1, so scaling by total
+  // keeps the draw strictly below total, guaranteeing a match within the loop.
+  const rand = Math.random() * total
   let cumulative = 0
 
-  for (const [industry, weight] of Object.entries(MCA_INDUSTRY_WEIGHTS)) {
-    cumulative += weight
-    if (rand <= cumulative) {
-      return industry as IndustryType
+  for (const [industry, weight] of entries) {
+    cumulative += Math.max(0, weight)
+    if (rand < cumulative) {
+      return industry
     }
   }
 
-  return 'restaurant' // Fallback to restaurant (best for MCA)
+  // Only reached due to floating-point rounding; return the last weighted item
+  // rather than a hard-coded one so it stays consistent with the weights.
+  return entries[entries.length - 1][0]
 }
 
 function randomInt(min: number, max: number): number {

@@ -30,15 +30,19 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        # actions/checkout v4.3.0
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        # TODO: SHA-pin this action (could not resolve offline). Pin github/codeql-action to a full release SHA.
+        uses: github/codeql-action/init@v3.27.0
         with:
           languages: ${{ matrix.language }}
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        # TODO: SHA-pin this action (could not resolve offline). Pin github/codeql-action to a full release SHA.
+        uses: github/codeql-action/autobuild@v3.27.0
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        # TODO: SHA-pin this action (could not resolve offline). Pin github/codeql-action to a full release SHA.
+        uses: github/codeql-action/analyze@v3.27.0

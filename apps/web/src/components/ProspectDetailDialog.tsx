@@ -38,6 +38,12 @@ import type { ProspectNote, FollowUpReminder, OutreachEmail } from '@public-reco
 import { useState } from 'react'
 import { useIsMobile } from '@public-records/ui/use-mobile'
 
+// Normalize a possibly-undefined/out-of-range score into a valid 0-100 Progress value.
+function clampPercent(value: number | undefined | null): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0
+  return Math.min(100, Math.max(0, value))
+}
+
 interface ProspectDetailDialogProps {
   prospect: Prospect | null
   open: boolean
@@ -251,7 +257,7 @@ export function ProspectDetailDialog({
                           : 'Low'}
                     </span>
                   </div>
-                  <Progress value={prospect.mlScoring.confidence} className="mt-2" />
+                  <Progress value={clampPercent(prospect.mlScoring.confidence)} className="mt-2" />
                 </div>
 
                 <div>
@@ -268,7 +274,10 @@ export function ProspectDetailDialog({
                           : 'Fair'}
                     </span>
                   </div>
-                  <Progress value={prospect.mlScoring.recoveryLikelihood} className="mt-2" />
+                  <Progress
+                    value={clampPercent(prospect.mlScoring.recoveryLikelihood)}
+                    className="mt-2"
+                  />
                 </div>
               </div>
 
@@ -285,7 +294,7 @@ export function ProspectDetailDialog({
                       <span className="capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
                       <span className="font-mono text-xs">{value}%</span>
                     </div>
-                    <Progress value={value} className="h-1.5" />
+                    <Progress value={clampPercent(value)} className="h-1.5" />
                   </div>
                 ))}
               </div>

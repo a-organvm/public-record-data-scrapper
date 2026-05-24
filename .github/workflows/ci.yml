@@ -17,10 +17,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        # actions/checkout v4.3.0
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
 
       - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+        # actions/setup-node v4.4.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: ${{ matrix.node-version }}
 
@@ -43,13 +45,15 @@ jobs:
 
       - name: Install dependencies
         if: steps.detect.outputs.pm != 'none'
+        # --ignore-scripts prevents untrusted PR dependency lifecycle scripts
+        # (postinstall, etc.) from achieving RCE on the CI runner.
         run: |
           if [ "${{ steps.detect.outputs.pm }}" == "pnpm" ]; then
-            pnpm install || true
+            pnpm install --ignore-scripts || true
           elif [ "${{ steps.detect.outputs.pm }}" == "yarn" ]; then
-            yarn install || true
+            yarn install --ignore-scripts || true
           else
-            npm install || true
+            npm ci --ignore-scripts || npm install --ignore-scripts || true
           fi
 
       - name: Lint with ESLint
@@ -87,7 +91,8 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: success() && hashFiles('coverage/lcov.info') != ''
-        uses: codecov/codecov-action@v4
+        # TODO: SHA-pin this action (could not resolve offline). Pin codecov/codecov-action to a full release SHA.
+        uses: codecov/codecov-action@v4.6.0
         with:
           files: ./coverage/lcov.info
           fail_ci_if_error: false

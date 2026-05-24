@@ -157,8 +157,6 @@ export class TXBulkCollector implements StateCollector {
       body?: unknown
     } = {}
   ): Promise<T> {
-    await this.rateLimiter.acquire()
-
     const url = new URL(`${this.config.baseUrl}${endpoint}`)
     if (options.params) {
       Object.entries(options.params).forEach(([key, value]) => {
@@ -178,6 +176,10 @@ export class TXBulkCollector implements StateCollector {
 
     for (let attempt = 0; attempt < this.config.maxRetries; attempt++) {
       try {
+        // Acquire a rate-limit slot on every attempt so retries (including the
+        // 429 `continue` path) count against the limit instead of bypassing it.
+        await this.rateLimiter.acquire()
+
         const response = await fetch(url.toString(), {
           method: options.method || 'GET',
           headers,
@@ -340,7 +342,9 @@ export class TXBulkCollector implements StateCollector {
     }
 
     try {
-      const response = await this.request<TXBulkFilingRecord>(`/ucc/filing/${filingNumber}`)
+      const response = await this.request<TXBulkFilingRecord>(
+        `/ucc/filing/${encodeURIComponent(filingNumber)}`
+      )
       const filing = this.transformFiling(response)
 
       // Cache the result
@@ -360,9 +364,12 @@ export class TXBulkCollector implements StateCollector {
    * Get detailed filing information
    */
   async getFilingDetails(filingNumber: string): Promise<UCCFiling> {
-    const response = await this.request<TXBulkFilingRecord>(`/ucc/filing/${filingNumber}`, {
-      params: { include_amendments: 'true', include_images: 'false' }
-    })
+    const response = await this.request<TXBulkFilingRecord>(
+      `/ucc/filing/${encodeURIComponent(filingNumber)}`,
+      {
+        params: { include_amendments: 'true', include_images: 'false' }
+      }
+    )
 
     return this.transformFiling(response)
   }

@@ -189,17 +189,20 @@ describe('inMemoryRateLimiter middleware', () => {
     expect(mockNext).toHaveBeenCalled()
   })
 
-  it('uses X-Forwarded-For header when available', () => {
-    const forwardedIp = '10.0.0.1'
+  it('keys rate limiting on req.ip, not the spoofable X-Forwarded-For header', () => {
+    // The limiter must rely on Express req.ip (which honors the centrally
+    // configured `trust proxy`) rather than parsing X-Forwarded-For itself,
+    // so a client cannot evade limits by forging the header.
     mockReq.ip = '127.0.0.1'
     mockReq.headers = {
-      'x-forwarded-for': forwardedIp
+      'x-forwarded-for': '10.0.0.1'
     }
 
     inMemoryRateLimiter(mockReq as Request, mockRes as Response, mockNext)
     expect(mockNext).toHaveBeenCalled()
 
-    // Make requests until limit is hit for the forwarded IP
+    // All requests share the same req.ip identifier regardless of the forged
+    // header, so the limit is enforced after the window's worth of requests.
     for (let i = 0; i < 4; i++) {
       inMemoryRateLimiter(mockReq as Request, mockRes as Response, mockNext)
     }
@@ -215,10 +218,10 @@ describe('inMemoryRateLimiter middleware', () => {
     expect(mockRes.status).toHaveBeenCalledWith(429)
   })
 
-  it('handles comma-separated X-Forwarded-For headers', () => {
-    const clientIp = '192.168.1.100'
+  it('ignores a forged X-Forwarded-For when req.ip is absent (falls back to "unknown")', () => {
+    // No req.ip set; the forged header must NOT be used as the identity.
     mockReq.headers = {
-      'x-forwarded-for': `${clientIp}, 10.0.0.2, 10.0.0.1`
+      'x-forwarded-for': '192.168.1.100, 10.0.0.2, 10.0.0.1'
     }
 
     inMemoryRateLimiter(mockReq as Request, mockRes as Response, mockNext)

@@ -8,6 +8,7 @@
  * @module server/services/AlertService
  */
 
+import crypto from 'crypto'
 import { database } from '../database/connection'
 
 /**
@@ -328,12 +329,15 @@ export class AlertService {
     const id = crypto.randomUUID()
     const now = new Date().toISOString()
 
-    // TODO: Persist alerts once the alerts table is wired.
-    // const query = `
-    //   INSERT INTO alerts (id, org_id, prospect_id, rule_id, type, severity, status, title, message, data, created_at)
-    //   VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $8, $9, $10)
-    //   RETURNING *
-    // `
+    // TODO(DEWS-persistence): There is no `alerts` table for DEWS prospect/health
+    // alerts (the existing `compliance_alerts` table has a different schema and
+    // alert_type domain, and lacks prospect_id/rule_id). Until a dedicated
+    // alerts table + migration exists, alerts are NOT persisted — they live only
+    // for the duration of the request. This warning makes that observable.
+    console.warn(
+      `[AlertService] NOT PERSISTED: created in-memory alert "${title}" (${type}, ${severity}) ` +
+        `for prospect ${prospectId}. DEWS alert storage is not wired — this alert will be lost.`
+    )
 
     const alert: Alert = {
       id,
@@ -349,7 +353,6 @@ export class AlertService {
       createdAt: now
     }
 
-    console.log(`[AlertService] Created alert: ${title} (${type}, ${severity})`)
     return alert
   }
 
@@ -370,7 +373,10 @@ export class AlertService {
     //     created_at DESC
     // `
 
-    console.log(`[AlertService] Getting active alerts for org: ${orgId}`)
+    console.warn(
+      `[AlertService] NOT PERSISTED: getActiveAlerts for org ${orgId} returns [] because DEWS ` +
+        `alert storage is not wired. TODO: add an alerts table + query here.`
+    )
 
     return []
   }
@@ -518,7 +524,11 @@ export class AlertService {
     //   ORDER BY type, threshold
     // `
 
-    console.log(`[AlertService] Getting enabled rules for org: ${orgId}`)
+    console.warn(
+      `[AlertService] NOT PERSISTED: getEnabledRules for org ${orgId} returns [] because the ` +
+        `alert_rules table is not wired. DEWS will NOT fire any alerts until rule storage exists. ` +
+        `TODO: add an alert_rules table + query here.`
+    )
 
     return []
   }

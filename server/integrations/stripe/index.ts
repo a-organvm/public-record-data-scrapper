@@ -15,7 +15,7 @@ let stripeClient: Stripe | null = null
 
 export function getStripe(): Stripe {
   if (!stripeClient) {
-    const key = config.stripe?.secretKey || process.env.STRIPE_SECRET_KEY
+    const key = config.stripe.secretKey
     if (!key) {
       throw new Error('STRIPE_SECRET_KEY is not configured')
     }
@@ -25,7 +25,7 @@ export function getStripe(): Stripe {
 }
 
 export function isStripeConfigured(): boolean {
-  return !!(config.stripe?.secretKey || process.env.STRIPE_SECRET_KEY)
+  return !!config.stripe.secretKey
 }
 
 export interface CheckoutOptions {
@@ -55,7 +55,7 @@ export async function constructWebhookEvent(
   signature: string
 ): Promise<Stripe.Event> {
   const stripe = getStripe()
-  const secret = config.stripe?.webhookSecret || process.env.STRIPE_WEBHOOK_SECRET
+  const secret = config.stripe.webhookSecret
   if (!secret) {
     throw new Error('STRIPE_WEBHOOK_SECRET is not configured')
   }

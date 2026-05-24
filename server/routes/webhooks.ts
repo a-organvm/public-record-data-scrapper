@@ -123,9 +123,14 @@ router.post(
       to: body.To
     })
 
-    // Extract media attachments if present
+    // Extract media attachments if present. Twilio sends at most 10 media
+    // parts; the schema only models the first 3. Bound the loop to the smaller
+    // of the reported count and the supported field count to avoid an
+    // unbounded loop driven by an attacker-controlled NumMedia value.
+    const MAX_SUPPORTED_MEDIA = 3
+    const mediaCount = Math.max(0, Math.min(body.NumMedia, MAX_SUPPORTED_MEDIA))
     const attachments: Array<{ url: string; contentType: string }> = []
-    for (let i = 0; i < body.NumMedia; i++) {
+    for (let i = 0; i < mediaCount; i++) {
       const urlKey = `MediaUrl${i}` as keyof typeof body
       const typeKey = `MediaContentType${i}` as keyof typeof body
       if (body[urlKey]) {
@@ -137,14 +142,38 @@ router.post(
     }
 
     try {
-      // Try to find the contact by phone number
+      // Resolve the contact for this inbound message. The previous lookup used
+      // a `LIKE '%<last10>'` match with no tenant scoping and `LIMIT 1`, which
+      // could attach the message to an ARBITRARY tenant's contact and stamp
+      // that tenant's org_id onto the record (cross-tenant data leakage).
+      //
+      // Without an org↔Twilio-number mapping we cannot derive the receiving
+      // org from `To`, so we fail closed: only associate a contact (and its
+      // org) when the sender's full normalized phone matches EXACTLY ONE
+      // contact. If the match is ambiguous (multiple tenants share the number)
+      // we leave contact_id/org_id NULL rather than guess.
+      //
+      // TODO(security): introduce an organization↔Twilio-number mapping so the
+      // receiving org can be derived from `To`, then scope the contact lookup
+      // to that org.
       const normalizedPhone = body.From.replace(/\D/g, '')
+      const last10 = normalizedPhone.slice(-10)
       const contactResults = await database.query<{ id: string; org_id: string }>(
-        "SELECT c.id, c.org_id FROM contacts c WHERE REPLACE(c.phone, '+', '') LIKE $1 OR REPLACE(c.mobile, '+', '') LIKE $1 LIMIT 1",
-        [`%${normalizedPhone.slice(-10)}`]
+        `SELECT c.id, c.org_id FROM contacts c
+         WHERE RIGHT(REGEXP_REPLACE(COALESCE(c.phone, ''), '\\D', '', 'g'), 10) = $1
+            OR RIGHT(REGEXP_REPLACE(COALESCE(c.mobile, ''), '\\D', '', 'g'), 10) = $1
+         LIMIT 2`,
+        [last10]
       )
 
-      const contact = contactResults[0]
+      // Only trust the association when it is unambiguous (single match).
+      const contact = contactResults.length === 1 ? contactResults[0] : undefined
+      if (contactResults.length > 1) {
+        console.warn(
+          '[webhooks] Inbound SMS phone matched multiple tenants; leaving contact/org unset',
+          { messageSid: body.MessageSid, last10 }
+        )
+      }
 
       // Create inbound communication record
       await database.query(
@@ -168,8 +197,13 @@ router.post(
 
       console.log('[webhooks] Inbound SMS recorded successfully')
     } catch (error) {
-      console.error('[webhooks] Failed to record inbound SMS:', error)
-      // Still return 200 to acknowledge receipt
+      // Log with context for observability; do NOT swallow silently. We still
+      // return 200 below so Twilio does not retry a request that will keep
+      // failing (e.g. a persistent DB error), but the failure is recorded.
+      console.error('[webhooks] Failed to record inbound SMS', {
+        messageSid: body.MessageSid,
+        error: error instanceof Error ? error.message : String(error)
+      })
     }
 
     // Return TwiML response (empty response for no auto-reply)

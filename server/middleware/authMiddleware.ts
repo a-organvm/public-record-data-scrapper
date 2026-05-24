@@ -7,6 +7,7 @@ export interface AuthenticatedRequest extends Request {
     id: string
     email?: string
     role?: string
+    orgId?: string
   }
 }
 
@@ -14,8 +15,28 @@ interface JwtPayload {
   sub: string
   email?: string
   role?: string
+  org_id?: string
   iat?: number
   exp?: number
+}
+
+/**
+ * Build the verify options for jsonwebtoken.
+ * Always pins the signing algorithm to HS256 to prevent algorithm-confusion
+ * attacks (e.g. the "alg: none" or RS256/HS256 key-confusion class). Issuer
+ * and audience are pinned when configured.
+ */
+function getVerifyOptions(): jwt.VerifyOptions {
+  const options: jwt.VerifyOptions = {
+    algorithms: ['HS256']
+  }
+  if (config.jwt.issuer) {
+    options.issuer = config.jwt.issuer
+  }
+  if (config.jwt.audience) {
+    options.audience = config.jwt.audience
+  }
+  return options
 }
 
 /**
@@ -44,12 +65,13 @@ export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: N
   const token = parts[1]
 
   try {
-    const decoded = jwt.verify(token, config.jwt.secret) as JwtPayload
+    const decoded = jwt.verify(token, config.jwt.secret, getVerifyOptions()) as JwtPayload
 
     req.user = {
       id: decoded.sub,
       email: decoded.email,
-      role: decoded.role
+      role: decoded.role,
+      orgId: decoded.org_id
     }
 
     next()
@@ -98,12 +120,13 @@ export const optionalAuthMiddleware = (
   const token = parts[1]
 
   try {
-    const decoded = jwt.verify(token, config.jwt.secret) as JwtPayload
+    const decoded = jwt.verify(token, config.jwt.secret, getVerifyOptions()) as JwtPayload
 
     req.user = {
       id: decoded.sub,
       email: decoded.email,
-      role: decoded.role
+      role: decoded.role,
+      orgId: decoded.org_id
     }
   } catch {
     // Ignore invalid tokens for optional auth
