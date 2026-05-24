@@ -14,7 +14,8 @@ const {
   mockLinkToProspect,
   mockUnlinkFromProspect,
   mockLogActivity,
-  mockGetActivities
+  mockGetActivities,
+  mockGetActivityTimeline
 } = vi.hoisted(() => ({
   mockList: vi.fn(),
   mockGetById: vi.fn(),
@@ -24,7 +25,8 @@ const {
   mockLinkToProspect: vi.fn(),
   mockUnlinkFromProspect: vi.fn(),
   mockLogActivity: vi.fn(),
-  mockGetActivities: vi.fn()
+  mockGetActivities: vi.fn(),
+  mockGetActivityTimeline: vi.fn()
 }))
 
 // Mock the ContactsService
@@ -39,6 +41,9 @@ vi.mock('../../services/ContactsService', () => ({
     unlinkFromProspect = mockUnlinkFromProspect
     logActivity = mockLogActivity
     getActivities = mockGetActivities
+    // The routes call getActivityTimeline (timeline view); the older mock only
+    // exposed getActivities, leaving this undefined and throwing at runtime.
+    getActivityTimeline = mockGetActivityTimeline
   }
 }))
 
@@ -504,12 +509,7 @@ describe('Contacts API', () => {
         { id: '2', activity_type: 'email_sent', subject: 'Email 1' }
       ]
 
-      mockGetActivities.mockResolvedValueOnce({
-        activities: mockActivities,
-        page: 1,
-        limit: 20,
-        total: 2
-      })
+      mockGetActivityTimeline.mockResolvedValueOnce(mockActivities)
 
       const response = await request(app)
         .get(`/api/contacts/${mockContactId}/activities`)

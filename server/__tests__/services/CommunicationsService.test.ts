@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { CommunicationsService } from '../../services/CommunicationsService'
-import { ValidationError, DatabaseError } from '../../errors'
+import { ValidationError, DatabaseError, ForbiddenError } from '../../errors'
 
 // Mock the database module
 vi.mock('../../database/connection', () => ({
@@ -44,9 +44,27 @@ const mockQuery = vi.mocked(database.query)
 describe('CommunicationsService', () => {
   let service: CommunicationsService
 
+  // Permissive compliance stubs: these tests exercise transport/persistence
+  // behavior, not the TCPA/DNC gate (which has dedicated tests below). Injecting
+  // allow-all stubs keeps the existing per-test database.query mock sequences
+  // valid (the gate would otherwise consume extra mock calls).
+  const allowAllSuppression = {
+    isOnDNCList: vi.fn().mockResolvedValue({ isSuppressed: false }),
+    isEmailSuppressed: vi.fn().mockResolvedValue({ isSuppressed: false })
+  }
+  const allowAllConsent = {
+    hasConsent: vi.fn().mockResolvedValue({ hasConsent: true })
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
-    service = new CommunicationsService()
+    allowAllSuppression.isOnDNCList.mockResolvedValue({ isSuppressed: false })
+    allowAllSuppression.isEmailSuppressed.mockResolvedValue({ isSuppressed: false })
+    allowAllConsent.hasConsent.mockResolvedValue({ hasConsent: true })
+    service = new CommunicationsService({
+      suppressionService: allowAllSuppression as never,
+      consentService: allowAllConsent as never
+    })
   })
 
   describe('getTemplate', () => {
@@ -356,6 +374,60 @@ describe('CommunicationsService', () => {
           { orgId: 'org-1' } as unknown as Parameters<typeof service.send>[1]
         )
       ).rejects.toThrow(ValidationError)
+    })
+  })
+
+  describe('TCPA / DNC compliance gate', () => {
+    it('should block an email send when the address is on the suppression list', async () => {
+      allowAllSuppression.isEmailSuppressed.mockResolvedValueOnce({
+        isSuppressed: true,
+        source: 'internal'
+      })
+      // Audit-row insert for the blocked communication.
+      mockQuery.mockResolvedValueOnce([])
+
+      await expect(
+        service.sendEmail({
+          orgId: 'org-1',
+          toAddress: 'blocked@example.com',
+          subject: 'Test',
+          body: 'Test'
+        })
+      ).rejects.toThrow(ForbiddenError)
+
+      expect(allowAllSuppression.isEmailSuppressed).toHaveBeenCalled()
+    })
+
+    it('should block an SMS send when the number is on the DNC list', async () => {
+      allowAllSuppression.isOnDNCList.mockResolvedValueOnce({
+        isSuppressed: true,
+        source: 'federal_dnc'
+      })
+      mockQuery.mockResolvedValueOnce([])
+
+      await expect(
+        service.sendSMS({
+          orgId: 'org-1',
+          toPhone: '(123) 456-7890',
+          body: 'Test'
+        })
+      ).rejects.toThrow(ForbiddenError)
+    })
+
+    it('should block a send to a known contact without consent', async () => {
+      allowAllConsent.hasConsent.mockResolvedValueOnce({ hasConsent: false })
+      mockQuery.mockResolvedValueOnce([])
+
+      await expect(
+        service.sendSMS({
+          orgId: 'org-1',
+          contactId: 'contact-1',
+          toPhone: '(123) 456-7890',
+          body: 'Test'
+        })
+      ).rejects.toThrow(ForbiddenError)
+
+      expect(allowAllConsent.hasConsent).toHaveBeenCalledWith('org-1', 'contact-1', 'sms')
     })
   })
 

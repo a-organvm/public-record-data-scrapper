@@ -41,8 +41,12 @@ const consoleFormat = winston.format.combine(
   winston.format.colorize(),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.printf((info) => {
-    const { timestamp, level, message, metadata, ...rest } = info as winston.Logform.TransformableInfo & {
+    const { timestamp, level, message, metadata, ...rest } = info as {
+      timestamp?: unknown
+      level?: unknown
+      message?: unknown
       metadata?: Record<string, unknown>
+      [key: string]: unknown
     }
 
     // winston.format.metadata() collects user-provided fields (correlationId,
