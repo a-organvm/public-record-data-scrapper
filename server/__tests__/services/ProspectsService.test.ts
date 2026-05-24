@@ -409,9 +409,21 @@ describe('ProspectsService', () => {
     })
 
     it('should throw NotFoundError if prospect does not exist', async () => {
-      mockQuery.mockResolvedValueOnce([])
+      // claim() does a conditional UPDATE (no match -> empty), then a
+      // disambiguation SELECT: empty -> the prospect truly does not exist.
+      mockQuery
+        .mockResolvedValueOnce([]) // UPDATE matched nothing
+        .mockResolvedValueOnce([]) // existence check: not found
 
       await expect(service.claim('non-existent', 'user-123')).rejects.toThrow(NotFoundError)
+    })
+
+    it('should throw ConflictError if prospect is already claimed', async () => {
+      mockQuery
+        .mockResolvedValueOnce([]) // UPDATE matched nothing (precondition failed)
+        .mockResolvedValueOnce([{ claimed_by: 'someone-else' }]) // exists -> already claimed
+
+      await expect(service.claim('test-id', 'user-123')).rejects.toThrow(ConflictError)
     })
 
     it('should handle database errors', async () => {
@@ -437,9 +449,10 @@ describe('ProspectsService', () => {
 
     it('should handle partial failures', async () => {
       mockQuery
-        .mockResolvedValueOnce([{ id: '1', status: 'claimed' }])
-        .mockResolvedValueOnce([]) // Not found
-        .mockResolvedValueOnce([{ id: '3', status: 'claimed' }])
+        .mockResolvedValueOnce([{ id: '1', status: 'claimed' }]) // #1 UPDATE ok
+        .mockResolvedValueOnce([]) // #2 UPDATE matched nothing
+        .mockResolvedValueOnce([]) // #2 existence check: not found -> failure
+        .mockResolvedValueOnce([{ id: '3', status: 'claimed' }]) // #3 UPDATE ok
 
       const result = await service.batchClaim(['1', '2', '3'], 'user-123')
 
