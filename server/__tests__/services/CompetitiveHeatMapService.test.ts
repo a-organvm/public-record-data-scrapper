@@ -49,7 +49,9 @@ describe('CompetitiveHeatMapService', () => {
       expect(mockQuery).toHaveBeenCalledTimes(1)
       const [sql, params] = mockQuery.mock.calls[0]
       expect(sql).toMatch(/FROM ucc_filings/)
-      expect(sql).toMatch(/LOWER\(TRIM\(secured_party_name\)\) = LOWER\(TRIM\(\$1\)\)/)
+      // Matches against the normalized secured-party column (the actual schema
+      // column; 'secured_party_name' does not exist).
+      expect(sql).toMatch(/secured_party_normalized = LOWER\(TRIM\(\$1\)\)/)
       expect(params).toEqual(['acme funding'])
     })
 
