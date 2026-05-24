@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { ProspectsService } from '../../services/ProspectsService'
-import { NotFoundError, ValidationError, DatabaseError } from '../../errors'
+import { NotFoundError, ValidationError, DatabaseError, ConflictError } from '../../errors'
 
 // Mock the database module
 vi.mock('../../database/connection', () => ({
@@ -327,13 +327,19 @@ describe('ProspectsService', () => {
 
       mockQuery.mockResolvedValueOnce([mockUpdated])
 
+      // update() accepts camelCase Prospect fields and maps them to snake_case
+      // columns via an explicit allowlist.
       const result = await service.update('test-id', {
-        company_name: 'Updated Name',
-        priority_score: 85
+        companyName: 'Updated Name',
+        priorityScore: 85
       } as Partial<import('@public-records/core').Prospect>)
 
       expect(result).toBeDefined()
       expect(result.company_name).toBe('Updated Name')
+      // Verify the SET clause used the mapped snake_case columns.
+      const updateCall = mockQuery.mock.calls[0]
+      expect(updateCall[0]).toContain('company_name = $')
+      expect(updateCall[0]).toContain('priority_score = $')
     })
 
     it('should throw NotFoundError for non-existent id', async () => {
@@ -468,7 +474,12 @@ describe('ProspectsService', () => {
     })
 
     it('should return success counts on all failures', async () => {
-      mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce([])
+      // Each failed claim issues an UPDATE (empty) + existence check (empty).
+      mockQuery
+        .mockResolvedValueOnce([]) // #1 UPDATE
+        .mockResolvedValueOnce([]) // #1 existence check
+        .mockResolvedValueOnce([]) // #2 UPDATE
+        .mockResolvedValueOnce([]) // #2 existence check
 
       const result = await service.batchClaim(['1', '2'], 'user-123')
 
