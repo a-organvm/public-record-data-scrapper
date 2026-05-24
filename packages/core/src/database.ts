@@ -57,6 +57,9 @@ export interface QueryMetrics {
   text: string
   durationMs: number
   rowCount: number
+  // Index signature so metrics can be passed directly to the structured
+  // logger (which accepts Record<string, unknown> meta).
+  [key: string]: unknown
 }
 
 export interface DatabaseLogger {
