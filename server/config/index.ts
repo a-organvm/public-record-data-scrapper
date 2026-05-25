@@ -114,7 +114,15 @@ export const config = {
     issuer: process.env.JWT_ISSUER || undefined,
     audience: process.env.JWT_AUDIENCE || undefined,
     expiresIn: '1h',
-    refreshExpiresIn: '7d'
+    refreshExpiresIn: '7d',
+    // Name of the custom claim carrying the organization id. Auth0 namespaces
+    // custom claims (e.g. https://<app>/org_id); the resolver also accepts any
+    // claim key ending in /org_id or /orgId. Default 'org_id'.
+    orgClaim: process.env.JWT_ORG_CLAIM || 'org_id',
+    // Name of the optional custom claim carrying the subscription/plan tier.
+    // Namespaced variants ending in /tier or /plan are also accepted. When
+    // present it is authoritative and avoids a DB lookup. Default 'tier'.
+    tierClaim: process.env.JWT_TIER_CLAIM || 'tier'
   },
   stripe: {
     secretKey: process.env.STRIPE_SECRET_KEY,

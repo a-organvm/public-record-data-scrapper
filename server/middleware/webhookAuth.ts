@@ -12,13 +12,30 @@
 
 import { Request, Response, NextFunction, RequestHandler } from 'express'
 import crypto from 'crypto'
-import jwt from 'jsonwebtoken'
+import { decodeProtectedHeader, importJWK, jwtVerify } from 'jose'
 import { config } from '../config'
+import { plaidClient, type PlaidJWK } from '../integrations/plaid/client'
 
 // Configuration from environment
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || ''
 const SENDGRID_WEBHOOK_VERIFICATION_KEY = process.env.SENDGRID_WEBHOOK_VERIFICATION_KEY || ''
-const PLAID_WEBHOOK_SECRET = process.env.PLAID_WEBHOOK_SECRET || ''
+
+/**
+ * In-process cache of Plaid webhook verification keys (JWKs) keyed by `kid`.
+ *
+ * Plaid rotates these keys, but a given `kid` maps to a stable public key for
+ * its lifetime, so caching avoids fetching the JWK on every webhook. Misses
+ * trigger a fresh fetch via the Plaid client.
+ */
+const plaidJwkCache = new Map<string, PlaidJWK>()
+
+/**
+ * Test-only hook to clear the cached Plaid JWKs between cases. Not used in
+ * production flow.
+ */
+export function __clearPlaidJwkCache(): void {
+  plaidJwkCache.clear()
+}
 
 /**
  * Extended request with raw body for signature verification
@@ -164,21 +181,55 @@ export const verifySendGridSignature: RequestHandler = (
 }
 
 /**
+ * Resolve the Plaid webhook verification key (JWK) for a given `kid`, using an
+ * in-process cache and falling back to a live fetch via the Plaid client.
+ *
+ * @throws if the fetch fails or returns no usable key — callers fail closed.
+ */
+async function getPlaidVerificationKey(kid: string): Promise<PlaidJWK> {
+  const cached = plaidJwkCache.get(kid)
+  if (cached) {
+    return cached
+  }
+
+  const response = await plaidClient.webhookVerificationKeyGet(kid)
+  const key = response?.key
+  if (!key || typeof key !== 'object' || !key.kty) {
+    throw new Error(`Plaid verification key for kid "${kid}" missing or malformed`)
+  }
+
+  plaidJwkCache.set(kid, key)
+  return key
+}
+
+/**
  * Plaid Webhook Verification
  *
- * Validates incoming Plaid webhooks using JWT verification.
- * Plaid sends a signed JWT in the Plaid-Verification header.
+ * Validates incoming Plaid webhooks using real ES256 JWT verification.
+ * Plaid sends a signed JWT in the Plaid-Verification header. The flow is:
+ *   1. Decode the JWT protected header to read `kid` and `alg`. Reject unless
+ *      `alg === 'ES256'` and a `kid` is present.
+ *   2. Fetch the public verification key (JWK) for that `kid` via Plaid's
+ *      /webhook_verification_key/get endpoint (cached in-process by `kid`).
+ *   3. Import the JWK and verify the compact JWT signature, pinned to ES256.
+ *   4. Enforce the issued-at freshness window (<= 5 minutes) and confirm the
+ *      raw request body hash matches the signed `request_body_sha256` claim.
+ *
+ * Any failure (unconfigured client, missing/invalid header, wrong alg, missing
+ * kid, key-fetch failure, bad signature, stale token, body-hash mismatch)
+ * results in a fail-closed 401.
  *
  * @see https://plaid.com/docs/api/webhooks/webhook-verification/
  */
-export const verifyPlaidSignature: RequestHandler = (
+export const verifyPlaidSignature: RequestHandler = async (
   req: WebhookRequest,
   res: Response,
   next: NextFunction
 ) => {
-  // FAIL CLOSED: never accept a Plaid webhook when no verification secret is set.
-  if (!PLAID_WEBHOOK_SECRET) {
-    console.error('[webhookAuth] Plaid webhook secret not configured - rejecting webhook')
+  // FAIL CLOSED: never accept a Plaid webhook when the Plaid client has no
+  // credentials configured — verification key fetches would fail anyway.
+  if (!plaidClient.isConfigured()) {
+    console.error('[webhookAuth] Plaid client not configured - rejecting webhook')
     return webhookUnauthorized(res, 'Plaid webhook verification not configured')
   }
 
@@ -198,27 +249,44 @@ export const verifyPlaidSignature: RequestHandler = (
   const rawBody = req.rawBody.toString('utf8')
 
   try {
-    const jwtParts = signedJwt.split('.')
-    if (jwtParts.length !== 3) {
-      throw new Error('Invalid JWT format')
+    // Decode (do NOT trust) the protected header to learn the key id and
+    // algorithm. The signature is verified below with the resolved JWK.
+    let header: { alg?: string; kid?: string }
+    try {
+      header = decodeProtectedHeader(signedJwt) as { alg?: string; kid?: string }
+    } catch (decodeError) {
+      console.error('[webhookAuth] Plaid JWT header decode failed:', decodeError)
+      return webhookUnauthorized(res, 'Invalid Plaid verification token')
     }
 
-    // Verify the JWT SIGNATURE — not just decode it. Plaid production uses
-    // ES256 with rotating public keys served from
-    // /webhook_verification_key/get, which requires fetching/caching a JWK and
-    // an ES256 verify. `jose` (the recommended library) is not a dependency
-    // here, so we verify the HMAC signature against the configured shared
-    // secret (PLAID_WEBHOOK_SECRET) and pin the algorithm to HS256. If the
-    // signature does not verify, jwt.verify throws and we fail closed below.
-    //
-    // TODO(security): when running against real Plaid, add `jose`, fetch the
-    // JWK by the JWT header `kid` from /webhook_verification_key/get, and verify
-    // with ES256. Until then HS256-with-shared-secret is the fail-closed path.
+    // Pin the algorithm to ES256 — Plaid signs webhooks with ES256. Reject any
+    // other algorithm (including "none") to avoid alg-confusion attacks.
+    if (header.alg !== 'ES256') {
+      console.error(`[webhookAuth] Plaid JWT unexpected alg "${header.alg}" (expected ES256)`)
+      return webhookUnauthorized(res, 'Invalid Plaid signature algorithm')
+    }
+
+    if (!header.kid) {
+      console.error('[webhookAuth] Plaid JWT missing kid')
+      return webhookUnauthorized(res, 'Missing Plaid verification key id')
+    }
+
+    // Resolve the public verification key for this kid (cached by kid). A fetch
+    // failure throws and is caught below as a fail-closed 401.
+    let jwk: PlaidJWK
+    try {
+      jwk = await getPlaidVerificationKey(header.kid)
+    } catch (keyError) {
+      console.error('[webhookAuth] Plaid verification key fetch failed:', keyError)
+      return webhookUnauthorized(res, 'Plaid verification key unavailable')
+    }
+
+    // Import the JWK and verify the compact JWT signature, pinned to ES256.
     let payload: { iat?: number; request_body_sha256?: string }
     try {
-      payload = jwt.verify(signedJwt, PLAID_WEBHOOK_SECRET, {
-        algorithms: ['HS256']
-      }) as { iat?: number; request_body_sha256?: string }
+      const publicKey = await importJWK(jwk, 'ES256')
+      const result = await jwtVerify(signedJwt, publicKey, { algorithms: ['ES256'] })
+      payload = result.payload as { iat?: number; request_body_sha256?: string }
     } catch (verifyError) {
       console.error('[webhookAuth] Plaid JWT signature verification failed:', verifyError)
       return webhookUnauthorized(res, 'Invalid Plaid signature')

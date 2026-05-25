@@ -182,10 +182,11 @@ describe('Contacts API', () => {
         .set('Authorization', authHeader)
 
       expect(response.status).toBe(200)
+      // The route maps query params to camelCase service args.
       expect(mockList).toHaveBeenCalledWith(
         expect.objectContaining({
-          sort_by: 'first_name',
-          sort_order: 'asc'
+          sortBy: 'first_name',
+          sortOrder: 'asc'
         })
       )
     })

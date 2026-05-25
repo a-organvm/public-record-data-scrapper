@@ -76,6 +76,38 @@ const defaultLogger: DatabaseLogger = {
   debug: (message, meta) => console.debug(message, meta)
 }
 
+/**
+ * Optional provider that returns the current request's tenant (organization)
+ * id. Injected by the server layer (see server/database/connection.ts) so this
+ * package stays free of any server/middleware import — the provider typically
+ * reads an AsyncLocalStorage store populated by orgContextMiddleware.
+ *
+ * Default is a no-op returning `undefined`, which means: no tenant context, so
+ * `query()` takes the plain `pool.query` fast path with EXACTLY the same
+ * behavior as before this hook existed. This passthrough is load-bearing —
+ * code paths (and tests) that never call `setOrgContextProvider` must be
+ * completely unaffected.
+ */
+type OrgContextProvider = () => string | undefined
+
+let orgContextProvider: OrgContextProvider = () => undefined
+
+/**
+ * Install the org-context provider used to derive `app.current_org_id` per
+ * query. Call once at startup. Passing `undefined` clears it back to the
+ * no-op default (useful in tests).
+ *
+ * NOTE ON RLS: setting `app.current_org_id` only changes what rows are visible
+ * when the application connects as a NON-OWNER DB role. The Row-Level Security
+ * policies from migration 018 are not FORCEd, so the table owner (and any
+ * BYPASSRLS/superuser role) is exempt and sees all rows regardless of the GUC.
+ * Migrations run as the owner by design; run the app under a dedicated
+ * non-owner role for tenant isolation to take effect.
+ */
+export function setOrgContextProvider(provider?: OrgContextProvider): void {
+  orgContextProvider = provider ?? (() => undefined)
+}
+
 export class DatabaseClient {
   private readonly pool: Pool
   private readonly logger: DatabaseLogger
@@ -121,7 +153,15 @@ export class DatabaseClient {
         : { text: textOrOptions.text, params: textOrOptions.values }
 
     const startedAt = Date.now()
-    const result = await this.pool.query<T>(text, params as unknown[] | undefined)
+    // Tenant context: when a provider is installed AND yields an orgId, run on
+    // a dedicated client that SETs the `app.current_org_id` GUC so RLS policies
+    // (migration 018) scope visible rows. When there is no provider/orgId this
+    // is bypassed entirely and the plain pool.query path below is used — that
+    // passthrough MUST stay byte-identical to the pre-existing behavior.
+    const orgId = orgContextProvider()
+    const result = orgId
+      ? await this.queryWithOrgContext<T>(orgId, text, params as unknown[] | undefined)
+      : await this.pool.query<T>(text, params as unknown[] | undefined)
     // Never log parameter values (PII). Only include the SQL text when the
     // operator explicitly opts in via logQueryText; otherwise redact it.
     const metrics: QueryMetrics = {
@@ -133,6 +173,28 @@ export class DatabaseClient {
     this.logger.debug('Database query completed', metrics)
 
     return result
+  }
+
+  /**
+   * Run a single query on a dedicated pooled client after setting the
+   * `app.current_org_id` GUC (session-scoped) so Row-Level Security policies
+   * can scope rows to the tenant. The GUC is RESET and the client released in
+   * a finally block so the connection is safe to return to the pool. A failed
+   * RESET is swallowed (best effort) to avoid masking the original result.
+   */
+  private async queryWithOrgContext<T extends QueryResultRow = QueryResultRow>(
+    orgId: string,
+    text: string,
+    params?: unknown[]
+  ): Promise<QueryResult<T>> {
+    const client = await this.pool.connect()
+    try {
+      await client.query("SELECT set_config('app.current_org_id', $1, false)", [orgId])
+      return await client.query<T>(text, params)
+    } finally {
+      await client.query('RESET app.current_org_id').catch(() => {})
+      client.release()
+    }
   }
 
   async queryRows<T = Record<string, unknown>>(

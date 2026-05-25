@@ -14,6 +14,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler'
 import { requestLogger } from './middleware/requestLogger'
 import { createRateLimiter, closeRateLimiterConnection } from './middleware/rateLimiter'
 import { authMiddleware } from './middleware/authMiddleware'
+import { orgContextMiddleware } from './middleware/orgContext'
 import { httpsRedirect } from './middleware/httpsRedirect'
 import { dataTierRouter } from './middleware/dataTier'
 import { auditMiddleware } from './middleware/auditMiddleware'
@@ -137,16 +138,19 @@ export class Server {
     // verification on the raw body (mounted above), not JWT.
     this.app.use('/api/billing', billingRouter)
 
-    // Protected API routes (authentication required)
-    this.app.use('/api/prospects', authMiddleware, prospectsRouter)
-    this.app.use('/api/competitors', authMiddleware, competitorsRouter)
-    this.app.use('/api/portfolio', authMiddleware, portfolioRouter)
-    this.app.use('/api/enrichment', authMiddleware, enrichmentRouter)
-    this.app.use('/api/jobs', authMiddleware, jobsRouter)
-    this.app.use('/api/contacts', authMiddleware, contactsRouter)
-    this.app.use('/api/deals', authMiddleware, dealsRouter)
-    this.app.use('/api/competitive', authMiddleware, competitiveRouter)
-    this.app.use('/api/outreach', authMiddleware, outreachRouter)
+    // Protected API routes (authentication required).
+    // orgContextMiddleware runs AFTER authMiddleware (so req.user.orgId is
+    // populated) and BEFORE the routers, binding the tenant context that the
+    // core DB client uses to SET app.current_org_id for RLS (migration 018).
+    this.app.use('/api/prospects', authMiddleware, orgContextMiddleware, prospectsRouter)
+    this.app.use('/api/competitors', authMiddleware, orgContextMiddleware, competitorsRouter)
+    this.app.use('/api/portfolio', authMiddleware, orgContextMiddleware, portfolioRouter)
+    this.app.use('/api/enrichment', authMiddleware, orgContextMiddleware, enrichmentRouter)
+    this.app.use('/api/jobs', authMiddleware, orgContextMiddleware, jobsRouter)
+    this.app.use('/api/contacts', authMiddleware, orgContextMiddleware, contactsRouter)
+    this.app.use('/api/deals', authMiddleware, orgContextMiddleware, dealsRouter)
+    this.app.use('/api/competitive', authMiddleware, orgContextMiddleware, competitiveRouter)
+    this.app.use('/api/outreach', authMiddleware, orgContextMiddleware, outreachRouter)
 
     // Root endpoint
     this.app.get('/', (req, res) => {

@@ -11,9 +11,22 @@ import {
   getDatabase,
   initDatabase,
   closeDatabase as closeDatabaseCore,
+  setOrgContextProvider,
   type DatabaseConfig
 } from '../../packages/core/src/database'
 import { config } from '../config'
+import { getCurrentOrgId } from '../middleware/orgContext'
+
+// Inject the per-request tenant resolver into @public-records/core so the core
+// Database client can SET `app.current_org_id` (for migration 018's RLS
+// policies) without taking a hard dependency on server middleware. Registered
+// once at module load. With no active org context the provider returns
+// undefined and core uses its plain pool.query passthrough.
+//
+// RLS note: the GUC only changes row visibility when the app connects as a
+// NON-OWNER DB role; the owner/superuser bypasses the (non-FORCEd) policies,
+// and migrations run as the owner by design.
+setOrgContextProvider(getCurrentOrgId)
 
 // Re-export types for convenience
 export { DatabaseClient, type DatabaseConfig }

@@ -40,6 +40,32 @@ export interface PlaidApiResponse<T> {
 }
 
 /**
+ * A JSON Web Key as returned by Plaid's /webhook_verification_key/get endpoint.
+ *
+ * Plaid signs webhooks with ES256 (NIST P-256 / `crv: 'EC'`) using rotating
+ * keys. The `key` field of the response is a public JWK suitable for `jose`'s
+ * `importJWK`. Fields beyond the JWK core are tolerated via the index signature.
+ */
+export interface PlaidJWK {
+  kty: string
+  kid?: string
+  use?: string
+  alg?: string
+  crv?: string
+  x?: string
+  y?: string
+  [key: string]: unknown
+}
+
+/**
+ * Response body for /webhook_verification_key/get
+ */
+export interface WebhookVerificationKeyGetResponse {
+  key: PlaidJWK
+  request_id?: string
+}
+
+/**
  * Plaid error structure
  */
 export interface PlaidError {
@@ -171,6 +197,25 @@ export class PlaidClient {
       data: payload as T,
       requestId: typeof payload.request_id === 'string' ? payload.request_id : `plaid-${Date.now()}`
     }
+  }
+
+  /**
+   * Fetch the public verification key (JWK) for a given Plaid `key_id`.
+   *
+   * Plaid signs webhooks with ES256 using rotating keys; the `kid` from the
+   * webhook JWT header is resolved to a public JWK via this endpoint. Callers
+   * (e.g. the webhook auth middleware) should cache the returned JWK by `kid`.
+   *
+   * @param keyId - The `kid` taken from the webhook JWT's protected header
+   * @returns The verification key response containing the public JWK
+   * @throws {PlaidError} If the client is unconfigured or the request fails
+   */
+  async webhookVerificationKeyGet(keyId: string): Promise<WebhookVerificationKeyGetResponse> {
+    const response = await this.makeRequest<WebhookVerificationKeyGetResponse>(
+      '/webhook_verification_key/get',
+      { key_id: keyId }
+    )
+    return response.data
   }
 
   /**

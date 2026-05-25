@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { validateRequest } from '../middleware/validateRequest'
 import { asyncHandler } from '../middleware/errorHandler'
-import { requireRole } from '../middleware/authMiddleware'
+import { requireRole, AuthenticatedRequest } from '../middleware/authMiddleware'
 import { getResolvedDataTier } from '../middleware/dataTier'
 import {
   getIngestionCircuitGate,
@@ -52,6 +52,28 @@ const queueListQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).default(20)
 })
 
+// Tenant-attribution stamped onto every manually-enqueued job so reads/deletes
+// and per-queue listings can be scoped to the owning org. Derived ONLY from the
+// verified JWT — never from client-supplied payload fields.
+function tenantAttribution(req: unknown): { orgId?: string; requestedBy?: string } {
+  const user = (req as AuthenticatedRequest).user
+  return { orgId: user?.orgId, requestedBy: user?.id }
+}
+
+// True when the caller may access a job. Admins see everything (cross-tenant
+// operational access). Non-admins may only touch jobs stamped with their own
+// org. Jobs with no orgId (scheduler/self-heal/system) are admin-only.
+function canAccessJob(
+  req: unknown,
+  jobData: { orgId?: string } | null | undefined
+): boolean {
+  const user = (req as AuthenticatedRequest).user
+  if (user?.role === 'admin') return true
+  const callerOrgId = user?.orgId
+  if (!callerOrgId) return false
+  return jobData?.orgId === callerOrgId
+}
+
 // POST /api/jobs/ingestion - Trigger UCC ingestion job
 router.post(
   '/ingestion',
@@ -93,6 +115,7 @@ router.post(
       `ingest-${req.body.state}`,
       {
         ...jobPayload,
+        ...tenantAttribution(req),
         dataTier,
         uccProvider,
         strategy,
@@ -133,7 +156,11 @@ router.post(
     const dataTier = getResolvedDataTier(req)
     // req.body is validated + stripped by the strict schema above, so the
     // spread cannot smuggle arbitrary fields into the job payload.
-    const job = await enrichmentQueue.add('enrich-batch', { ...req.body, dataTier })
+    const job = await enrichmentQueue.add('enrich-batch', {
+      ...req.body,
+      ...tenantAttribution(req),
+      dataTier
+    })
 
     res.status(201).json({
       jobId: job.id,
@@ -153,7 +180,11 @@ router.post(
     const healthScoreQueue = getHealthScoreQueue()
     const dataTier = getResolvedDataTier(req)
     // req.body is validated + stripped by the strict schema above.
-    const job = await healthScoreQueue.add('health-batch', { ...req.body, dataTier })
+    const job = await healthScoreQueue.add('health-batch', {
+      ...req.body,
+      ...tenantAttribution(req),
+      dataTier
+    })
 
     res.status(201).json({
       jobId: job.id,
@@ -165,13 +196,13 @@ router.post(
 )
 
 // GET /api/jobs/:jobId - Get job status
-// Jobs are not tenant-scoped (BullMQ payloads carry no org binding), so reading
-// an arbitrary job by id would leak cross-tenant data. Restrict to admins.
-// TODO(security): when jobs are tagged with an owning org/user, scope reads to
-// the caller instead of requiring the admin role.
+// Jobs are tenant-attributed via `data.orgId` (stamped at enqueue from the JWT).
+// Non-admins may only read jobs owned by their org; admins read any job. A job
+// that exists but belongs to another org returns 404 (not 403) so its existence
+// is not leaked across tenants.
 router.get(
   '/:jobId',
-  requireRole('admin'),
+  requireRole('user', 'admin'),
   validateRequest({ params: jobIdSchema }),
   asyncHandler(async (req, res) => {
     const { jobId } = req.params
@@ -186,6 +217,11 @@ router.get(
     for (const { name, queue } of queues) {
       const job = await queue.getJob(jobId)
       if (job) {
+        // Org-scope: hide cross-tenant jobs behind the same 404 as missing jobs.
+        if (!canAccessJob(req, job.data)) {
+          break
+        }
+
         const state = await job.getState()
         const progress = job.progress
 
@@ -250,10 +286,13 @@ router.get(
   })
 )
 
-// GET /api/jobs/queues/:queueName - Get jobs in a specific queue (admin-only)
+// GET /api/jobs/queues/:queueName - Get jobs in a specific queue.
+// Now org-filtered, so safe for non-admins: a non-admin only sees jobs stamped
+// with their own org; admins see all jobs (cross-tenant operational view).
+// Pagination caps from queueListQuerySchema are preserved.
 router.get(
   '/queues/:queueName',
-  requireRole('admin'),
+  requireRole('user', 'admin'),
   validateRequest({ params: queueNameSchema, query: queueListQuerySchema }),
   asyncHandler(async (req, res) => {
     const { queueName } = req.params
@@ -296,8 +335,12 @@ router.get(
         jobs = await queue.getWaiting(0, limit - 1)
     }
 
+    // Org-scope before serializing: non-admins only see their org's jobs.
+    // Caps from queueListQuerySchema already bounded the fetch above.
+    const visibleJobs = jobs.filter((job) => canAccessJob(req, job.data))
+
     const jobData = await Promise.all(
-      jobs.map(async (job) => ({
+      visibleJobs.map(async (job) => ({
         jobId: job.id,
         status: await job.getState(),
         progress: job.progress,
@@ -317,12 +360,13 @@ router.get(
   })
 )
 
-// DELETE /api/jobs/:jobId - Remove a job (admin-only; jobs are not tenant-scoped)
-// TODO(security): scope deletion to the owning org/user once jobs carry that
-// metadata, instead of requiring the admin role.
+// DELETE /api/jobs/:jobId - Remove a job.
+// Org-scoped: non-admins may only remove jobs owned by their org; admins may
+// remove any job. A job owned by another org returns 404 (not 403) to avoid
+// leaking its existence across tenants.
 router.delete(
   '/:jobId',
-  requireRole('admin'),
+  requireRole('user', 'admin'),
   validateRequest({ params: jobIdSchema }),
   asyncHandler(async (req, res) => {
     const { jobId } = req.params
@@ -336,6 +380,11 @@ router.delete(
     for (const { name, queue } of queues) {
       const job = await queue.getJob(jobId)
       if (job) {
+        // Org-scope: hide cross-tenant jobs behind the same 404 as missing jobs.
+        if (!canAccessJob(req, job.data)) {
+          break
+        }
+
         await job.remove()
         return res.json({
           message: 'Job removed successfully',

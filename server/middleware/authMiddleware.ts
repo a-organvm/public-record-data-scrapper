@@ -8,6 +8,7 @@ export interface AuthenticatedRequest extends Request {
     email?: string
     role?: string
     orgId?: string
+    tier?: string
   }
 }
 
@@ -18,6 +19,80 @@ interface JwtPayload {
   org_id?: string
   iat?: number
   exp?: number
+  // Custom/namespaced claims (e.g. Auth0 'https://<app>/org_id') are read
+  // dynamically by the claim resolvers below, so allow arbitrary keys.
+  [claim: string]: unknown
+}
+
+/**
+ * Coerce an arbitrary claim value to a non-empty string, or undefined.
+ * Guards against object/array/number claim shapes that some IdPs emit.
+ */
+function asClaimString(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.length > 0) return value
+  return undefined
+}
+
+/**
+ * Resolve a namespaced custom claim from a decoded JWT.
+ *
+ * Auth0 (and other OIDC IdPs) emit custom claims under a namespace URI, e.g.
+ * `https://app.example.com/org_id`. We check the configured (unprefixed) claim
+ * name first, then fall back to any key whose suffix matches one of the
+ * provided suffixes (case-insensitive). Returns the first non-empty string.
+ */
+function resolveNamespacedClaim(
+  decoded: JwtPayload,
+  primaryClaim: string,
+  suffixes: string[]
+): string | undefined {
+  const direct = asClaimString(decoded[primaryClaim])
+  if (direct !== undefined) return direct
+
+  const lowerSuffixes = suffixes.map((s) => s.toLowerCase())
+  for (const key of Object.keys(decoded)) {
+    const lowerKey = key.toLowerCase()
+    if (lowerSuffixes.some((suffix) => lowerKey.endsWith(suffix))) {
+      const value = asClaimString(decoded[key])
+      if (value !== undefined) return value
+    }
+  }
+  return undefined
+}
+
+/**
+ * Resolve the organization id from the configured claim plus namespaced
+ * variants ending in /org_id or /orgId.
+ */
+function resolveOrgId(decoded: JwtPayload): string | undefined {
+  return resolveNamespacedClaim(decoded, config.jwt.orgClaim, ['/org_id', '/orgid'])
+}
+
+/**
+ * Resolve the subscription/plan tier from the configured claim plus namespaced
+ * variants ending in /tier or /plan. Advisory: downstream entitlement code
+ * decides whether to trust it.
+ */
+function resolveTier(decoded: JwtPayload): string | undefined {
+  return resolveNamespacedClaim(decoded, config.jwt.tierClaim, [
+    `/${config.jwt.tierClaim.toLowerCase()}`,
+    '/tier',
+    '/plan'
+  ])
+}
+
+/**
+ * Build the authenticated user object from a verified JWT payload, applying the
+ * namespaced claim resolvers for org and tier.
+ */
+function buildUser(decoded: JwtPayload): NonNullable<AuthenticatedRequest['user']> {
+  return {
+    id: decoded.sub,
+    email: asClaimString(decoded.email),
+    role: asClaimString(decoded.role),
+    orgId: resolveOrgId(decoded),
+    tier: resolveTier(decoded)
+  }
 }
 
 /**
@@ -67,12 +142,7 @@ export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: N
   try {
     const decoded = jwt.verify(token, config.jwt.secret, getVerifyOptions()) as JwtPayload
 
-    req.user = {
-      id: decoded.sub,
-      email: decoded.email,
-      role: decoded.role,
-      orgId: decoded.org_id
-    }
+    req.user = buildUser(decoded)
 
     next()
   } catch (error) {
@@ -122,12 +192,7 @@ export const optionalAuthMiddleware = (
   try {
     const decoded = jwt.verify(token, config.jwt.secret, getVerifyOptions()) as JwtPayload
 
-    req.user = {
-      id: decoded.sub,
-      email: decoded.email,
-      role: decoded.role,
-      orgId: decoded.org_id
-    }
+    req.user = buildUser(decoded)
   } catch {
     // Ignore invalid tokens for optional auth
   }
