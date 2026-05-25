@@ -53,7 +53,8 @@ const contactFormSchema = z.object({
   source: z.string().optional()
 })
 
-type ContactFormData = z.infer<typeof contactFormSchema>
+type ContactFormInput = z.input<typeof contactFormSchema>
+type ContactFormData = z.output<typeof contactFormSchema>
 
 interface ContactFormProps {
   open: boolean
@@ -99,7 +100,7 @@ export function ContactForm({
   const [tagInput, setTagInput] = useState('')
   const isEditing = !!contact
 
-  const form = useForm<ContactFormData>({
+  const form = useForm<ContactFormInput, unknown, ContactFormData>({
     resolver: zodResolver(contactFormSchema),
     defaultValues: {
       firstName: '',
@@ -159,8 +160,8 @@ export function ContactForm({
 
   const handleAddTag = () => {
     const tag = tagInput.trim().toLowerCase()
-    if (tag && !form.getValues('tags').includes(tag)) {
-      form.setValue('tags', [...form.getValues('tags'), tag])
+    if (tag && !(form.getValues('tags') ?? []).includes(tag)) {
+      form.setValue('tags', [...(form.getValues('tags') ?? []), tag])
       setTagInput('')
     }
   }
@@ -168,7 +169,7 @@ export function ContactForm({
   const handleRemoveTag = (tagToRemove: string) => {
     form.setValue(
       'tags',
-      form.getValues('tags').filter((tag) => tag !== tagToRemove)
+      (form.getValues('tags') ?? []).filter((tag) => tag !== tagToRemove)
     )
   }
 
@@ -410,7 +411,7 @@ export function ContactForm({
                 </Button>
               </div>
               <div className="flex flex-wrap gap-2">
-                {form.watch('tags').map((tag) => (
+                {(form.watch('tags') ?? []).map((tag) => (
                   <Badge key={tag} variant="secondary" className="gap-1">
                     {tag}
                     <button
@@ -422,7 +423,7 @@ export function ContactForm({
                     </button>
                   </Badge>
                 ))}
-                {form.watch('tags').length === 0 && (
+                {(form.watch('tags') ?? []).length === 0 && (
                   <span className="text-sm text-muted-foreground">No tags added</span>
                 )}
               </div>

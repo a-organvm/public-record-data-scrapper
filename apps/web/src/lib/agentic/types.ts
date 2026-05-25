@@ -155,6 +155,59 @@ export interface AgenticConfig {
   enabledAgents: AgentRole[]
 }
 
+/**
+ * A full council review cycle: the sequenced agents, their analyses, and the
+ * improvements detected during the cycle.
+ */
+export interface CouncilReview {
+  id: string
+  startedAt: string
+  agents: Agent[]
+  analyses: AgentAnalysis[]
+  improvements: Improvement[]
+  status: 'in-progress' | 'completed' | 'failed'
+  completedAt?: string
+}
+
+/**
+ * Aggregate health snapshot derived from the engine's improvement ledger.
+ */
+export interface SystemHealth {
+  totalImprovements: number
+  implemented: number
+  pending: number
+  successRate: number
+  avgSafetyScore: number
+}
+
+/**
+ * Pluggable transport used by AgentCallbackClient to deliver payloads. Both the
+ * connect/disconnect lifecycle hooks are optional; only `send` is required.
+ */
+export interface AgentCallbackTransport {
+  send: (payload: AgentCallbackPayload) => void | Promise<void>
+  connect?: () => void | Promise<void>
+  disconnect?: () => void | Promise<void>
+}
+
+export interface AgentCallbackOptions {
+  transport?: AgentCallbackTransport
+  endpoint?: string
+  headers?: Record<string, string>
+  retries?: number
+  retryDelayMs?: number
+}
+
+/**
+ * Payload delivered after each autonomous cycle: the council review plus the
+ * partitioned improvement outcomes.
+ */
+export interface AgentCallbackPayload {
+  review: CouncilReview
+  executedImprovements: Improvement[]
+  pendingImprovements: Improvement[]
+}
+
 // New types for data enrichment pipeline
 export type SubscriptionTier = 'free' | 'starter' | 'professional' | 'enterprise'
 

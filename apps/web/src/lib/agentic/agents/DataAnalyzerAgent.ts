@@ -7,6 +7,7 @@
 
 import { BaseAgent } from '../BaseAgent'
 import { AgentAnalysis, SystemContext, Finding, ImprovementSuggestion } from '../types'
+import type { Prospect } from '@public-records/core'
 
 export class DataAnalyzerAgent extends BaseAgent {
   constructor() {
@@ -57,7 +58,7 @@ export class DataAnalyzerAgent extends BaseAgent {
     const now = new Date()
     let staleCount = 0
 
-    context.prospects.forEach((p) => {
+    ;(context.prospects as Prospect[]).forEach((p) => {
       if (p.healthScore?.lastUpdated) {
         const lastUpdate = new Date(p.healthScore.lastUpdated)
         const daysSinceUpdate = (now.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24)
@@ -85,7 +86,7 @@ export class DataAnalyzerAgent extends BaseAgent {
     let incompleteCount = 0
     let missingSignalsCount = 0
 
-    context.prospects.forEach((p) => {
+    ;(context.prospects as Prospect[]).forEach((p) => {
       if (!p.estimatedRevenue) incompleteCount++
       if (!p.growthSignals || p.growthSignals.length === 0) missingSignalsCount++
     })
@@ -125,7 +126,7 @@ export class DataAnalyzerAgent extends BaseAgent {
     const totalFields = 10 // Expected fields per prospect
     let totalCompleteness = 0
 
-    context.prospects.forEach((p) => {
+    ;(context.prospects as Prospect[]).forEach((p) => {
       let filledFields = 0
       if (p.companyName) filledFields++
       if (p.industry) filledFields++

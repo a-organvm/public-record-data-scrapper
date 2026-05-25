@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import type {
   Prospect,
   CompanyGraph,
+  CompetitorData,
+  GrowthSignal,
+  IndustryTrend,
   PersonalizedRecommendation,
   GenerativeNarrative,
   SignalChain,
@@ -144,10 +147,10 @@ export function useGenerativeNarrative() {
     async (
       prospect: Prospect,
       context?: {
-        marketData?: unknown[]
+        marketData?: CompetitorData[]
         relationships?: CompanyGraph
-        historicalSignals?: unknown[]
-        industryTrends?: unknown[]
+        historicalSignals?: GrowthSignal[]
+        industryTrends?: IndustryTrend[]
       }
     ) => {
       setLoading(true)

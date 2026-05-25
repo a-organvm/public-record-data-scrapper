@@ -9,7 +9,7 @@ import type {
   PipelineView,
   DealWithDocuments,
   DocumentChecklist
-} from '@public-records/core'
+} from '@/lib/api/deals'
 
 // Mock toast
 vi.mock('sonner', () => ({
