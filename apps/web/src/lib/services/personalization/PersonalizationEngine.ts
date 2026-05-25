@@ -21,7 +21,7 @@ import type {
   QuickAction,
   ActivityItem
 } from '@/types/personalization'
-import type { Prospect } from '@/types'
+import type { Prospect } from '@public-records/core'
 
 export class PersonalizationEngine {
   private profiles: Map<string, UserProfile> = new Map()

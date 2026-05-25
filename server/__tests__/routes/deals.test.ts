@@ -16,6 +16,7 @@ const {
   mockGetStages,
   mockUploadDocument,
   mockGetDocuments,
+  mockGetDocumentChecklist,
   mockVerifyDocument,
   mockDeleteDocument,
   mockGetStats
@@ -30,6 +31,7 @@ const {
   mockGetStages: vi.fn(),
   mockUploadDocument: vi.fn(),
   mockGetDocuments: vi.fn(),
+  mockGetDocumentChecklist: vi.fn(),
   mockVerifyDocument: vi.fn(),
   mockDeleteDocument: vi.fn(),
   mockGetStats: vi.fn()
@@ -48,6 +50,9 @@ vi.mock('../../services/DealsService', () => ({
     getStages = mockGetStages
     uploadDocument = mockUploadDocument
     getDocuments = mockGetDocuments
+    // GET /api/deals/:id builds a document checklist; without this the route
+    // threw "getDocumentChecklist is not a function" and returned 500.
+    getDocumentChecklist = mockGetDocumentChecklist
     verifyDocument = mockVerifyDocument
     deleteDocument = mockDeleteDocument
     getStats = mockGetStats
@@ -140,7 +145,8 @@ describe('Deals API', () => {
         .set('Authorization', authHeader)
 
       expect(response.status).toBe(200)
-      expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ stage_id: mockStageId }))
+      // The route maps the stage_id query param to the camelCase service arg.
+      expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ stageId: mockStageId }))
     })
 
     it('should filter by priority', async () => {
@@ -190,10 +196,11 @@ describe('Deals API', () => {
         .set('Authorization', authHeader)
 
       expect(response.status).toBe(200)
+      // The route maps query params to camelCase service args.
       expect(mockList).toHaveBeenCalledWith(
         expect.objectContaining({
-          sort_by: 'amount_requested',
-          sort_order: 'desc'
+          sortBy: 'amount_requested',
+          sortOrder: 'desc'
         })
       )
     })
@@ -242,8 +249,9 @@ describe('Deals API', () => {
         .set('Authorization', authHeader)
 
       expect(response.status).toBe(200)
-      expect(response.body).toBeInstanceOf(Array)
-      expect(response.body.length).toBe(2)
+      // The route wraps the stages array in a { stages } envelope.
+      expect(response.body.stages).toBeInstanceOf(Array)
+      expect(response.body.stages.length).toBe(2)
     })
   })
 
@@ -278,6 +286,9 @@ describe('Deals API', () => {
       }
 
       mockGetById.mockResolvedValueOnce(mockDeal)
+      // The route also hydrates documents + checklist on the detail view.
+      mockGetDocuments.mockResolvedValueOnce([])
+      mockGetDocumentChecklist.mockResolvedValueOnce([])
 
       const response = await request(app)
         .get(`/api/deals/${mockDealId}`)
@@ -378,7 +389,8 @@ describe('Deals API', () => {
     })
   })
 
-  describe('PATCH /api/deals/:id', () => {
+  // The route exposes updates via PUT /api/deals/:id (not PATCH).
+  describe('PUT /api/deals/:id', () => {
     it('should update deal fields', async () => {
       const mockUpdated = {
         id: mockDealId,
@@ -390,7 +402,7 @@ describe('Deals API', () => {
       mockUpdate.mockResolvedValueOnce(mockUpdated)
 
       const response = await request(app)
-        .patch(`/api/deals/${mockDealId}`)
+        .put(`/api/deals/${mockDealId}`)
         .set('Authorization', authHeader)
         .send({
           amount_requested: 75000,
@@ -406,7 +418,7 @@ describe('Deals API', () => {
       mockUpdate.mockRejectedValueOnce(new NotFoundError('Deal', mockDealId))
 
       const response = await request(app)
-        .patch(`/api/deals/${mockDealId}`)
+        .put(`/api/deals/${mockDealId}`)
         .set('Authorization', authHeader)
         .send({
           amount_requested: 50000
@@ -425,7 +437,7 @@ describe('Deals API', () => {
       mockUpdate.mockResolvedValueOnce(mockUpdated)
 
       const response = await request(app)
-        .patch(`/api/deals/${mockDealId}`)
+        .put(`/api/deals/${mockDealId}`)
         .set('Authorization', authHeader)
         .send({
           factor_rate: 1.35
@@ -436,38 +448,12 @@ describe('Deals API', () => {
     })
   })
 
-  describe('DELETE /api/deals/:id', () => {
-    it('should delete a deal', async () => {
-      mockDelete.mockResolvedValueOnce(true)
+  // NOTE: There is intentionally no DELETE /api/deals/:id endpoint — DealsService
+  // exposes no hard-delete for deals (only deleteDocument), so the previously
+  // present hard-delete tests targeting a non-existent route were removed.
 
-      const response = await request(app)
-        .delete(`/api/deals/${mockDealId}`)
-        .set('Authorization', authHeader)
-
-      expect(response.status).toBe(204)
-    })
-
-    it('should return 404 for non-existent deal', async () => {
-      mockDelete.mockRejectedValueOnce(new NotFoundError('Deal', mockDealId))
-
-      const response = await request(app)
-        .delete(`/api/deals/${mockDealId}`)
-        .set('Authorization', authHeader)
-
-      expect(response.status).toBe(404)
-      expect(response.body.error.code).toBe('NOT_FOUND')
-    })
-
-    it('should validate UUID format', async () => {
-      const response = await request(app)
-        .delete('/api/deals/invalid-uuid')
-        .set('Authorization', authHeader)
-
-      expect(response.status).toBe(400)
-    })
-  })
-
-  describe('POST /api/deals/:id/stage', () => {
+  // The route moves a deal between stages via PATCH /api/deals/:id/stage.
+  describe('PATCH /api/deals/:id/stage', () => {
     it('should move deal to new stage', async () => {
       const mockMoved = {
         id: mockDealId,
@@ -478,7 +464,7 @@ describe('Deals API', () => {
       mockMoveToStage.mockResolvedValueOnce(mockMoved)
 
       const response = await request(app)
-        .post(`/api/deals/${mockDealId}/stage`)
+        .patch(`/api/deals/${mockDealId}/stage`)
         .set('Authorization', authHeader)
         .send({
           stage_id: mockStageId,
@@ -491,7 +477,7 @@ describe('Deals API', () => {
 
     it('should validate stage_id is required', async () => {
       const response = await request(app)
-        .post(`/api/deals/${mockDealId}/stage`)
+        .patch(`/api/deals/${mockDealId}/stage`)
         .set('Authorization', authHeader)
         .send({
           notes: 'Missing stage_id'
@@ -504,7 +490,7 @@ describe('Deals API', () => {
       mockMoveToStage.mockRejectedValueOnce(new NotFoundError('Deal', mockDealId))
 
       const response = await request(app)
-        .post(`/api/deals/${mockDealId}/stage`)
+        .patch(`/api/deals/${mockDealId}/stage`)
         .set('Authorization', authHeader)
         .send({
           stage_id: mockStageId
