@@ -109,6 +109,7 @@
     "helmet": "^8.1.0",
     "input-otp": "^1.4.2",
     "ioredis": "^5.9.2",
+    "jose": "^6.2.3",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.562.0",
     "marked": "^17.0.1",
