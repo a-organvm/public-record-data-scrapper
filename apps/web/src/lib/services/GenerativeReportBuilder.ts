@@ -204,21 +204,21 @@ export class GenerativeReportBuilder {
           id: `insight-${Date.now()}`,
           type: 'opportunity',
           title: 'AI-Generated Analysis',
-          description: narrative.sections.summary,
-          confidence: narrative.confidence,
+          description: narrative.summary,
+          confidence: narrative.keyInsights[0]?.confidence ?? 0,
           impact: 'high',
           relatedProspects: [prospectId],
           generatedAt: new Date().toISOString(),
-          evidence: narrative.sources
+          evidence: narrative.keyInsights[0]?.sources ?? []
         }
       ],
-      recommendations: narrative.sections.recommendedActions,
+      recommendations: narrative.recommendedActions,
       metadata: {
         generatedAt: new Date().toISOString(),
         generatedBy: userId,
         dataRange: { start: '', end: '' },
         prospectCount: 1,
-        sources: narrative.sources
+        sources: narrative.keyInsights[0]?.sources ?? []
       },
       format: 'markdown',
       content

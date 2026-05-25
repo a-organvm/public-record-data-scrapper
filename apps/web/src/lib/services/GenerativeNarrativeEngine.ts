@@ -103,7 +103,10 @@ export class GenerativeNarrativeEngine {
 
     return insights.sort((a, b) => {
       const impactWeight = { high: 3, medium: 2, low: 1 }
-      return impactWeight[b.impact] * b.confidence - impactWeight[a.impact] * a.confidence
+      return (
+        impactWeight[b.impact ?? 'low'] * b.confidence -
+        impactWeight[a.impact ?? 'low'] * a.confidence
+      )
     })
   }
 
