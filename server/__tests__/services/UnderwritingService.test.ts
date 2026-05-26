@@ -2,9 +2,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { UnderwritingService, createUnderwritingService } from '../../services/UnderwritingService'
 import type { PlaidTransaction, PlaidAccount } from '../../integrations/plaid'
 
-// Mock the Plaid integrations
-const mockFetchAllTransactions = vi.fn()
-const mockParseTransactionCategory = vi.fn()
+// Mock the Plaid integrations.
+// Use vi.hoisted() so these mock fns are initialized before the hoisted
+// vi.mock factory runs (referencing plain top-level consts inside the factory
+// throws "Cannot access ... before initialization").
+const { mockFetchAllTransactions, mockParseTransactionCategory } = vi.hoisted(() => ({
+  mockFetchAllTransactions: vi.fn(),
+  mockParseTransactionCategory: vi.fn()
+}))
 
 vi.mock('../../integrations/plaid', () => ({
   plaidTransactionsManager: {
@@ -33,10 +38,19 @@ describe('UnderwritingService', () => {
     ...overrides
   })
 
+  // Build a date `monthsAgo`/`daysAgo` before today so transactions fall inside
+  // the default 6-month analysis window regardless of when the suite runs.
+  const dateAgo = (opts: { months?: number; days?: number }): string => {
+    const d = new Date()
+    if (opts.months) d.setMonth(d.getMonth() - opts.months)
+    if (opts.days) d.setDate(d.getDate() - opts.days)
+    return d.toISOString().split('T')[0]
+  }
+
   const createMockTransaction = (overrides: Partial<PlaidTransaction> = {}): PlaidTransaction => ({
     transactionId: `tx-${Math.random().toString(36).substr(2, 9)}`,
     accountId: 'acc-1',
-    date: '2024-01-15',
+    date: dateAgo({ days: 15 }),
     amount: 100,
     name: 'Test Transaction',
     category: ['Transfer', 'Debit'],
@@ -102,8 +116,8 @@ describe('UnderwritingService', () => {
     it('should detect NSF/overdraft events', async () => {
       const mockAccounts = [createMockAccount()]
       const mockTransactions = [
-        createMockTransaction({ amount: 35, date: '2024-01-05', name: 'NSF FEE' }),
-        createMockTransaction({ amount: 35, date: '2024-01-10', name: 'OVERDRAFT FEE' })
+        createMockTransaction({ amount: 35, date: dateAgo({ days: 20 }), name: 'NSF FEE' }),
+        createMockTransaction({ amount: 35, date: dateAgo({ days: 10 }), name: 'OVERDRAFT FEE' })
       ]
 
       mockParseTransactionCategory
@@ -303,10 +317,16 @@ describe('UnderwritingService', () => {
 
   describe('analyzeRevenueTrend', () => {
     it('should identify increasing revenue', () => {
+      // The trend direction compares the average of the first 3 months to the
+      // average of the last 3 months, so we provide >= 5 months of rising
+      // deposits (months are derived from the YYYY-MM of each tx date).
       const transactions: PlaidTransaction[] = [
         createMockTransaction({ amount: -20000, date: '2024-01-15' }),
-        createMockTransaction({ amount: -25000, date: '2024-02-15' }),
-        createMockTransaction({ amount: -30000, date: '2024-03-15' })
+        createMockTransaction({ amount: -22000, date: '2024-02-15' }),
+        createMockTransaction({ amount: -25000, date: '2024-03-15' }),
+        createMockTransaction({ amount: -30000, date: '2024-04-15' }),
+        createMockTransaction({ amount: -38000, date: '2024-05-15' }),
+        createMockTransaction({ amount: -45000, date: '2024-06-15' })
       ]
 
       mockParseTransactionCategory.mockReturnValue({
@@ -325,9 +345,12 @@ describe('UnderwritingService', () => {
 
     it('should identify decreasing revenue', () => {
       const transactions: PlaidTransaction[] = [
-        createMockTransaction({ amount: -30000, date: '2024-01-15' }),
-        createMockTransaction({ amount: -25000, date: '2024-02-15' }),
-        createMockTransaction({ amount: -20000, date: '2024-03-15' })
+        createMockTransaction({ amount: -45000, date: '2024-01-15' }),
+        createMockTransaction({ amount: -38000, date: '2024-02-15' }),
+        createMockTransaction({ amount: -30000, date: '2024-03-15' }),
+        createMockTransaction({ amount: -25000, date: '2024-04-15' }),
+        createMockTransaction({ amount: -22000, date: '2024-05-15' }),
+        createMockTransaction({ amount: -20000, date: '2024-06-15' })
       ]
 
       mockParseTransactionCategory.mockReturnValue({

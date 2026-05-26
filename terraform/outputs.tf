@@ -1,9 +1,20 @@
 # Output Values
 # All outputs are in alphabetical order for maintainability
 
+output "alb_security_group_id" {
+  description = "ID of the public ALB security group"
+  value       = module.alb_security_group.security_group_id
+}
+
 output "app_security_group_id" {
   description = "ID of the application security group"
   value       = module.app_security_group.security_group_id
+}
+
+output "db_master_user_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the RDS master credentials (managed by AWS)"
+  value       = try(aws_db_instance.postgresql.master_user_secret[0].secret_arn, null)
+  sensitive   = true
 }
 
 output "backups_bucket_arn" {

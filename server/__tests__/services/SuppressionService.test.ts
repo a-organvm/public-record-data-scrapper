@@ -313,11 +313,43 @@ describe('SuppressionService', () => {
     })
 
     it('should remove for specific channel', async () => {
-      mockQuery.mockResolvedValueOnce({ rowCount: 1 } as unknown as [])
+      // Channel-specific removal: (1) delete exact-channel rows, (2) query for
+      // overlapping 'all' entries to narrow (here none exist).
+      mockQuery
+        .mockResolvedValueOnce({ rowCount: 1 } as unknown as [])
+        .mockResolvedValueOnce([])
 
-      await service.removeFromSuppressionList('org-1', '1234567890', 'sms')
+      const result = await service.removeFromSuppressionList('org-1', '1234567890', 'sms')
 
-      expect(mockQuery.mock.calls[0][0]).toContain('channel = $')
+      expect(result).toBe(true)
+      expect(mockQuery.mock.calls[0][0]).toContain('channel = $3')
+    })
+
+    it('should narrow an overlapping "all" entry when removing a specific channel', async () => {
+      const allEntry = {
+        id: 'dnc-all',
+        org_id: 'org-1',
+        phone: '1234567890',
+        source: 'internal',
+        channel: 'all',
+        created_at: '2024-01-01T00:00:00Z'
+      }
+      mockQuery
+        .mockResolvedValueOnce({ rowCount: 0 } as unknown as []) // exact-channel delete
+        .mockResolvedValueOnce([allEntry]) // find 'all' entries
+        .mockResolvedValueOnce({ rowCount: 1 } as unknown as []) // delete the 'all' row
+        .mockResolvedValueOnce({ rowCount: 1 } as unknown as []) // re-insert remaining channel #1
+        .mockResolvedValueOnce({ rowCount: 1 } as unknown as []) // re-insert remaining channel #2
+
+      const result = await service.removeFromSuppressionList('org-1', '1234567890', 'sms')
+
+      expect(result).toBe(true)
+      // The broad 'all' row is deleted and replaced with explicit entries for
+      // the other two channels (call, email).
+      const insertCalls = mockQuery.mock.calls.filter((c) =>
+        String(c[0]).includes('INSERT INTO dnc_list')
+      )
+      expect(insertCalls.length).toBe(2)
     })
 
     it('should throw DatabaseError on failure', async () => {

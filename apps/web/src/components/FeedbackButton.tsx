@@ -62,8 +62,14 @@ export function FeedbackButton() {
       userAgent: navigator.userAgent
     }
 
-    // Get existing feedback
-    const existingFeedback = JSON.parse(localStorage.getItem('ui-feedback') || '[]')
+    // Get existing feedback, tolerating corrupt/non-array localStorage contents.
+    let existingFeedback: unknown[] = []
+    try {
+      const parsed = JSON.parse(localStorage.getItem('ui-feedback') || '[]')
+      if (Array.isArray(parsed)) existingFeedback = parsed
+    } catch (error) {
+      console.error('Failed to parse stored feedback; starting fresh', error)
+    }
     existingFeedback.push(feedback)
     localStorage.setItem('ui-feedback', JSON.stringify(existingFeedback))
 

@@ -21,66 +21,31 @@ describe('EnrichmentService', () => {
   })
 
   describe('enrichProspect', () => {
-    it('should enrich a prospect with growth signals and health score', async () => {
-      // Mock prospect lookup
-      mockQuery.mockResolvedValue([])
+    // Live enrichment is intentionally fail-closed: the service refuses to
+    // fabricate growth-signal / health-score data and throws a descriptive
+    // error until real providers are wired. These tests assert that contract
+    // (replacing the obsolete tests that expected fabricated enrichment).
+    it('throws a clear "not wired to live providers" error once the prospect exists', async () => {
       mockQuery.mockResolvedValueOnce([
         { id: 'prospect-1', company_name: 'Test Corp', lien_amount: 500000, industry: 'Technology' }
       ])
 
-      const result = await service.enrichProspect('prospect-1')
-
-      expect(result).toBeDefined()
-      expect(result.growth_signals).toBeDefined()
-      expect(result.health_score).toBeDefined()
-      expect(result.estimated_revenue).toBeDefined()
-      expect(result.industry_classification).toBeDefined()
+      await expect(service.enrichProspect('prospect-1')).rejects.toThrow(
+        /not wired to live providers/i
+      )
     })
 
-    it('should call database to store growth signals', async () => {
-      mockQuery.mockResolvedValue([])
+    it('does not write enrichment data while unwired (no growth_signals/health_scores/UPDATE)', async () => {
       mockQuery.mockResolvedValueOnce([
         { id: 'prospect-1', lien_amount: 500000, industry: 'Technology' }
       ])
 
-      await service.enrichProspect('prospect-1')
+      await expect(service.enrichProspect('prospect-1')).rejects.toThrow()
 
-      // Verify INSERT INTO growth_signals was called
-      const growthSignalCalls = mockQuery.mock.calls.filter((call) =>
-        String(call[0]).includes('INSERT INTO growth_signals')
+      const wrote = mockQuery.mock.calls.some((call) =>
+        /INSERT INTO (growth_signals|health_scores)|UPDATE prospects/.test(String(call[0]))
       )
-      // Can be 0 or more depending on random values
-      expect(growthSignalCalls.length).toBeGreaterThanOrEqual(0)
-    })
-
-    it('should call database to store health score', async () => {
-      mockQuery.mockResolvedValue([])
-      mockQuery.mockResolvedValueOnce([
-        { id: 'prospect-1', lien_amount: 500000, industry: 'Technology' }
-      ])
-
-      await service.enrichProspect('prospect-1')
-
-      // Verify INSERT INTO health_scores was called
-      const healthCalls = mockQuery.mock.calls.filter((call) =>
-        String(call[0]).includes('INSERT INTO health_scores')
-      )
-      expect(healthCalls.length).toBe(1)
-    })
-
-    it('should update prospect enrichment timestamp', async () => {
-      mockQuery.mockResolvedValue([])
-      mockQuery.mockResolvedValueOnce([
-        { id: 'prospect-1', lien_amount: 500000, industry: 'Technology' }
-      ])
-
-      await service.enrichProspect('prospect-1')
-
-      // Verify UPDATE was called
-      const updateCalls = mockQuery.mock.calls.filter((call) =>
-        String(call[0]).includes('UPDATE prospects')
-      )
-      expect(updateCalls.length).toBe(1)
+      expect(wrote).toBe(false)
     })
 
     it('should throw error for non-existent prospect', async () => {
@@ -88,23 +53,10 @@ describe('EnrichmentService', () => {
 
       await expect(service.enrichProspect('non-existent')).rejects.toThrow('Prospect')
     })
-
-    it('should calculate health grade correctly', async () => {
-      mockQuery.mockResolvedValue([])
-      mockQuery.mockResolvedValueOnce([
-        { id: 'prospect-1', lien_amount: 500000, industry: 'Technology' }
-      ])
-
-      const result = await service.enrichProspect('prospect-1')
-
-      const validGrades = ['A', 'B', 'C', 'D', 'F']
-      expect(validGrades).toContain(result.health_score.grade)
-    })
   })
 
   describe('enrichBatch', () => {
-    it('should enrich multiple prospects', async () => {
-      // Default to returning prospect data for any query
+    it('reports every prospect as failed while enrichment is unwired (no fabricated successes)', async () => {
       mockQuery.mockImplementation((query: string) => {
         if (query.includes('SELECT * FROM prospects')) {
           return Promise.resolve([{ id: 'test', lien_amount: 500000, industry: 'Tech' }])
@@ -116,16 +68,17 @@ describe('EnrichmentService', () => {
 
       expect(results).toBeInstanceOf(Array)
       expect(results.length).toBe(2)
-      expect(results[0].success).toBe(true)
-      expect(results[1].success).toBe(true)
+      expect(results[0].success).toBe(false)
+      expect(results[1].success).toBe(false)
+      expect(results[0].error).toMatch(/not wired to live providers/i)
     })
 
-    it('should handle partial failures', async () => {
+    it('records a per-prospect error for each failure without stopping the batch', async () => {
       let callCount = 0
       mockQuery.mockImplementation((query: string) => {
         if (query.includes('SELECT * FROM prospects')) {
           callCount++
-          // First call succeeds, second fails
+          // First exists (then fails unwired), second is not found.
           if (callCount === 1) {
             return Promise.resolve([{ id: 'test', lien_amount: 500000 }])
           }
@@ -137,8 +90,9 @@ describe('EnrichmentService', () => {
       const results = await service.enrichBatch(['prospect-1', 'non-existent'])
 
       expect(results.length).toBe(2)
-      expect(results[0].success).toBe(true)
+      expect(results[0].success).toBe(false)
       expect(results[1].success).toBe(false)
+      expect(results[0].error).toBeDefined()
       expect(results[1].error).toBeDefined()
     })
 
@@ -227,12 +181,13 @@ describe('EnrichmentService', () => {
       expect(status.delayed).toBeDefined()
     })
 
-    it('should return mock data in current implementation', async () => {
+    it('reports the queue as not wired yet', async () => {
       const status = await service.getQueueStatus()
 
-      // Current implementation returns zeros
-      expect(status.waiting).toBe(0)
-      expect(status.active).toBe(0)
+      expect(status.supported).toBe(false)
+      expect(status.reason).toMatch(/not wired/i)
+      expect(status.waiting).toBeNull()
+      expect(status.active).toBeNull()
     })
   })
 })

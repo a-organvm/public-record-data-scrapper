@@ -11,8 +11,16 @@ export type IngestionStrategy = 'api' | 'bulk' | 'vendor' | 'scrape'
 export type IngestionCircuitState = 'closed' | 'open' | 'half-open'
 export type IngestionQueueOrigin = 'scheduler' | 'manual' | 'self-heal'
 
+// Tenant attribution carried on every manually-enqueued job so reads/deletes
+// can be scoped to the owning org. Optional because scheduler/self-heal jobs
+// have no requesting user; absence means "system-owned" (admin-only access).
+export interface JobTenantAttribution {
+  orgId?: string
+  requestedBy?: string
+}
+
 // Job data interfaces
-export interface IngestionJobData {
+export interface IngestionJobData extends JobTenantAttribution {
   state: string
   startDate?: string
   endDate?: string
@@ -25,13 +33,13 @@ export interface IngestionJobData {
   manualOverride?: boolean
 }
 
-export interface EnrichmentJobData {
+export interface EnrichmentJobData extends JobTenantAttribution {
   prospectIds: string[]
   force?: boolean
   dataTier?: ResolvedDataTier
 }
 
-export interface HealthScoreJobData {
+export interface HealthScoreJobData extends JobTenantAttribution {
   portfolioCompanyId?: string
   batchSize?: number
   dataTier?: ResolvedDataTier

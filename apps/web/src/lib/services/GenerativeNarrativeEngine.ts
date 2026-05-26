@@ -3,6 +3,7 @@
 import type {
   Prospect,
   GenerativeNarrative,
+  GenerativeNarrativeSections,
   GenerativeContext,
   GenerativeInsight,
   CompanyGraph,
@@ -103,7 +104,10 @@ export class GenerativeNarrativeEngine {
 
     return insights.sort((a, b) => {
       const impactWeight = { high: 3, medium: 2, low: 1 }
-      return impactWeight[b.impact] * b.confidence - impactWeight[a.impact] * a.confidence
+      return (
+        impactWeight[b.impact ?? 'low'] * b.confidence -
+        impactWeight[a.impact ?? 'low'] * a.confidence
+      )
     })
   }
 
@@ -304,7 +308,7 @@ Format as plain text with markdown section headers.
   /**
    * Parse narrative response into structured sections
    */
-  private parseNarrativeResponse(response: string): GenerativeNarrative['sections'] {
+  private parseNarrativeResponse(response: string): GenerativeNarrativeSections {
     const sections = {
       summary: '',
       keyFindings: [] as string[],
@@ -358,7 +362,7 @@ Format as plain text with markdown section headers.
   /**
    * Calculate confidence score based on narrative completeness
    */
-  private calculateConfidence(sections: GenerativeNarrative['sections']): number {
+  private calculateConfidence(sections: GenerativeNarrativeSections): number {
     let score = 0
     const weights = {
       summary: 15,

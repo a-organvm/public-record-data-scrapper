@@ -76,7 +76,10 @@ export function AnalyticsDashboard({
           const signalDate = new Date(s.detectedDate)
           return signalDate >= startDate && signalDate <= endDate
         })
-        return matchesIndustry && (hasRecentSignals || true) // Include all for now
+        // A prospect with no signals at all has nothing to date-filter on, so it
+        // stays visible; otherwise require at least one signal inside the range.
+        const hasNoSignals = p.growthSignals.length === 0
+        return matchesIndustry && (hasNoSignals || hasRecentSignals)
       })
     }
   }, [prospects, industryFilter, dateRangeFilter])
@@ -159,7 +162,11 @@ export function AnalyticsDashboard({
   // Signal trend over time
   const signalTrend = useMemo(() => {
     const { startDate, endDate } = dateRangeFilter
-    const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+    // Guard against malformed custom ranges (start after end) and runaway loops
+    // from absurd ranges by clamping the span to a sane maximum.
+    const MAX_TREND_DAYS = 365 * 5
+    const rawDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+    const days = Math.min(MAX_TREND_DAYS, Math.max(0, Number.isFinite(rawDays) ? rawDays : 0))
     const interval = Math.max(1, Math.floor(days / 10)) // Show max 10 data points
 
     const data: { date: string; signals: number }[] = []

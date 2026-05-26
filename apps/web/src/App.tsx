@@ -51,6 +51,11 @@ function App() {
 
   // Data fetching
   const data = useDataFetching({ useMockData: useDemoData, dataTier })
+  // Pull out stable references (useKV setter / useCallback fetcher) plus the
+  // specific value the refresh handler reads, so the callbacks below can depend
+  // on these instead of the whole `data` object, which is recreated every render
+  // and would defeat their memoization.
+  const { setUserActions, fetchData, loadError } = data
 
   // Filtering, sorting, and selection
   const filters = useProspectFilters(data.prospects)
@@ -69,7 +74,7 @@ function App() {
         details
       }
 
-      data.setUserActions((current) => [...(current ?? []), newAction].slice(-100))
+      setUserActions((current) => [...(current ?? []), newAction].slice(-100))
 
       if (!useDemoData) {
         try {
@@ -79,7 +84,9 @@ function App() {
         }
       }
     },
-    [data, useDemoData]
+    // Depend only on the specific (stable) setter rather than the whole `data`
+    // object, which is recreated every render and would defeat memoization.
+    [setUserActions, useDemoData]
   )
 
   // Prospect actions (claim, unclaim, export, delete)
@@ -125,7 +132,7 @@ function App() {
 
   // Handlers
   const handleRefreshData = useCallback(async () => {
-    const success = await data.fetchData()
+    const success = await fetchData()
     if (success) {
       void trackAction('refresh-data')
       toast.success('Data refreshed', {
@@ -135,10 +142,10 @@ function App() {
       })
     } else {
       toast.error('Refresh failed', {
-        description: data.loadError ?? 'Unable to refresh data from the server.'
+        description: loadError ?? 'Unable to refresh data from the server.'
       })
     }
-  }, [data, trackAction, useDemoData])
+  }, [fetchData, trackAction, useDemoData, loadError])
 
   const handleProspectSelect = useCallback(
     (prospect: Prospect) => {

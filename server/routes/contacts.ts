@@ -1,10 +1,52 @@
-import { Router } from 'express'
+import { Router, Response } from 'express'
 import { z } from 'zod'
 import { validateRequest } from '../middleware/validateRequest'
 import { asyncHandler } from '../middleware/errorHandler'
+import { requireRole, AuthenticatedRequest } from '../middleware/authMiddleware'
 import { ContactsService } from '../services/ContactsService'
 
 const router = Router()
+
+/**
+ * Resolves the caller's tenant (org) from the authenticated JWT and enforces
+ * multi-tenant isolation. Org is ALWAYS derived from `req.user.orgId` — never
+ * trusted from the client. A client-supplied `org_id` must match the token's
+ * org (else 403). A token with no org binding fails closed (403).
+ *
+ * Returns the resolved orgId, or null after writing an error response (caller
+ * must return immediately when null is returned).
+ */
+function resolveOrgId(req: AuthenticatedRequest, res: Response): string | null {
+  const tokenOrgId = req.user?.orgId
+
+  if (!tokenOrgId) {
+    res.status(403).json({
+      error: {
+        message: 'No organization associated with this account',
+        code: 'FORBIDDEN',
+        statusCode: 403
+      }
+    })
+    return null
+  }
+
+  const suppliedOrgId =
+    (req.query?.org_id as string | undefined) ??
+    (req.body && typeof req.body === 'object' ? (req.body.org_id as string | undefined) : undefined)
+
+  if (suppliedOrgId !== undefined && suppliedOrgId !== tokenOrgId) {
+    res.status(403).json({
+      error: {
+        message: 'org_id does not match authenticated organization',
+        code: 'FORBIDDEN',
+        statusCode: 403
+      }
+    })
+    return null
+  }
+
+  return tokenOrgId
+}
 
 // Validation schemas
 const contactRoleEnum = z.enum(['owner', 'ceo', 'cfo', 'controller', 'manager', 'bookkeeper', 'other'])
@@ -20,9 +62,11 @@ const activityTypeEnum = z.enum([
 ])
 
 const listContactsQuerySchema = z.object({
-  org_id: z.string().uuid(),
+  // org_id is derived from the authenticated token; if present it is only used
+  // to cross-check against the token (see resolveOrgId). Never trusted as-is.
+  org_id: z.string().uuid().optional(),
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  limit: z.coerce.number().int().positive().max(200).default(20),
   search: z.string().optional(),
   role: contactRoleEnum.optional(),
   tags: z.string().transform(v => v.split(',')).optional(),
@@ -32,7 +76,7 @@ const listContactsQuerySchema = z.object({
 })
 
 const createContactSchema = z.object({
-  org_id: z.string().uuid(),
+  org_id: z.string().uuid().optional(),
   first_name: z.string().min(1, 'First name is required'),
   last_name: z.string().min(1, 'Last name is required'),
   email: z.string().email().optional(),
@@ -47,7 +91,7 @@ const createContactSchema = z.object({
   tags: z.array(z.string()).default([]),
   source: z.string().optional(),
   created_by: z.string().uuid().optional()
-})
+}).strict()
 
 const updateContactSchema = z.object({
   first_name: z.string().min(1).optional(),
@@ -63,7 +107,7 @@ const updateContactSchema = z.object({
   notes: z.string().optional().nullable(),
   tags: z.array(z.string()).optional(),
   is_active: z.boolean().optional()
-})
+}).strict()
 
 const idParamSchema = z.object({
   id: z.string().uuid()
@@ -77,7 +121,7 @@ const linkContactParamsSchema = z.object({
 const linkContactBodySchema = z.object({
   is_primary: z.boolean().default(false),
   relationship: contactRelationshipEnum.default('employee')
-})
+}).strict()
 
 const logActivitySchema = z.object({
   prospect_id: z.string().uuid().optional(),
@@ -90,18 +134,21 @@ const logActivitySchema = z.object({
   metadata: z.record(z.string(), z.unknown()).default({}),
   scheduled_at: z.string().datetime().optional(),
   completed_at: z.string().datetime().optional()
-})
+}).strict()
 
 // GET /api/contacts - List contacts with filters (org_id required)
 router.get(
   '/',
   validateRequest({ query: listContactsQuerySchema }),
   asyncHandler(async (req, res) => {
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
+
     const contactsService = new ContactsService()
     const query = req.query as z.infer<typeof listContactsQuerySchema>
 
     const result = await contactsService.list({
-      orgId: query.org_id,
+      orgId,
       page: query.page,
       limit: query.limit,
       search: query.search,
@@ -127,13 +174,17 @@ router.get(
 // POST /api/contacts - Create contact
 router.post(
   '/',
+  requireRole('user', 'admin'),
   validateRequest({ body: createContactSchema }),
   asyncHandler(async (req, res) => {
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
+
     const contactsService = new ContactsService()
     const body = req.body as z.infer<typeof createContactSchema>
 
     const contact = await contactsService.create({
-      orgId: body.org_id,
+      orgId,
       firstName: body.first_name,
       lastName: body.last_name,
       email: body.email,
@@ -159,19 +210,11 @@ router.get(
   '/:id',
   validateRequest({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
+
     const contactsService = new ContactsService()
     const { id } = req.params
-    const orgId = req.query.org_id as string
-
-    if (!orgId) {
-      return res.status(400).json({
-        error: {
-          message: 'org_id query parameter is required',
-          code: 'VALIDATION_ERROR',
-          statusCode: 400
-        }
-      })
-    }
 
     const contact = await contactsService.getById(id, orgId)
 
@@ -198,21 +241,14 @@ router.get(
 // PUT /api/contacts/:id - Update contact
 router.put(
   '/:id',
+  requireRole('user', 'admin'),
   validateRequest({ params: idParamSchema, body: updateContactSchema }),
   asyncHandler(async (req, res) => {
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
+
     const contactsService = new ContactsService()
     const { id } = req.params
-    const orgId = req.query.org_id as string
-
-    if (!orgId) {
-      return res.status(400).json({
-        error: {
-          message: 'org_id query parameter is required',
-          code: 'VALIDATION_ERROR',
-          statusCode: 400
-        }
-      })
-    }
 
     const body = req.body as z.infer<typeof updateContactSchema>
 
@@ -239,6 +275,7 @@ router.put(
 // POST /api/contacts/:id/link/:prospectId - Link contact to prospect
 router.post(
   '/:id/link/:prospectId',
+  requireRole('user', 'admin'),
   validateRequest({ params: linkContactParamsSchema, body: linkContactBodySchema }),
   asyncHandler(async (req, res) => {
     const contactsService = new ContactsService()
@@ -259,6 +296,7 @@ router.post(
 // DELETE /api/contacts/:id/link/:prospectId - Unlink contact from prospect
 router.delete(
   '/:id/link/:prospectId',
+  requireRole('user', 'admin'),
   validateRequest({ params: linkContactParamsSchema }),
   asyncHandler(async (req, res) => {
     const contactsService = new ContactsService()
@@ -283,6 +321,7 @@ router.delete(
 // POST /api/contacts/:id/activities - Log activity for contact
 router.post(
   '/:id/activities',
+  requireRole('user', 'admin'),
   validateRequest({ params: idParamSchema, body: logActivitySchema }),
   asyncHandler(async (req, res) => {
     const contactsService = new ContactsService()
@@ -314,7 +353,10 @@ router.get(
   asyncHandler(async (req, res) => {
     const contactsService = new ContactsService()
     const { id } = req.params
-    const limit = parseInt(req.query.limit as string) || 50
+    // Parse with explicit radix, guard NaN/non-positive, and cap to a sane max.
+    const parsedLimit = parseInt(req.query.limit as string, 10)
+    const limit =
+      Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50
     const before = req.query.before as string | undefined
 
     const activities = await contactsService.getActivityTimeline(id, { limit, before })

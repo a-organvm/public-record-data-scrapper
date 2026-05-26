@@ -45,17 +45,23 @@ export function createTestApp(): Express {
  * Generates a valid JWT token for testing.
  *
  * @param userId - The user ID to embed in the token
- * @param options - Optional email and role
+ * @param options - Optional email, role, and orgId
  * @returns A valid JWT token string
  */
 export function generateTestToken(
   userId: string = 'test-user-123',
-  options: { email?: string; role?: string } = {}
+  options: { email?: string; role?: string; orgId?: string | null } = {}
 ): string {
-  const payload = {
+  const payload: Record<string, unknown> = {
     sub: userId,
     email: options.email || 'test@example.com',
     role: options.role || 'user'
+  }
+
+  // Mint the org_id claim used for multi-tenant isolation. Pass `orgId: null`
+  // explicitly to simulate a token with no tenant binding (fail-closed paths).
+  if (options.orgId !== null) {
+    payload.org_id = options.orgId || 'test-org'
   }
 
   return jwt.sign(payload, config.jwt.secret, {
@@ -67,12 +73,12 @@ export function generateTestToken(
  * Creates an authorization header value for testing.
  *
  * @param userId - The user ID for the token
- * @param options - Optional email and role
+ * @param options - Optional email, role, and orgId
  * @returns Authorization header value (Bearer token)
  */
 export function createAuthHeader(
   userId: string = 'test-user-123',
-  options: { email?: string; role?: string } = {}
+  options: { email?: string; role?: string; orgId?: string | null } = {}
 ): string {
   return `Bearer ${generateTestToken(userId, options)}`
 }

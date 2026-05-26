@@ -26,6 +26,20 @@ interface SearchResult {
   found: string
 }
 
+// Only permit safe link schemes; reject javascript:/data:/etc. so remote results
+// can't smuggle script-execution URLs into an href.
+const SAFE_URL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
+function sanitizeUrl(url?: string): string | undefined {
+  if (!url) return undefined
+  const trimmed = url.trim()
+  try {
+    const parsed = new URL(trimmed, window.location.origin)
+    return SAFE_URL_PROTOCOLS.has(parsed.protocol) ? trimmed : undefined
+  } catch {
+    return undefined
+  }
+}
+
 const SEARCH_SOURCES: Array<{ label: string; value: string }> = [
   { label: 'Web (Bing snippets)', value: 'bing' },
   { label: 'Public UCC filings (preview dataset)', value: 'ucc' },
@@ -195,9 +209,9 @@ export function LegacySearch() {
                     {result.snippet && <p className="text-sm text-white/70">{result.snippet}</p>}
                   </TableCell>
                   <TableCell>
-                    {result.url ? (
+                    {sanitizeUrl(result.url) ? (
                       <a
-                        href={result.url}
+                        href={sanitizeUrl(result.url)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-primary hover:underline"

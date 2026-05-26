@@ -9,6 +9,13 @@ export default defineConfig({
     name: 'server',
     globals: true,
     environment: 'node',
+    // The app config now requires JWT_SECRET in every environment (the insecure
+    // dev fallback was removed). Provide a test-only secret so token sign/verify
+    // works under vitest without depending on a loaded .env file.
+    env: {
+      JWT_SECRET: process.env.JWT_SECRET || 'test-secret',
+      NODE_ENV: process.env.NODE_ENV || 'test'
+    },
     setupFiles: ['./server/__tests__/setup.ts'],
     include: ['server/__tests__/**/*.test.ts'],
     exclude: ['node_modules', 'dist', 'build', 'client'],

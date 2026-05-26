@@ -11,7 +11,6 @@ run "validate_vpc_cidr" {
     private_subnet_cidrs      = ["10.0.11.0/24", "10.0.12.0/24"]
     database_subnet_cidrs     = ["10.0.21.0/24", "10.0.22.0/24"]
     availability_zones_count  = 2
-    db_master_password        = "TestPassword123!"
     redis_auth_token          = "TestRedisToken456789!"
   }
 
@@ -30,7 +29,6 @@ run "validate_rds_config" {
     db_instance_class        = "db.t3.large"
     db_multi_az              = true
     db_deletion_protection   = true
-    db_master_password       = "SecurePassword123!"
     redis_auth_token         = "SecureRedisToken456789!"
   }
 
@@ -64,7 +62,6 @@ run "validate_redis_config" {
     redis_num_cache_nodes         = 2
     redis_multi_az_enabled        = true
     redis_automatic_failover_enabled = true
-    db_master_password            = "SecurePassword123!"
     redis_auth_token              = "SecureRedisToken456789!"
   }
 
@@ -94,7 +91,6 @@ run "validate_security_groups" {
   command = plan
 
   variables {
-    db_master_password = "SecurePassword123!"
     redis_auth_token   = "SecureRedisToken456789!"
   }
 
@@ -119,7 +115,6 @@ run "validate_s3_buckets" {
   command = plan
 
   variables {
-    db_master_password = "SecurePassword123!"
     redis_auth_token   = "SecureRedisToken456789!"
   }
 
@@ -145,7 +140,6 @@ run "validate_dev_environment" {
     db_deletion_protection  = false
     redis_node_type         = "cache.t3.micro"
     redis_num_cache_nodes   = 1
-    db_master_password      = "DevPassword123!"
     redis_auth_token        = "DevRedisToken456789!"
   }
 
@@ -165,7 +159,6 @@ run "validate_cloudwatch_alarms" {
   command = plan
 
   variables {
-    db_master_password = "SecurePassword123!"
     redis_auth_token   = "SecureRedisToken456789!"
   }
 
@@ -187,7 +180,6 @@ run "validate_tags" {
   variables {
     project_name       = "test-project"
     environment        = "production"
-    db_master_password = "SecurePassword123!"
     redis_auth_token   = "SecureRedisToken456789!"
   }
 

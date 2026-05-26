@@ -111,8 +111,12 @@ describe('StateCollectorFactory', () => {
     it('should list all implemented states including those needing config', () => {
       const implemented = factory.getImplementedStates()
 
-      expect(implemented.length).toBe(4) // NY, CA, TX, FL
-      expect(implemented).toContain('NY')
+      // NY is intentionally excluded: it has empty accessMethods and no
+      // collector implementation, so getCollector('NY') returns undefined.
+      // Keeping it out of the implemented list keeps hasCollector()/
+      // getImplementedStates()/getCollector() consistent (no null-deref).
+      expect(implemented.length).toBe(3) // CA, TX, FL
+      expect(implemented).not.toContain('NY')
       expect(implemented).toContain('CA')
       expect(implemented).toContain('TX')
       expect(implemented).toContain('FL')
@@ -213,17 +217,18 @@ describe('StateCollectorFactory', () => {
     it('should track implemented states', () => {
       const stats = factory.getStats()
 
-      expect(stats.implemented).toBe(4) // NY, CA, TX, FL
+      expect(stats.implemented).toBe(3) // CA, TX, FL (NY has no collector)
       expect(stats.implementedStates).toContain('CA')
       expect(stats.implementedStates).toContain('TX')
       expect(stats.implementedStates).toContain('FL')
+      expect(stats.implementedStates).not.toContain('NY')
     })
 
     it('should track pending states', () => {
       const stats = factory.getStats()
 
-      expect(stats.pending).toBe(47) // 51 - 4
-      expect(stats.pendingStates.length).toBe(47)
+      expect(stats.pending).toBe(48) // 51 - 3
+      expect(stats.pendingStates.length).toBe(48)
     })
   })
 

@@ -20,42 +20,66 @@ interface RequestTimestamp {
 export class RateLimiter {
   private config: RateLimitConfig
   private requestQueue: RequestTimestamp[] = []
-  private waitingPromises: Array<{
-    resolve: () => void
-    timestamp: number
-  }> = []
+  /**
+   * Serializes acquisitions so concurrent callers cannot all pass the
+   * synchronous window check at the same time. Each acquire() chains onto the
+   * previous one, re-validating the window immediately before reserving a slot.
+   */
+  private acquireChain: Promise<void> = Promise.resolve()
 
   constructor(config: RateLimitConfig) {
     this.config = config
   }
 
   /**
-   * Acquire a slot for making a request
-   * Waits until rate limits allow the request
+   * Acquire a slot for making a request.
+   * Waits until rate limits allow the request. Acquisitions are serialized so
+   * that the per-second/minute/hour/day limits are never exceeded even when
+   * many callers invoke acquire() in parallel.
    */
   async acquire(): Promise<void> {
-    const now = Date.now()
-
-    // Clean up old timestamps
-    this.cleanup(now)
-
-    // Check if we can make a request now
-    if (this.canMakeRequest()) {
-      this.recordRequest(now)
-      return
-    }
-
-    // Need to wait - calculate how long
-    const waitTime = this.calculateWaitTime(now)
-
-    return new Promise<void>((resolve) => {
-      this.waitingPromises.push({ resolve, timestamp: now })
-
-      setTimeout(() => {
-        this.recordRequest(Date.now())
-        resolve()
-      }, waitTime)
+    // Chain this acquisition onto the previous one so that the window check and
+    // the slot reservation happen atomically with respect to other callers.
+    const previous = this.acquireChain
+    let release!: () => void
+    this.acquireChain = new Promise<void>((resolve) => {
+      release = resolve
     })
+
+    try {
+      // Wait for any in-flight acquisition to finish reserving its slot.
+      await previous
+      await this.reserveSlot()
+    } finally {
+      // Allow the next queued acquisition to proceed.
+      release()
+    }
+  }
+
+  /**
+   * Reserve a single request slot, waiting (and re-validating) until every
+   * configured window has capacity. Only records the request once a slot is
+   * actually available.
+   */
+  private async reserveSlot(): Promise<void> {
+    // Loop until we can actually record a request. We re-validate the window
+    // after every wait so a stale wait time can never let us exceed a limit.
+    // The loop is bounded in practice because each iteration either records a
+    // request or sleeps until the oldest blocking request ages out.
+    for (;;) {
+      const now = Date.now()
+      this.cleanup(now)
+
+      if (this.canMakeRequest()) {
+        this.recordRequest(now)
+        return
+      }
+
+      const waitTime = this.calculateWaitTime(now)
+      // Guard against a zero/negative wait while still saturated: always wait a
+      // minimal slice so the window can advance and we re-check.
+      await this.delay(Math.max(1, waitTime))
+    }
   }
 
   /**
@@ -70,8 +94,16 @@ export class RateLimiter {
    */
   reset(): void {
     this.requestQueue = []
-    this.waitingPromises.forEach(({ resolve }) => resolve())
-    this.waitingPromises = []
+    // Reset the serialization chain so any queued acquisitions are not blocked
+    // behind a stale promise.
+    this.acquireChain = Promise.resolve()
+  }
+
+  /**
+   * Delay helper
+   */
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
   /**
@@ -163,8 +195,20 @@ export class RateLimiter {
       }
     }
 
-    // Return the maximum wait time needed
-    return waitTimes.length > 0 ? Math.max(...waitTimes) : 0
+    // If any window is saturated we MUST wait. Returning 0 here while saturated
+    // would let callers slip through and exceed the limit, so fall back to a
+    // small positive delay (e.g. when a timestamp aged out between checks).
+    const saturated =
+      (this.config.requestsPerSecond ? stats.perSecond.available === 0 : false) ||
+      stats.perMinute.available === 0 ||
+      stats.perHour.available === 0 ||
+      stats.perDay.available === 0
+
+    const maxWait = waitTimes.length > 0 ? Math.max(...waitTimes) : 0
+    if (saturated) {
+      return Math.max(1, maxWait)
+    }
+    return maxWait
   }
 
   /**

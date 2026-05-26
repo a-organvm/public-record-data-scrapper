@@ -12,7 +12,9 @@ import {
 vi.mock('../../config', () => ({
   config: {
     jwt: {
-      secret: 'test-secret'
+      secret: 'test-secret',
+      orgClaim: 'org_id',
+      tierClaim: 'tier'
     }
   }
 }))
@@ -131,6 +133,86 @@ describe('authMiddleware', () => {
         role: undefined
       })
     })
+
+    it('reads orgId from the plain org_id claim', () => {
+      const token = createToken({ sub: 'user1', org_id: 'org-plain' })
+      mockReq.headers = { authorization: `Bearer ${token}` }
+
+      authMiddleware(mockReq as AuthenticatedRequest, mockRes as Response, mockNext)
+
+      expect(mockNext).toHaveBeenCalled()
+      expect(mockReq.user?.orgId).toBe('org-plain')
+    })
+
+    it('reads orgId from a namespaced Auth0 claim (/org_id)', () => {
+      const token = createToken({
+        sub: 'user1',
+        'https://ucc-mca.example.com/org_id': 'org-namespaced'
+      })
+      mockReq.headers = { authorization: `Bearer ${token}` }
+
+      authMiddleware(mockReq as AuthenticatedRequest, mockRes as Response, mockNext)
+
+      expect(mockReq.user?.orgId).toBe('org-namespaced')
+    })
+
+    it('reads orgId from a namespaced camelCase claim (/orgId)', () => {
+      const token = createToken({
+        sub: 'user1',
+        'https://ucc-mca.example.com/orgId': 'org-camel'
+      })
+      mockReq.headers = { authorization: `Bearer ${token}` }
+
+      authMiddleware(mockReq as AuthenticatedRequest, mockRes as Response, mockNext)
+
+      expect(mockReq.user?.orgId).toBe('org-camel')
+    })
+
+    it('prefers the plain claim over a namespaced one', () => {
+      const token = createToken({
+        sub: 'user1',
+        org_id: 'org-plain',
+        'https://ucc-mca.example.com/org_id': 'org-namespaced'
+      })
+      mockReq.headers = { authorization: `Bearer ${token}` }
+
+      authMiddleware(mockReq as AuthenticatedRequest, mockRes as Response, mockNext)
+
+      expect(mockReq.user?.orgId).toBe('org-plain')
+    })
+
+    it('exposes tier from a plain tier claim', () => {
+      const token = createToken({ sub: 'user1', tier: 'professional' })
+      mockReq.headers = { authorization: `Bearer ${token}` }
+
+      authMiddleware(mockReq as AuthenticatedRequest, mockRes as Response, mockNext)
+
+      expect(mockReq.user?.tier).toBe('professional')
+    })
+
+    it('exposes tier from a namespaced claim (/tier)', () => {
+      const token = createToken({
+        sub: 'user1',
+        'https://ucc-mca.example.com/tier': 'enterprise'
+      })
+      mockReq.headers = { authorization: `Bearer ${token}` }
+
+      authMiddleware(mockReq as AuthenticatedRequest, mockRes as Response, mockNext)
+
+      expect(mockReq.user?.tier).toBe('enterprise')
+    })
+
+    it('ignores non-string custom claim values (fails to undefined)', () => {
+      const token = createToken({
+        sub: 'user1',
+        'https://ucc-mca.example.com/org_id': { nested: 'object' }
+      })
+      mockReq.headers = { authorization: `Bearer ${token}` }
+
+      authMiddleware(mockReq as AuthenticatedRequest, mockRes as Response, mockNext)
+
+      expect(mockReq.user?.orgId).toBeUndefined()
+    })
   })
 })
 
@@ -193,6 +275,21 @@ describe('optionalAuthMiddleware', () => {
       email: 'test@test.com',
       role: undefined
     })
+  })
+
+  it('resolves namespaced org and tier claims for optional auth', () => {
+    const token = createToken({
+      sub: 'user789',
+      'https://ucc-mca.example.com/org_id': 'org-optional',
+      'https://ucc-mca.example.com/tier': 'starter'
+    })
+    mockReq.headers = { authorization: `Bearer ${token}` }
+
+    optionalAuthMiddleware(mockReq as AuthenticatedRequest, mockRes as Response, mockNext)
+
+    expect(mockNext).toHaveBeenCalled()
+    expect(mockReq.user?.orgId).toBe('org-optional')
+    expect(mockReq.user?.tier).toBe('starter')
   })
 })
 

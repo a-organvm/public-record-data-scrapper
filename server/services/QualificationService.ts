@@ -37,6 +37,13 @@ export interface QualificationReason {
   message: string
   value?: number | string
   threshold?: number | string
+  /**
+   * The best tier this individual factor qualifies for ('A'..'D'), or
+   * 'Decline' if the factor fails entirely. Used by tier aggregation so a
+   * factor that legitimately meets the C/D threshold is counted as satisfying
+   * that tier rather than as a generic "warning" that drags the grade down.
+   */
+  qualifiesTier?: QualificationTier
 }
 
 /**
@@ -412,7 +419,8 @@ export class QualificationService {
           result: tier === 'A' || tier === 'B' ? 'pass' : 'warning',
           message: `ADB of $${Math.round(adb).toLocaleString()} meets ${tier}-tier threshold`,
           value: adb,
-          threshold: this.rules.minAdbByTier[tier]
+          threshold: this.rules.minAdbByTier[tier],
+          qualifiesTier: tier
         }
       }
     }
@@ -422,7 +430,8 @@ export class QualificationService {
       result: 'fail',
       message: `ADB of $${Math.round(adb).toLocaleString()} is below minimum threshold`,
       value: adb,
-      threshold: this.rules.minAdbByTier.D
+      threshold: this.rules.minAdbByTier.D,
+      qualifiesTier: 'Decline'
     }
   }
 
@@ -437,7 +446,8 @@ export class QualificationService {
               ? 'No NSF/overdraft events'
               : `${nsfCount} NSF/overdraft events is within ${tier}-tier threshold`,
           value: nsfCount,
-          threshold: this.rules.maxNsfByTier[tier]
+          threshold: this.rules.maxNsfByTier[tier],
+          qualifiesTier: tier
         }
       }
     }
@@ -447,7 +457,8 @@ export class QualificationService {
       result: 'fail',
       message: `${nsfCount} NSF/overdraft events exceeds maximum threshold`,
       value: nsfCount,
-      threshold: this.rules.maxNsfByTier.D
+      threshold: this.rules.maxNsfByTier.D,
+      qualifiesTier: 'Decline'
     }
   }
 
@@ -462,7 +473,8 @@ export class QualificationService {
               ? 'No negative balance days'
               : `${percentage.toFixed(1)}% negative days meets ${tier}-tier threshold`,
           value: percentage,
-          threshold: this.rules.maxNegativeDaysByTier[tier]
+          threshold: this.rules.maxNegativeDaysByTier[tier],
+          qualifiesTier: tier
         }
       }
     }
@@ -472,7 +484,8 @@ export class QualificationService {
       result: 'fail',
       message: `${percentage.toFixed(1)}% negative balance days exceeds maximum threshold`,
       value: percentage,
-      threshold: this.rules.maxNegativeDaysByTier.D
+      threshold: this.rules.maxNegativeDaysByTier.D,
+      qualifiesTier: 'Decline'
     }
   }
 
@@ -487,7 +500,8 @@ export class QualificationService {
               ? 'No existing MCA/loan positions detected'
               : `${positionCount} existing position(s) meets ${tier}-tier threshold`,
           value: positionCount,
-          threshold: this.rules.maxPositionsByTier[tier]
+          threshold: this.rules.maxPositionsByTier[tier],
+          qualifiesTier: tier
         }
       }
     }
@@ -497,7 +511,8 @@ export class QualificationService {
       result: 'fail',
       message: `${positionCount} existing positions exceeds maximum threshold`,
       value: positionCount,
-      threshold: this.rules.maxPositionsByTier.D
+      threshold: this.rules.maxPositionsByTier.D,
+      qualifiesTier: 'Decline'
     }
   }
 
@@ -509,7 +524,8 @@ export class QualificationService {
           result: tier === 'A' || tier === 'B' ? 'pass' : 'warning',
           message: `${months} months in business meets ${tier}-tier threshold`,
           value: months,
-          threshold: this.rules.minTimeInBusinessByTier[tier]
+          threshold: this.rules.minTimeInBusinessByTier[tier],
+          qualifiesTier: tier
         }
       }
     }
@@ -519,7 +535,8 @@ export class QualificationService {
       result: 'fail',
       message: `${months} months in business is below minimum threshold`,
       value: months,
-      threshold: this.rules.minTimeInBusinessByTier.D
+      threshold: this.rules.minTimeInBusinessByTier.D,
+      qualifiesTier: 'Decline'
     }
   }
 
@@ -531,7 +548,8 @@ export class QualificationService {
           result: tier === 'A' || tier === 'B' ? 'pass' : 'warning',
           message: `$${Math.round(revenue).toLocaleString()}/month meets ${tier}-tier threshold`,
           value: revenue,
-          threshold: this.rules.minMonthlyRevenueByTier[tier]
+          threshold: this.rules.minMonthlyRevenueByTier[tier],
+          qualifiesTier: tier
         }
       }
     }
@@ -541,7 +559,8 @@ export class QualificationService {
       result: 'fail',
       message: `$${Math.round(revenue).toLocaleString()}/month is below minimum threshold`,
       value: revenue,
-      threshold: this.rules.minMonthlyRevenueByTier.D
+      threshold: this.rules.minMonthlyRevenueByTier.D,
+      qualifiesTier: 'Decline'
     }
   }
 
@@ -552,7 +571,8 @@ export class QualificationService {
         result: 'pass',
         message: `Strong deposit consistency (${score}/100)`,
         value: score,
-        threshold: 75
+        threshold: 75,
+        qualifiesTier: 'A'
       }
     } else if (score >= 50) {
       return {
@@ -560,7 +580,8 @@ export class QualificationService {
         result: 'warning',
         message: `Moderate deposit consistency (${score}/100)`,
         value: score,
-        threshold: 50
+        threshold: 50,
+        qualifiesTier: 'C'
       }
     }
 
@@ -569,7 +590,8 @@ export class QualificationService {
       result: 'fail',
       message: `Low deposit consistency (${score}/100) indicates irregular revenue`,
       value: score,
-      threshold: 50
+      threshold: 50,
+      qualifiesTier: 'Decline'
     }
   }
 
@@ -582,28 +604,32 @@ export class QualificationService {
           factor: 'Revenue Trend',
           result: 'pass',
           message: 'Revenue is increasing',
-          value: direction
+          value: direction,
+          qualifiesTier: 'A'
         }
       case 'stable':
         return {
           factor: 'Revenue Trend',
           result: 'pass',
           message: 'Revenue is stable',
-          value: direction
+          value: direction,
+          qualifiesTier: 'A'
         }
       case 'decreasing':
         return {
           factor: 'Revenue Trend',
           result: 'warning',
           message: 'Revenue is declining',
-          value: direction
+          value: direction,
+          qualifiesTier: 'C'
         }
       case 'volatile':
         return {
           factor: 'Revenue Trend',
           result: 'warning',
           message: 'Revenue shows high volatility',
-          value: direction
+          value: direction,
+          qualifiesTier: 'C'
         }
     }
   }
@@ -629,20 +655,32 @@ export class QualificationService {
       return 'D'
     }
 
-    // Count passes and warnings
-    const passes = reasons.filter((r) => r.result === 'pass').length
-    const warnings = reasons.filter((r) => r.result === 'warning').length
-
-    // Determine tier based on distribution
-    if (warnings === 0 && passes >= 7) {
-      return 'A'
-    } else if (warnings <= 1 && passes >= 6) {
-      return 'B'
-    } else if (warnings <= 3) {
-      return 'C'
-    } else {
-      return 'D'
+    // No hard fails. The overall tier is the WORST tier that any single factor
+    // qualifies for: a borrower is only as strong as their weakest factor. This
+    // correctly keeps a borrower whose factors all meet C/D thresholds at C/D
+    // instead of penalizing each C/D-satisfied factor as a "warning" and
+    // cascading them down to D. (Previously, factors that legitimately met the
+    // C threshold were counted as warnings, so a solid C-tier candidate with
+    // 4+ such factors was wrongly demoted to D.)
+    const tierRank: Record<QualificationTier, number> = {
+      A: 4,
+      B: 3,
+      C: 2,
+      D: 1,
+      Decline: 0
     }
+
+    let worstRank = tierRank.A
+    for (const reason of reasons) {
+      // Default an un-tagged factor to A so legacy reasons don't drag the grade.
+      const factorTier = reason.qualifiesTier ?? 'A'
+      worstRank = Math.min(worstRank, tierRank[factorTier])
+    }
+
+    if (worstRank >= tierRank.A) return 'A'
+    if (worstRank >= tierRank.B) return 'B'
+    if (worstRank >= tierRank.C) return 'C'
+    return 'D'
   }
 
   private calculateMaxFunding(tier: QualificationTier, monthlyRevenue: number): number {
@@ -671,14 +709,25 @@ export class QualificationService {
       Decline: 0
     }
 
+    // Maximum allowable term per tier. Longer terms increase total exposure, so
+    // riskier tiers must be capped — the amount-based bump below must never
+    // extend a D/C borrower's term beyond what its risk tier permits.
+    const maxTermByTier: Record<QualificationTier, number> = {
+      A: 18,
+      B: 12,
+      C: 9,
+      D: 6,
+      Decline: 0
+    }
+
     let term = baseTerm[tier]
 
-    // Adjust for amount
+    // Adjust for amount, but never beyond the tier's risk-based maximum.
     if (amount > 200000) term = Math.max(term, 12)
     else if (amount > 100000) term = Math.max(term, 9)
     else if (amount > 50000) term = Math.max(term, 6)
 
-    return term
+    return Math.min(term, maxTermByTier[tier])
   }
 
   private calculateRiskScore(

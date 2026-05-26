@@ -93,19 +93,22 @@ describe('ComplianceReportService', () => {
         }
       ]
 
-      mockQuery.mockResolvedValueOnce(mockCommunications)
-      mockHasConsent
-        .mockResolvedValueOnce({
-          hasConsent: true,
-          consentType: 'express_written',
-          grantedAt: '2024-01-01T00:00:00Z'
-        })
-        .mockResolvedValueOnce({ hasConsent: false })
+      // Consent is now evaluated AS OF the send time via a direct SQL query
+      // (one per communication), not consentService.hasConsent(now). Mock the
+      // communications query, then one consent-lookup per comm: contact-1 has an
+      // active grant at send time, contact-2 does not.
+      mockQuery
+        .mockResolvedValueOnce(mockCommunications) // communications in range
+        .mockResolvedValueOnce([
+          { consent_type: 'express_written', granted_at: '2024-01-01T00:00:00Z' }
+        ]) // contact-1 consent as-of-send
+        .mockResolvedValueOnce([]) // contact-2 no consent as-of-send
 
       const result = await service.generateOutreachReport('org-1', validDateRange)
 
       expect(result).toHaveLength(2)
       expect(result[0].hadConsent).toBe(true)
+      expect(result[0].consentType).toBe('express_written')
       expect(result[1].hadConsent).toBe(false)
     })
 

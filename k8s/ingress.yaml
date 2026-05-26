@@ -33,6 +33,10 @@ spec:
     - host: api.your-domain.com
       http:
         paths:
+          # TODO (security, low): this is an internet-facing ALB and the catch-all
+          # "/" prefix exposes the Swagger UI at /api/docs. Either restrict
+          # /api/docs to an internal path/WAF rule, gate it behind auth, or disable
+          # the docs route in production.
           - path: /
             pathType: Prefix
             backend:

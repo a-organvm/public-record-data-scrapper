@@ -1,10 +1,10 @@
 import { useMemo } from 'react'
-import { SystemContext, PerformanceMetrics } from '@/lib/agentic/types'
-import { Prospect, Competitor, PortfolioCompany, UserAction } from '@public-records/core'
+import { SystemContext, PerformanceMetrics, UserAction } from '@/lib/agentic/types'
+import { Prospect, CompetitorData, PortfolioCompany } from '@public-records/core'
 
 interface UseSystemContextOptions {
   prospects: Prospect[]
-  competitors: Competitor[]
+  competitors: CompetitorData[]
   portfolio: PortfolioCompany[]
   userActions: UserAction[]
 }

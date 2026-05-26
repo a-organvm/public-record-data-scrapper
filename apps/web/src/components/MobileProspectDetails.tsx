@@ -28,6 +28,12 @@ import {
   ChartLineUp
 } from '@phosphor-icons/react'
 
+// Normalize a possibly-undefined/out-of-range score into a valid 0-100 Progress value.
+function clampPercent(value: number | undefined | null): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0
+  return Math.min(100, Math.max(0, value))
+}
+
 interface MobileProspectDetailsProps {
   prospect: Prospect
   onClaim: (prospect: Prospect) => void
@@ -188,7 +194,10 @@ export function MobileProspectDetails({
                       <div className="text-2xl font-bold font-mono text-primary">
                         {prospect.mlScoring.confidence}%
                       </div>
-                      <Progress value={prospect.mlScoring.confidence} className="mt-1 h-1.5" />
+                      <Progress
+                        value={clampPercent(prospect.mlScoring.confidence)}
+                        className="mt-1 h-1.5"
+                      />
                     </div>
                     <div>
                       <div className="text-xs text-muted-foreground mb-1">Recovery</div>
@@ -196,7 +205,7 @@ export function MobileProspectDetails({
                         {prospect.mlScoring.recoveryLikelihood}%
                       </div>
                       <Progress
-                        value={prospect.mlScoring.recoveryLikelihood}
+                        value={clampPercent(prospect.mlScoring.recoveryLikelihood)}
                         className="mt-1 h-1.5"
                       />
                     </div>
@@ -214,7 +223,7 @@ export function MobileProspectDetails({
                           </span>
                           <span className="font-mono">{value}%</span>
                         </div>
-                        <Progress value={value} className="h-1" />
+                        <Progress value={clampPercent(value)} className="h-1" />
                       </div>
                     ))}
                   </div>

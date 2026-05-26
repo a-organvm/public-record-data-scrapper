@@ -209,8 +209,13 @@ describe('ConsentService', () => {
   })
 
   describe('revokeConsent', () => {
-    it('should revoke consent for a channel', async () => {
-      mockQuery.mockResolvedValueOnce({ rowCount: 2 } as unknown as [])
+    it('should revoke consent for a channel and record a channel-specific revocation marker', async () => {
+      // Channel-specific revocation makes two writes: (1) revoke matching active
+      // grants, (2) insert an explicit channel-scoped revocation marker so
+      // hasConsent honors the opt-out even against an older 'all' grant.
+      mockQuery
+        .mockResolvedValueOnce({ rowCount: 2 } as unknown as [])
+        .mockResolvedValueOnce({ rowCount: 1 } as unknown as [])
 
       const result = await service.revokeConsent(
         'org-1',
@@ -219,15 +224,31 @@ describe('ConsentService', () => {
         'Customer requested'
       )
 
-      expect(result).toBe(2)
+      // 2 grants revoked + 1 marker inserted
+      expect(result).toBe(3)
+      expect(mockQuery).toHaveBeenCalledTimes(2)
     })
 
-    it('should return 0 when no consent to revoke', async () => {
-      mockQuery.mockResolvedValueOnce({ rowCount: 0 } as unknown as [])
+    it('should not insert a marker when revoking all channels', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 4 } as unknown as [])
+
+      const result = await service.revokeConsent('org-1', 'contact-1', 'all', 'Full opt-out')
+
+      expect(result).toBe(4)
+      // No marker insert for the broad 'all' revocation.
+      expect(mockQuery).toHaveBeenCalledTimes(1)
+    })
+
+    it('should return marker count when no active grant to revoke', async () => {
+      // Even with no matching active grant, a channel-specific opt-out still
+      // records a revocation marker so future sends are blocked.
+      mockQuery
+        .mockResolvedValueOnce({ rowCount: 0 } as unknown as [])
+        .mockResolvedValueOnce({ rowCount: 1 } as unknown as [])
 
       const result = await service.revokeConsent('org-1', 'contact-1', 'sms')
 
-      expect(result).toBe(0)
+      expect(result).toBe(1)
     })
 
     it('should throw DatabaseError on failure', async () => {

@@ -40,9 +40,10 @@ module "vpc" {
       connect_to_public_natgw = true
     }
     database = {
-      name_prefix             = "database"
-      cidrs                   = var.database_subnet_cidrs
-      connect_to_public_natgw = true
+      name_prefix = "database"
+      cidrs       = var.database_subnet_cidrs
+      # Database tier must not have internet egress. No route to the public NAT GW.
+      connect_to_public_natgw = false
     }
   }
 
@@ -117,6 +118,48 @@ module "redis_security_group" {
   })
 }
 
+# Security Group for the public Application Load Balancer
+# This is the only tier that should accept inbound traffic from the internet.
+module "alb_security_group" {
+  source  = "terraform-aws-modules/security-group/aws"
+  version = "5.3.1"
+
+  name        = "${local.name_prefix}-alb-sg"
+  description = "Security group for the public Application Load Balancer"
+  vpc_id      = module.vpc.vpc_attributes.id
+
+  ingress_with_cidr_blocks = [
+    {
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      description = "HTTPS from the internet"
+      cidr_blocks = "0.0.0.0/0"
+    },
+    {
+      from_port   = 80
+      to_port     = 80
+      protocol    = "tcp"
+      description = "HTTP from the internet (redirect to HTTPS)"
+      cidr_blocks = "0.0.0.0/0"
+    }
+  ]
+
+  egress_with_cidr_blocks = [
+    {
+      from_port   = 0
+      to_port     = 0
+      protocol    = "-1"
+      description = "Allow all outbound traffic"
+      cidr_blocks = "0.0.0.0/0"
+    }
+  ]
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-alb-sg"
+  })
+}
+
 # Security Group for Application Servers
 module "app_security_group" {
   source  = "terraform-aws-modules/security-group/aws"
@@ -126,14 +169,19 @@ module "app_security_group" {
   description = "Security group for application servers"
   vpc_id      = module.vpc.vpc_attributes.id
 
-  ingress_with_cidr_blocks = [
+  # App port 3000 is reachable only from the ALB security group, never the
+  # open internet. The ALB terminates TLS and forwards traffic to the app tier.
+  ingress_with_source_security_group_id = [
     {
-      from_port   = 3000
-      to_port     = 3000
-      protocol    = "tcp"
-      description = "Application port"
-      cidr_blocks = "0.0.0.0/0"
-    },
+      from_port                = 3000
+      to_port                  = 3000
+      protocol                 = "tcp"
+      description              = "Application port (from ALB only)"
+      source_security_group_id = module.alb_security_group.security_group_id
+    }
+  ]
+
+  ingress_with_cidr_blocks = [
     {
       from_port   = 22
       to_port     = 22
@@ -159,6 +207,11 @@ module "app_security_group" {
 }
 
 # DB Subnet Group for RDS
+# TODO: move RDS to the isolated `database` subnets
+# (module.vpc.database_subnet_attributes_by_az[*].id) once the app tier's
+# connectivity to that subnet is validated. Kept on private subnets for now to
+# avoid breaking existing connectivity; the database subnets now have no
+# internet egress (connect_to_public_natgw = false).
 resource "aws_db_subnet_group" "main" {
   name       = "${local.name_prefix}-db-subnet-group"
   subnet_ids = module.vpc.private_subnet_attributes_by_az[*].id
@@ -181,7 +234,12 @@ resource "aws_db_instance" "postgresql" {
 
   db_name  = var.db_name
   username = var.db_master_username
-  password = var.db_master_password
+  # Master password is managed by AWS Secrets Manager (rotated automatically).
+  # This avoids storing a plaintext password in Terraform state/var files.
+  # Downstream consumers (app, migrations) must read the credential from the
+  # Secrets Manager secret referenced by `master_user_secret` / the
+  # `db_master_user_secret_arn` output rather than from a TF variable.
+  manage_master_user_password = true
 
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [module.rds_security_group.security_group_id]
@@ -237,6 +295,8 @@ resource "aws_iam_role_policy_attachment" "rds_monitoring" {
 }
 
 # ElastiCache Subnet Group
+# TODO: move ElastiCache to the isolated `database` subnets once app-tier
+# connectivity is validated (see RDS subnet group note above).
 resource "aws_elasticache_subnet_group" "main" {
   name       = "${local.name_prefix}-redis-subnet-group"
   subnet_ids = module.vpc.private_subnet_attributes_by_az[*].id

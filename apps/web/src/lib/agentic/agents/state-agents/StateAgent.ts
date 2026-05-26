@@ -308,6 +308,15 @@ export class StateAgent extends BaseAgent implements Agent {
   }
 
   /**
+   * Public accessor for this agent's stable custom identifier
+   * (e.g. "state-agent-ca"). Prefer this over reaching into the private
+   * `customId` field via bracket notation.
+   */
+  getCustomId(): string {
+    return this.customId
+  }
+
+  /**
    * Check if this state has a collector implementation
    */
   hasCollector(): boolean {

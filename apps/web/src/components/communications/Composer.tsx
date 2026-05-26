@@ -65,6 +65,9 @@ interface TemplateVariable {
   placeholder: string
 }
 
+// Radix Select forbids empty-string item values; use a sentinel for "blank".
+const BLANK_TEMPLATE_VALUE = '__blank__'
+
 const channelOptions: { value: CommunicationChannel; label: string; icon: typeof Envelope }[] = [
   { value: 'email', label: 'Email', icon: Envelope },
   { value: 'sms', label: 'SMS', icon: ChatText }
@@ -182,8 +185,10 @@ export function Composer({
 
   // Handle template selection
   const handleTemplateSelect = (id: string) => {
-    setTemplateId(id)
-    const template = templates.find((t) => t.id === id)
+    // Normalize the "blank" sentinel back to '' for internal state.
+    const normalizedId = id === BLANK_TEMPLATE_VALUE ? '' : id
+    setTemplateId(normalizedId)
+    const template = templates.find((t) => t.id === normalizedId)
     if (template) {
       setSubject(template.subject || '')
       setBody(template.body)
@@ -299,12 +304,15 @@ export function Composer({
           {/* Template Selection */}
           <div>
             <Label className="mb-2 block">Template (Optional)</Label>
-            <Select value={templateId} onValueChange={handleTemplateSelect}>
+            <Select
+              value={templateId || BLANK_TEMPLATE_VALUE}
+              onValueChange={handleTemplateSelect}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Choose a template or start from scratch" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Blank Message</SelectItem>
+                <SelectItem value={BLANK_TEMPLATE_VALUE}>Blank Message</SelectItem>
                 {Object.entries(groupedTemplates).map(([category, categoryTemplates]) => (
                   <div key={category}>
                     <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">

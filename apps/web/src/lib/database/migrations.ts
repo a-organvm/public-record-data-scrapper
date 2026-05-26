@@ -8,12 +8,22 @@ import { DatabaseClient } from './client'
 import { logger } from '../logging/logger'
 import fs from 'fs/promises'
 import path from 'path'
+import { createHash } from 'crypto'
 
 export interface Migration {
   id: number
   name: string
   sql: string
+  checksum?: string
   executed_at?: string
+}
+
+/**
+ * Compute a stable checksum for a migration's SQL body so that previously
+ * executed migrations that were later edited can be detected.
+ */
+function computeChecksum(sql: string): string {
+  return createHash('sha256').update(sql, 'utf-8').digest('hex')
 }
 
 export class MigrationRunner {
@@ -33,11 +43,19 @@ export class MigrationRunner {
       CREATE TABLE IF NOT EXISTS schema_migrations (
         id INTEGER PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
+        checksum VARCHAR(64),
         executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       )
     `
 
     await this.client.query(sql)
+
+    // Ensure the checksum column exists for tables created before checksums
+    // were tracked (idempotent / safe to run repeatedly).
+    await this.client.query(
+      'ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum VARCHAR(64)'
+    )
+
     logger.info('Migrations table initialized')
   }
 
@@ -68,6 +86,11 @@ export class MigrationRunner {
   async migrate(): Promise<void> {
     await this.initialize()
 
+    // Detect migrations that were already applied but have since been edited.
+    // Editing an applied migration is almost always a mistake (the change will
+    // never be re-run), so we surface it loudly instead of silently ignoring.
+    await this.detectModifiedMigrations()
+
     const pending = await this.getPendingMigrations()
 
     if (pending.length === 0) {
@@ -94,14 +117,44 @@ export class MigrationRunner {
       // Execute migration SQL
       await client.query(migration.sql)
 
-      // Record migration
-      await client.query('INSERT INTO schema_migrations (id, name) VALUES ($1, $2)', [
-        migration.id,
-        migration.name
-      ])
+      // Record migration along with its checksum so future edits can be
+      // detected.
+      await client.query(
+        'INSERT INTO schema_migrations (id, name, checksum) VALUES ($1, $2, $3)',
+        [migration.id, migration.name, migration.checksum ?? computeChecksum(migration.sql)]
+      )
 
       logger.info(`Migration completed: ${migration.name}`)
     })
+  }
+
+  /**
+   * Detect migrations that were applied previously but whose SQL has since
+   * changed. We only warn (rather than throw) so existing deployments are not
+   * broken, but the mismatch is made visible.
+   */
+  private async detectModifiedMigrations(): Promise<void> {
+    const executed = await this.getExecutedMigrations()
+    const executedById = new Map(executed.map((m) => [m.id, m]))
+
+    const allMigrations = await this.loadMigrationFiles()
+
+    for (const migration of allMigrations) {
+      const applied = executedById.get(migration.id)
+      // Skip migrations that have not run yet or that predate checksum tracking.
+      if (!applied || !applied.checksum) {
+        continue
+      }
+
+      const currentChecksum = migration.checksum ?? computeChecksum(migration.sql)
+      if (applied.checksum !== currentChecksum) {
+        logger.warn(
+          `Migration ${migration.id}_${migration.name} has been modified after being applied ` +
+            `(stored checksum ${applied.checksum} != current ${currentChecksum}). ` +
+            `The change will NOT be re-run. Create a new migration instead.`
+        )
+      }
+    }
   }
 
   /**
@@ -110,7 +163,7 @@ export class MigrationRunner {
   private async loadMigrationFiles(): Promise<Migration[]> {
     try {
       const files = await fs.readdir(this.migrationsDir)
-      const sqlFiles = files.filter((f) => f.endsWith('.sql')).sort()
+      const sqlFiles = files.filter((f) => f.endsWith('.sql'))
 
       const migrations: Migration[] = []
 
@@ -123,8 +176,13 @@ export class MigrationRunner {
         const filePath = path.join(this.migrationsDir, file)
         const sql = await fs.readFile(filePath, 'utf-8')
 
-        migrations.push({ id, name, sql })
+        migrations.push({ id, name, sql, checksum: computeChecksum(sql) })
       }
+
+      // Sort by the parsed numeric id so migrations run in numeric order.
+      // String sorting would order "10_foo" before "9_bar", applying them in
+      // the wrong sequence.
+      migrations.sort((a, b) => a.id - b.id)
 
       return migrations
     } catch (error) {

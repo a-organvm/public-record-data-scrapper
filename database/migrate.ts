@@ -7,7 +7,10 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 interface Migration {
-  version: number
+  // Canonical migration version is the zero-padded numeric prefix as a string
+  // (e.g. '001'), matching the schema_migrations.version VARCHAR(50) column
+  // defined in migrations/001_initial_schema.sql and database/schema.sql.
+  version: string
   name: string
   sql: string
 }
@@ -29,18 +32,25 @@ class MigrationRunner {
   }
 
   private async createMigrationsTable(): Promise<void> {
+    // Must match migrations/001_initial_schema.sql and database/schema.sql:
+    // version is VARCHAR (zero-padded prefix), with name + applied_at.
     await this.client.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
-        version INTEGER PRIMARY KEY,
+        id SERIAL PRIMARY KEY,
+        version VARCHAR(50) UNIQUE NOT NULL,
         name VARCHAR(255) NOT NULL,
-        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       )
     `)
   }
 
-  async getAppliedMigrations(): Promise<number[]> {
-    const result = await this.client.query('SELECT version FROM schema_migrations ORDER BY version')
-    return result.rows.map((row) => row.version)
+  async getAppliedMigrations(): Promise<string[]> {
+    // Sort numerically by the version prefix so ordering is correct even though
+    // version is stored as text ('001', '002', ... '010', ...).
+    const result = await this.client.query(
+      'SELECT version FROM schema_migrations ORDER BY (version)::int'
+    )
+    return result.rows.map((row) => String(row.version))
   }
 
   async getPendingMigrations(): Promise<Migration[]> {
@@ -69,7 +79,8 @@ class MigrationRunner {
         throw new Error(`Invalid migration filename: ${file}`)
       }
 
-      const version = parseInt(match[1])
+      // Preserve the zero-padded numeric prefix as the canonical string version.
+      const version = match[1]
       const name = match[2]
       const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8')
 
@@ -93,10 +104,12 @@ class MigrationRunner {
       try {
         await this.client.query('BEGIN')
         await this.client.query(migration.sql)
-        await this.client.query('INSERT INTO schema_migrations (version, name) VALUES ($1, $2)', [
-          migration.version,
-          migration.name
-        ])
+        // ON CONFLICT DO NOTHING: some migrations self-record their version
+        // (e.g. 001_initial_schema.sql), so avoid a duplicate-key error.
+        await this.client.query(
+          'INSERT INTO schema_migrations (version, name) VALUES ($1, $2) ON CONFLICT (version) DO NOTHING',
+          [migration.version, migration.name]
+        )
         await this.client.query('COMMIT')
 
         console.log(`✓ Migration ${migration.version} applied successfully\n`)
@@ -125,6 +138,7 @@ class MigrationRunner {
     for (const version of toRollback.reverse()) {
       console.log(`Rolling back migration ${version}`)
 
+      // Down files are named with the same zero-padded prefix, e.g. 001_down.sql
       const downFile = path.join(__dirname, 'migrations', `${version}_down.sql`)
 
       if (!fs.existsSync(downFile)) {

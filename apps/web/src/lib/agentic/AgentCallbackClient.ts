@@ -37,20 +37,23 @@ export class AgentCallbackClient {
   async sendCycleResult(payload: AgentCallbackPayload): Promise<void> {
     await this.ensureConnected()
 
-    let attempt = 0
-    // We treat the initial try as attempt 1 for clearer logging
-    while (attempt <= this.retries) {
+    // The initial send is attempt 1; we then allow up to `retries` additional
+    // attempts, so the maximum number of attempts is `retries + 1`.
+    const maxAttempts = this.retries + 1
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         await this.performSend(payload)
         return
       } catch (error) {
-        attempt += 1
-        console.warn(`⚠️ Agent callback attempt ${attempt} failed`, error)
+        // Log the attempt that actually just failed (1-based).
+        console.warn(`⚠️ Agent callback attempt ${attempt}/${maxAttempts} failed`, error)
 
-        if (attempt > this.retries) {
+        if (attempt >= maxAttempts) {
           throw new AgentCallbackError('Unable to deliver agent callback after retrying.', error)
         }
 
+        // Exponential backoff based on the number of retries performed so far.
         const delay = this.retryDelay * Math.pow(2, attempt - 1)
         await this.delay(delay)
       }

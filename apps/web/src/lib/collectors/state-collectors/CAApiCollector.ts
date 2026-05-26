@@ -129,8 +129,6 @@ export class CAApiCollector implements StateCollector {
       body?: unknown
     } = {}
   ): Promise<T> {
-    await this.rateLimiter.acquire()
-
     const url = new URL(`${this.config.baseUrl}${endpoint}`)
     if (options.params) {
       Object.entries(options.params).forEach(([key, value]) => {
@@ -153,6 +151,11 @@ export class CAApiCollector implements StateCollector {
 
     for (let attempt = 0; attempt < this.config.maxRetries; attempt++) {
       try {
+        // Acquire a rate-limit slot on EVERY attempt. Retries (including the
+        // 429 `continue` path below) are real outbound requests and must count
+        // against the limit, otherwise retries silently bypass rate limiting.
+        await this.rateLimiter.acquire()
+
         this.stats.totalRequests++
 
         const response = await fetch(url.toString(), {
@@ -221,7 +224,9 @@ export class CAApiCollector implements StateCollector {
    */
   async searchByFilingNumber(filingNumber: string): Promise<UCCFiling | null> {
     try {
-      const response = await this.request<CAApiFilingResponse>(`/ucc/filing/${filingNumber}`)
+      const response = await this.request<CAApiFilingResponse>(
+        `/ucc/filing/${encodeURIComponent(filingNumber)}`
+      )
 
       const filing = this.transformFiling(response)
       this.stats.totalCollected++
@@ -240,9 +245,12 @@ export class CAApiCollector implements StateCollector {
    * Get detailed filing information
    */
   async getFilingDetails(filingNumber: string): Promise<UCCFiling> {
-    const response = await this.request<CAApiFilingResponse>(`/ucc/filing/${filingNumber}`, {
-      params: { includeAmendments: 'true', includeImages: 'false' }
-    })
+    const response = await this.request<CAApiFilingResponse>(
+      `/ucc/filing/${encodeURIComponent(filingNumber)}`,
+      {
+        params: { includeAmendments: 'true', includeImages: 'false' }
+      }
+    )
 
     return this.transformFiling(response)
   }

@@ -1,10 +1,54 @@
-import { Router } from 'express'
+import { Router, Response } from 'express'
 import { z } from 'zod'
 import { validateRequest } from '../middleware/validateRequest'
 import { asyncHandler } from '../middleware/errorHandler'
+import { requireRole, AuthenticatedRequest } from '../middleware/authMiddleware'
 import { DealsService } from '../services/DealsService'
 
 const router = Router()
+
+/**
+ * Resolves the caller's tenant (org) from the authenticated JWT and enforces
+ * multi-tenant isolation. The org is ALWAYS derived from `req.user.orgId` —
+ * never trusted from the client. If a client supplies an `org_id` (query or
+ * body) it must match the token's org or the request is rejected (403).
+ *
+ * Returns the resolved orgId on success, or null after writing an error
+ * response (the caller must return immediately when null is returned).
+ */
+function resolveOrgId(req: AuthenticatedRequest, res: Response): string | null {
+  const tokenOrgId = req.user?.orgId
+
+  // Fail closed: a token without a tenant binding cannot access org-scoped data.
+  if (!tokenOrgId) {
+    res.status(403).json({
+      error: {
+        message: 'No organization associated with this account',
+        code: 'FORBIDDEN',
+        statusCode: 403
+      }
+    })
+    return null
+  }
+
+  // If the client supplied an org_id, it must equal the token's org.
+  const suppliedOrgId =
+    (req.query?.org_id as string | undefined) ??
+    (req.body && typeof req.body === 'object' ? (req.body.org_id as string | undefined) : undefined)
+
+  if (suppliedOrgId !== undefined && suppliedOrgId !== tokenOrgId) {
+    res.status(403).json({
+      error: {
+        message: 'org_id does not match authenticated organization',
+        code: 'FORBIDDEN',
+        statusCode: 403
+      }
+    })
+    return null
+  }
+
+  return tokenOrgId
+}
 
 // Validation schemas
 const dealPriorityEnum = z.enum(['low', 'normal', 'high', 'urgent'])
@@ -20,9 +64,11 @@ const useOfFundsEnum = z.enum([
 ])
 
 const listDealsQuerySchema = z.object({
-  org_id: z.string().uuid(),
+  // org_id is derived from the authenticated token; if present it is only used
+  // to cross-check against the token (see resolveOrgId). Never trusted as-is.
+  org_id: z.string().uuid().optional(),
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  limit: z.coerce.number().int().positive().max(200).default(20),
   stage_id: z.string().uuid().optional(),
   assigned_to: z.string().uuid().optional(),
   prospect_id: z.string().uuid().optional(),
@@ -30,10 +76,10 @@ const listDealsQuerySchema = z.object({
   search: z.string().optional(),
   sort_by: z.enum(['created_at', 'updated_at', 'amount_requested', 'expected_close_date']).default('created_at'),
   sort_order: z.enum(['asc', 'desc']).default('desc')
-})
+}).strict()
 
 const createDealSchema = z.object({
-  org_id: z.string().uuid(),
+  org_id: z.string().uuid().optional(),
   prospect_id: z.string().uuid().optional(),
   contact_id: z.string().uuid().optional(),
   stage_id: z.string().uuid().optional(),
@@ -44,7 +90,7 @@ const createDealSchema = z.object({
   use_of_funds_details: z.string().optional(),
   priority: dealPriorityEnum.default('normal'),
   expected_close_date: z.string().datetime().optional()
-})
+}).strict()
 
 const updateDealSchema = z.object({
   prospect_id: z.string().uuid().optional().nullable(),
@@ -91,8 +137,15 @@ const idParamSchema = z.object({
   id: z.string().uuid()
 })
 
+const documentParamsSchema = z.object({
+  id: z.string().uuid(),
+  documentId: z.string().uuid()
+})
+
+// org_id is optional here: the value is derived from the token by resolveOrgId.
+// When supplied it is validated as a UUID and cross-checked against the token.
 const orgIdQuerySchema = z.object({
-  org_id: z.string().uuid()
+  org_id: z.string().uuid().optional()
 })
 
 // GET /api/deals - List deals with pipeline view and stage grouping
@@ -100,11 +153,14 @@ router.get(
   '/',
   validateRequest({ query: listDealsQuerySchema }),
   asyncHandler(async (req, res) => {
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
+
     const dealsService = new DealsService()
     const query = req.query as z.infer<typeof listDealsQuerySchema>
 
     const result = await dealsService.list({
-      orgId: query.org_id,
+      orgId,
       page: query.page,
       limit: query.limit,
       stageId: query.stage_id,
@@ -133,10 +189,12 @@ router.get(
   '/pipeline',
   validateRequest({ query: orgIdQuerySchema }),
   asyncHandler(async (req, res) => {
-    const dealsService = new DealsService()
-    const { org_id } = req.query as z.infer<typeof orgIdQuerySchema>
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
 
-    const pipeline = await dealsService.getPipelineView(org_id)
+    const dealsService = new DealsService()
+
+    const pipeline = await dealsService.getPipelineView(orgId)
 
     res.json(pipeline)
   })
@@ -147,10 +205,12 @@ router.get(
   '/stages',
   validateRequest({ query: orgIdQuerySchema }),
   asyncHandler(async (req, res) => {
-    const dealsService = new DealsService()
-    const { org_id } = req.query as z.infer<typeof orgIdQuerySchema>
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
 
-    const stages = await dealsService.getStages(org_id)
+    const dealsService = new DealsService()
+
+    const stages = await dealsService.getStages(orgId)
 
     res.json({ stages })
   })
@@ -161,10 +221,12 @@ router.get(
   '/stats',
   validateRequest({ query: orgIdQuerySchema }),
   asyncHandler(async (req, res) => {
-    const dealsService = new DealsService()
-    const { org_id } = req.query as z.infer<typeof orgIdQuerySchema>
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
 
-    const stats = await dealsService.getStats(org_id)
+    const dealsService = new DealsService()
+
+    const stats = await dealsService.getStats(orgId)
 
     res.json(stats)
   })
@@ -173,13 +235,17 @@ router.get(
 // POST /api/deals - Create deal (often from a prospect)
 router.post(
   '/',
+  requireRole('user', 'admin'),
   validateRequest({ body: createDealSchema }),
   asyncHandler(async (req, res) => {
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
+
     const dealsService = new DealsService()
     const body = req.body as z.infer<typeof createDealSchema>
 
     const deal = await dealsService.create({
-      orgId: body.org_id,
+      orgId,
       prospectId: body.prospect_id,
       contactId: body.contact_id,
       stageId: body.stage_id,
@@ -201,19 +267,11 @@ router.get(
   '/:id',
   validateRequest({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
+
     const dealsService = new DealsService()
     const { id } = req.params
-    const orgId = req.query.org_id as string
-
-    if (!orgId) {
-      return res.status(400).json({
-        error: {
-          message: 'org_id query parameter is required',
-          code: 'VALIDATION_ERROR',
-          statusCode: 400
-        }
-      })
-    }
 
     const deal = await dealsService.getById(id, orgId)
 
@@ -242,21 +300,14 @@ router.get(
 // PUT /api/deals/:id - Update deal
 router.put(
   '/:id',
+  requireRole('user', 'admin'),
   validateRequest({ params: idParamSchema, body: updateDealSchema }),
   asyncHandler(async (req, res) => {
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
+
     const dealsService = new DealsService()
     const { id } = req.params
-    const orgId = req.query.org_id as string
-
-    if (!orgId) {
-      return res.status(400).json({
-        error: {
-          message: 'org_id query parameter is required',
-          code: 'VALIDATION_ERROR',
-          statusCode: 400
-        }
-      })
-    }
 
     const body = req.body as z.infer<typeof updateDealSchema>
 
@@ -291,21 +342,14 @@ router.put(
 // PATCH /api/deals/:id/stage - Move deal to a new stage
 router.patch(
   '/:id/stage',
+  requireRole('user', 'admin'),
   validateRequest({ params: idParamSchema, body: moveStageSchema }),
   asyncHandler(async (req, res) => {
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
+
     const dealsService = new DealsService()
     const { id } = req.params
-    const orgId = req.query.org_id as string
-
-    if (!orgId) {
-      return res.status(400).json({
-        error: {
-          message: 'org_id query parameter is required',
-          code: 'VALIDATION_ERROR',
-          statusCode: 400
-        }
-      })
-    }
 
     const body = req.body as z.infer<typeof moveStageSchema>
 
@@ -321,11 +365,27 @@ router.patch(
 // POST /api/deals/:id/documents - Upload document to deal
 router.post(
   '/:id/documents',
+  requireRole('user', 'admin'),
   validateRequest({ params: idParamSchema, body: uploadDocumentSchema }),
   asyncHandler(async (req, res) => {
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
+
     const dealsService = new DealsService()
     const { id } = req.params
     const body = req.body as z.infer<typeof uploadDocumentSchema>
+
+    // Enforce that the deal belongs to the caller's org before attaching docs.
+    const deal = await dealsService.getById(id, orgId)
+    if (!deal) {
+      return res.status(404).json({
+        error: {
+          message: `Deal ${id} not found`,
+          code: 'NOT_FOUND',
+          statusCode: 404
+        }
+      })
+    }
 
     const document = await dealsService.uploadDocument({
       dealId: id,
@@ -348,8 +408,23 @@ router.get(
   '/:id/documents',
   validateRequest({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
+
     const dealsService = new DealsService()
     const { id } = req.params
+
+    // Confirm the deal belongs to the caller's org before exposing documents.
+    const deal = await dealsService.getById(id, orgId)
+    if (!deal) {
+      return res.status(404).json({
+        error: {
+          message: `Deal ${id} not found`,
+          code: 'NOT_FOUND',
+          statusCode: 404
+        }
+      })
+    }
 
     const documents = await dealsService.getDocuments(id)
 
@@ -362,8 +437,23 @@ router.get(
   '/:id/documents/checklist',
   validateRequest({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
+
     const dealsService = new DealsService()
     const { id } = req.params
+
+    // Confirm the deal belongs to the caller's org before exposing documents.
+    const deal = await dealsService.getById(id, orgId)
+    if (!deal) {
+      return res.status(404).json({
+        error: {
+          message: `Deal ${id} not found`,
+          code: 'NOT_FOUND',
+          statusCode: 404
+        }
+      })
+    }
 
     const checklist = await dealsService.getDocumentChecklist(id)
 
@@ -371,12 +461,67 @@ router.get(
   })
 )
 
+/**
+ * Confirms a document belongs to a deal owned by the caller's org.
+ *
+ * The DealsService document methods (verifyDocument/deleteDocument) are NOT
+ * org-scoped at the SQL layer, so ownership MUST be enforced here before any
+ * mutation. We verify the parent deal belongs to `orgId`, then confirm the
+ * document id is one of that deal's documents.
+ *
+ * Returns true if ownership is confirmed; otherwise writes a 404 and returns
+ * false (the caller must return immediately).
+ *
+ * TODO(security): push org scoping into DealsService.verifyDocument /
+ * deleteDocument (e.g. JOIN deals on org_id) so ownership is enforced in a
+ * single atomic query rather than read-then-write in the route layer.
+ */
+async function assertDocumentBelongsToOrg(
+  dealsService: DealsService,
+  dealId: string,
+  documentId: string,
+  orgId: string,
+  res: Response
+): Promise<boolean> {
+  const deal = await dealsService.getById(dealId, orgId)
+  if (!deal) {
+    res.status(404).json({
+      error: {
+        message: `Deal ${dealId} not found`,
+        code: 'NOT_FOUND',
+        statusCode: 404
+      }
+    })
+    return false
+  }
+
+  const documents = await dealsService.getDocuments(dealId)
+  const owns = documents.some((doc) => doc.id === documentId)
+  if (!owns) {
+    res.status(404).json({
+      error: {
+        message: `Document ${documentId} not found`,
+        code: 'NOT_FOUND',
+        statusCode: 404
+      }
+    })
+    return false
+  }
+
+  return true
+}
+
 // PATCH /api/deals/:id/documents/:documentId/verify - Verify a document
 router.patch(
   '/:id/documents/:documentId/verify',
+  requireRole('user', 'admin'),
+  validateRequest({ params: documentParamsSchema }),
   asyncHandler(async (req, res) => {
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
+
     const dealsService = new DealsService()
-    const { documentId } = req.params
+    const { id, documentId } = req.params
     const verifiedBy = req.body.verified_by as string
 
     if (!verifiedBy) {
@@ -389,6 +534,10 @@ router.patch(
       })
     }
 
+    if (!(await assertDocumentBelongsToOrg(dealsService, id, documentId, orgId, res))) {
+      return
+    }
+
     const document = await dealsService.verifyDocument(documentId, verifiedBy)
 
     res.json(document)
@@ -398,9 +547,18 @@ router.patch(
 // DELETE /api/deals/:id/documents/:documentId - Delete a document
 router.delete(
   '/:id/documents/:documentId',
+  requireRole('user', 'admin'),
+  validateRequest({ params: documentParamsSchema }),
   asyncHandler(async (req, res) => {
+    const orgId = resolveOrgId(req as AuthenticatedRequest, res)
+    if (!orgId) return
+
     const dealsService = new DealsService()
-    const { documentId } = req.params
+    const { id, documentId } = req.params
+
+    if (!(await assertDocumentBelongsToOrg(dealsService, id, documentId, orgId, res))) {
+      return
+    }
 
     const deleted = await dealsService.deleteDocument(documentId)
 

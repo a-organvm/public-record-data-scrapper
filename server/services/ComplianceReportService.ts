@@ -148,16 +148,37 @@ export class ComplianceReportService {
         let consentType: string | undefined
         let consentGrantedAt: string | undefined
 
-        // Check consent if we have a contact
+        // Check consent if we have a contact. Evaluate consent AS OF the time
+        // the communication was sent (comm.created_at), not the report-run time
+        // — using point-in-time-now consent (consentService.hasConsent) would
+        // mislabel a send that was compliant when made but whose consent has
+        // since expired/been revoked, and vice-versa. This mirrors the
+        // as-of-send-time logic used in detectViolations().
         if (comm.contact_id) {
-          const consentResult = await consentService.hasConsent(
-            orgId,
-            comm.contact_id,
-            comm.channel as 'email' | 'sms' | 'call'
+          const sentAtIso = comm.sent_at || comm.created_at
+          const consentRows = await database.query<{
+            consent_type: string
+            granted_at: string
+          }>(
+            `SELECT cr.consent_type, cr.granted_at
+            FROM consent_records cr
+            WHERE cr.org_id = $1
+              AND cr.contact_id = $2
+              AND (cr.channel = $3 OR cr.channel = 'all')
+              AND cr.is_granted = true
+              AND cr.granted_at <= $4
+              AND (cr.revoked_at IS NULL OR cr.revoked_at > $4)
+              AND (cr.expires_at IS NULL OR cr.expires_at > $4)
+            ORDER BY cr.granted_at DESC
+            LIMIT 1`,
+            [orgId, comm.contact_id, comm.channel, sentAtIso]
           )
-          hadConsent = consentResult.hasConsent
-          consentType = consentResult.consentType
-          consentGrantedAt = consentResult.grantedAt
+
+          if (consentRows[0]) {
+            hadConsent = true
+            consentType = consentRows[0].consent_type
+            consentGrantedAt = consentRows[0].granted_at
+          }
         }
 
         entries.push({
@@ -270,14 +291,28 @@ export class ComplianceReportService {
         to_phone: string
         created_at: string
       }>(
+        // Normalize BOTH sides of the phone join the same way the
+        // SuppressionService does (strip non-digits, then drop a leading US
+        // country-code '1' on 11-digit numbers). Comparing raw c.to_phone to
+        // d.phone misses violations whenever the two were stored with different
+        // formatting (e.g. '+1 (555) 123-4567' vs '5551234567').
         `SELECT c.id, c.to_phone, c.created_at
         FROM communications c
-        JOIN dnc_list d ON c.to_phone = d.phone AND c.org_id = d.org_id
+        JOIN dnc_list d ON
+          regexp_replace(
+            regexp_replace(c.to_phone, '\\D', '', 'g'),
+            '^1(\\d{10})$', '\\1'
+          ) = regexp_replace(
+            regexp_replace(d.phone, '\\D', '', 'g'),
+            '^1(\\d{10})$', '\\1'
+          )
+          AND c.org_id = d.org_id
         WHERE c.org_id = $1
           AND c.direction = 'outbound'
           AND c.channel IN ('call', 'sms')
           AND c.created_at >= $2
-          AND c.created_at <= $3`,
+          AND c.created_at <= $3
+          AND (d.expires_at IS NULL OR d.expires_at > c.created_at)`,
         [orgId, dateRange.start.toISOString(), dateRange.end.toISOString()]
       )
 

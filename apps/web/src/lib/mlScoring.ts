@@ -66,8 +66,10 @@ function calculateHealthTrend(prospect: Prospect): number {
   const { healthScore } = prospect
 
   // Base score from health grade
-  const gradeScores = { A: 95, B: 80, C: 60, D: 40, F: 20 }
-  let score = gradeScores[healthScore.grade]
+  const gradeScores: Record<string, number> = { A: 95, B: 80, C: 60, D: 40, F: 20 }
+  // Fall back to a neutral mid score for any unexpected/undefined grade so the
+  // calculation never yields NaN.
+  let score = gradeScores[healthScore.grade] ?? 50
 
   // Adjust for sentiment trend
   if (healthScore.sentimentTrend === 'improving') {
@@ -83,7 +85,7 @@ function calculateHealthTrend(prospect: Prospect): number {
 }
 
 function calculateSignalQuality(prospect: Prospect): number {
-  const signals = prospect.growthSignals
+  const signals = prospect.growthSignals ?? []
 
   if (signals.length === 0) return 20
 
@@ -146,8 +148,9 @@ function calculateFinancialStability(prospect: Prospect): number {
   }
 
   // UCC filing status
-  const activeFilings = prospect.uccFilings.filter((f) => f.status === 'active').length
-  const terminatedFilings = prospect.uccFilings.filter((f) => f.status === 'terminated').length
+  const uccFilings = prospect.uccFilings ?? []
+  const activeFilings = uccFilings.filter((f) => f.status === 'active').length
+  const terminatedFilings = uccFilings.filter((f) => f.status === 'terminated').length
 
   // Terminated filings are positive (debts cleared)
   score += Math.min(15, terminatedFilings * 5)
@@ -194,5 +197,7 @@ export function addMLConfidenceToSignal(signal: {
     mlConfidence += 5
   }
 
-  return Math.max(0, Math.min(100, mlConfidence))
+  // Round to a whole number for consistency with the other scoring outputs,
+  // which all return rounded integers.
+  return Math.round(Math.max(0, Math.min(100, mlConfidence)))
 }

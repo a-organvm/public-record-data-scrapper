@@ -60,9 +60,13 @@ export const errorHandler = (
     })
   }
 
-  // Handle generic errors
+  // Handle generic (non-ServiceError) errors. These are unknown/uncontrolled
+  // errors that may carry internal details in their message, so in production
+  // we mask the message regardless of statusCode. Only ServiceError instances
+  // (handled above) are considered "safe to surface" client errors.
   const statusCode = err.statusCode || 500
-  const message = err.message || 'Internal Server Error'
+  const rawMessage = err.message || 'Internal Server Error'
+  const isProduction = config.server.env === 'production'
 
   // Log error - omit stack trace in production
   console.error('[ERROR]', {
@@ -70,18 +74,27 @@ export const errorHandler = (
     path: req.path,
     method: req.method,
     statusCode,
-    message,
+    message: rawMessage,
     stack: config.server.env === 'development' ? err.stack : undefined,
     correlationId
   })
 
+  // In production, never leak the raw message of an unknown error. For client
+  // (4xx) errors return a generic client-error message; otherwise a generic
+  // server-error message. In non-production environments, surface the real
+  // message to aid debugging.
+  let responseMessage: string
+  if (isProduction) {
+    responseMessage =
+      statusCode >= 400 && statusCode < 500 ? 'Request could not be processed' : 'Internal Server Error'
+  } else {
+    responseMessage = rawMessage
+  }
+
   // Send error response - omit stack trace in production
   res.status(statusCode).json({
     error: {
-      message:
-        config.server.env === 'production' && statusCode === 500
-          ? 'Internal Server Error'
-          : message,
+      message: responseMessage,
       code: err.code || 'INTERNAL_ERROR',
       statusCode,
       correlationId,

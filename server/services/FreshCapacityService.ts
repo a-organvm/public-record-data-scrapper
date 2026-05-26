@@ -45,11 +45,18 @@ export class FreshCapacityService {
       recent_termination_amount: string | null
       total_active_amount: string | null
     }>(
+      // Use the actual termination_date column (added in migration 011) as the
+      // termination anchor rather than updated_at. updated_at changes on ANY
+      // row write (e.g. re-enrichment, status backfills), which would falsely
+      // inflate the recency bonus for terminations that actually happened long
+      // ago. termination_date may be NULL for older/un-backfilled rows; in that
+      // case the termination has no known date and we deliberately do NOT award
+      // a recency bonus (handled below) rather than guessing from updated_at.
       `
       SELECT
         COUNT(*) FILTER (WHERE uf.status = 'terminated')::text as terminated_count,
         COUNT(*) FILTER (WHERE uf.status = 'active')::text as active_count,
-        MAX(CASE WHEN uf.status = 'terminated' THEN uf.updated_at ELSE NULL END)::text as recent_termination_date,
+        MAX(CASE WHEN uf.status = 'terminated' THEN uf.termination_date ELSE NULL END)::text as recent_termination_date,
         MAX(CASE WHEN uf.status = 'terminated' THEN uf.lien_amount ELSE NULL END)::text as recent_termination_amount,
         AVG(CASE WHEN uf.status = 'active' THEN uf.lien_amount ELSE NULL END)::text as total_active_amount
       FROM ucc_filings uf

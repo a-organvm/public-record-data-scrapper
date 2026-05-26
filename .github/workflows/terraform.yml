@@ -26,6 +26,11 @@ on:
           - plan
           - apply
           - destroy
+      confirm:
+        description: 'Type DESTROY (all caps) to confirm a destroy action. Ignored for plan/apply.'
+        required: false
+        default: ''
+        type: string
 
 env:
   TF_VERSION: '1.10.3'
@@ -38,10 +43,11 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v4
+        # TODO: SHA-pin this action (could not resolve offline). Pin hashicorp/setup-terraform to a full release SHA.
+        uses: hashicorp/setup-terraform@v3.1.2
         with:
           terraform_version: ${{ env.TF_VERSION }}
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
@@ -82,9 +88,10 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
 
       - name: Run tfsec
+        # TODO: SHA-pin this action (could not resolve offline). Pin aquasecurity/tfsec-action to a full release SHA.
         uses: aquasecurity/tfsec-action@v1.0.3
         with:
           working_directory: ${{ env.TF_WORKING_DIR }}
@@ -98,10 +105,11 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v4
+        # TODO: SHA-pin this action (could not resolve offline). Pin hashicorp/setup-terraform to a full release SHA.
+        uses: hashicorp/setup-terraform@v3.1.2
         with:
           terraform_version: ${{ env.TF_VERSION }}
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
@@ -124,21 +132,38 @@ jobs:
 
       - name: Comment Plan Result
         if: github.event_name == 'pull_request'
+        # TODO: SHA-pin this action (could not resolve offline). actions/github-script v7.0.1
         uses: actions/github-script@v7
+        env:
+          # Pass plan stdout via env so it is never interpolated into the JS
+          # template literal (prevents script breakout via terraform output).
+          PLAN_STDOUT: ${{ steps.plan.outputs.stdout }}
+          PLAN_OUTCOME: ${{ steps.plan.outcome }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const output = `#### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
-
-            <details><summary>Show Plan</summary>
-
-            \`\`\`terraform
-            ${{ steps.plan.outputs.stdout }}
-            \`\`\`
-
-            </details>
-
-            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+            const planStdout = process.env.PLAN_STDOUT || '';
+            const planOutcome = process.env.PLAN_OUTCOME || '';
+            const actor = context.actor;
+            const eventName = context.eventName;
+            // Truncate very large plans to keep the comment within GitHub limits.
+            const MAX = 60000;
+            const body = planStdout.length > MAX
+              ? planStdout.slice(0, MAX) + '\n... (truncated)'
+              : planStdout;
+            const output = [
+              '#### Terraform Plan 📖 `' + planOutcome + '`',
+              '',
+              '<details><summary>Show Plan</summary>',
+              '',
+              '```terraform',
+              body,
+              '```',
+              '',
+              '</details>',
+              '',
+              '*Pushed by: @' + actor + ', Action: `' + eventName + '`*'
+            ].join('\n');
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -158,10 +183,11 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v4
+        # TODO: SHA-pin this action (could not resolve offline). Pin hashicorp/setup-terraform to a full release SHA.
+        uses: hashicorp/setup-terraform@v3.1.2
         with:
           terraform_version: ${{ env.TF_VERSION }}
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
@@ -194,16 +220,34 @@ jobs:
   terraform-destroy:
     name: Terraform Destroy
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
+    # Only runnable via manual dispatch, on the main branch, with an explicit
+    # typed confirmation. The destroy-infrastructure environment should also be
+    # configured as a protected environment requiring manual approval/reviewers.
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.action == 'destroy' &&
+      github.event.inputs.confirm == 'DESTROY' &&
+      github.ref == 'refs/heads/main'
     environment:
+      # TODO: configure 'destroy-infrastructure' as a protected GitHub environment
+      # with required reviewers and a deployment branch rule limited to main.
       name: destroy-infrastructure
-    
+
     steps:
+      - name: Verify destroy confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "DESTROY" ]; then
+            echo "::error::Destroy not confirmed. Re-run with confirm=DESTROY."
+            exit 1
+          fi
+          echo "Destroy confirmed by ${{ github.actor }} on ref ${{ github.ref }}"
+
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v4
+        # TODO: SHA-pin this action (could not resolve offline). Pin hashicorp/setup-terraform to a full release SHA.
+        uses: hashicorp/setup-terraform@v3.1.2
         with:
           terraform_version: ${{ env.TF_VERSION }}
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}

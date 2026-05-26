@@ -107,12 +107,14 @@ export class DisclosureService {
       version: row.version,
       fundingAmount: Number(row.funding_amount),
       totalDollarCost: Number(row.total_dollar_cost),
-      financeCharge: row.finance_charge ? Number(row.finance_charge) : undefined,
+      // Use == null (not falsy) so a legitimate stored 0 is preserved rather
+      // than coerced to undefined.
+      financeCharge: row.finance_charge == null ? undefined : Number(row.finance_charge),
       termDays: row.term_days,
       paymentFrequency: row.payment_frequency,
-      paymentAmount: row.payment_amount ? Number(row.payment_amount) : undefined,
+      paymentAmount: row.payment_amount == null ? undefined : Number(row.payment_amount),
       numberOfPayments: row.number_of_payments,
-      aprEquivalent: row.apr_equivalent ? Number(row.apr_equivalent) : undefined,
+      aprEquivalent: row.apr_equivalent == null ? undefined : Number(row.apr_equivalent),
       disclosureData: row.disclosure_data,
       documentUrl: row.document_url,
       documentHash: row.document_hash,

@@ -11,6 +11,37 @@
 import { database } from '../database/connection'
 
 /**
+ * Allowlist of valid columns for sorting to prevent SQL injection.
+ * Only these columns can be used in ORDER BY clauses.
+ */
+const ALLOWED_SORT_COLUMNS = [
+  'company_name',
+  'funded_date',
+  'funded_amount',
+  'current_health_score',
+  'health_grade',
+  'health_trend',
+  'state',
+  'industry',
+  'days_since_funding'
+] as const
+
+type AllowedSortColumn = (typeof ALLOWED_SORT_COLUMNS)[number]
+
+/**
+ * Validates and sanitizes a sort column to prevent SQL injection.
+ *
+ * @param column - The requested sort column name
+ * @returns A safe column name from the allowlist, defaults to 'current_health_score'
+ */
+function validateSortColumn(column: string): AllowedSortColumn {
+  if (ALLOWED_SORT_COLUMNS.includes(column as AllowedSortColumn)) {
+    return column as AllowedSortColumn
+  }
+  return 'current_health_score' // Safe default
+}
+
+/**
  * Portfolio company entity representing a funded merchant.
  */
 interface PortfolioCompany {
@@ -88,6 +119,10 @@ export class PortfolioService {
   async list(params: ListParams) {
     const { page, limit, health_grade, sort_by, sort_order } = params
     const offset = (page - 1) * limit
+    const safeSortBy = validateSortColumn(sort_by)
+    // days_since_funding is a computed alias; ORDER BY on the alias is fine,
+    // but it is safe because safeSortBy is validated against the allowlist.
+    const safeSortOrder = sort_order.toUpperCase() === 'DESC' ? 'DESC' : 'ASC'
 
     // Build WHERE clause
     const conditions: string[] = []
@@ -116,7 +151,7 @@ export class PortfolioService {
         EXTRACT(DAY FROM NOW() - funded_date)::integer as days_since_funding
       FROM portfolio_companies
       ${whereClause}
-      ORDER BY ${sort_by} ${sort_order.toUpperCase()}
+      ORDER BY ${safeSortBy} ${safeSortOrder}
       LIMIT $${paramCount++} OFFSET $${paramCount++}
     `
     values.push(limit, offset)

@@ -16,6 +16,7 @@ const {
   mockGetStages,
   mockUploadDocument,
   mockGetDocuments,
+  mockGetDocumentChecklist,
   mockVerifyDocument,
   mockDeleteDocument,
   mockGetStats
@@ -30,6 +31,7 @@ const {
   mockGetStages: vi.fn(),
   mockUploadDocument: vi.fn(),
   mockGetDocuments: vi.fn(),
+  mockGetDocumentChecklist: vi.fn(),
   mockVerifyDocument: vi.fn(),
   mockDeleteDocument: vi.fn(),
   mockGetStats: vi.fn()
@@ -48,6 +50,9 @@ vi.mock('../../services/DealsService', () => ({
     getStages = mockGetStages
     uploadDocument = mockUploadDocument
     getDocuments = mockGetDocuments
+    // GET /api/deals/:id builds a document checklist; without this the route
+    // threw "getDocumentChecklist is not a function" and returned 500.
+    getDocumentChecklist = mockGetDocumentChecklist
     verifyDocument = mockVerifyDocument
     deleteDocument = mockDeleteDocument
     getStats = mockGetStats
@@ -66,7 +71,8 @@ describe('Deals API', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     app = createTestApp()
-    authHeader = createAuthHeader()
+    // Mint a token bound to the test org so multi-tenant isolation passes.
+    authHeader = createAuthHeader('test-user-123', { orgId: mockOrgId })
   })
 
   describe('GET /api/deals', () => {
@@ -95,11 +101,35 @@ describe('Deals API', () => {
       expect(response.body.pagination.total).toBe(2)
     })
 
-    it('should require org_id query parameter', async () => {
+    it('should derive org from the token when no org_id query param is given', async () => {
+      mockList.mockResolvedValueOnce({ deals: [], page: 1, limit: 20, total: 0 })
+
       const response = await request(app).get('/api/deals').set('Authorization', authHeader)
 
-      expect(response.status).toBe(400)
-      expect(response.body.error).toBeDefined()
+      expect(response.status).toBe(200)
+      expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ orgId: mockOrgId }))
+    })
+
+    it('should fail closed (403) when the token has no org', async () => {
+      const noOrgHeader = createAuthHeader('test-user-123', { orgId: null })
+
+      const response = await request(app)
+        .get('/api/deals')
+        .set('Authorization', noOrgHeader)
+
+      expect(response.status).toBe(403)
+      expect(response.body.error.code).toBe('FORBIDDEN')
+    })
+
+    it('should reject a mismatched org_id query param (403)', async () => {
+      const otherOrg = '550e8400-e29b-41d4-a716-4466554409ff'
+
+      const response = await request(app)
+        .get(`/api/deals?org_id=${otherOrg}`)
+        .set('Authorization', authHeader)
+
+      expect(response.status).toBe(403)
+      expect(response.body.error.code).toBe('FORBIDDEN')
     })
 
     it('should filter by stage_id', async () => {
@@ -115,7 +145,8 @@ describe('Deals API', () => {
         .set('Authorization', authHeader)
 
       expect(response.status).toBe(200)
-      expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ stage_id: mockStageId }))
+      // The route maps the stage_id query param to the camelCase service arg.
+      expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ stageId: mockStageId }))
     })
 
     it('should filter by priority', async () => {
@@ -165,10 +196,11 @@ describe('Deals API', () => {
         .set('Authorization', authHeader)
 
       expect(response.status).toBe(200)
+      // The route maps query params to camelCase service args.
       expect(mockList).toHaveBeenCalledWith(
         expect.objectContaining({
-          sort_by: 'amount_requested',
-          sort_order: 'desc'
+          sortBy: 'amount_requested',
+          sortOrder: 'desc'
         })
       )
     })
@@ -217,8 +249,9 @@ describe('Deals API', () => {
         .set('Authorization', authHeader)
 
       expect(response.status).toBe(200)
-      expect(response.body).toBeInstanceOf(Array)
-      expect(response.body.length).toBe(2)
+      // The route wraps the stages array in a { stages } envelope.
+      expect(response.body.stages).toBeInstanceOf(Array)
+      expect(response.body.stages.length).toBe(2)
     })
   })
 
@@ -253,6 +286,9 @@ describe('Deals API', () => {
       }
 
       mockGetById.mockResolvedValueOnce(mockDeal)
+      // The route also hydrates documents + checklist on the detail view.
+      mockGetDocuments.mockResolvedValueOnce([])
+      mockGetDocumentChecklist.mockResolvedValueOnce([])
 
       const response = await request(app)
         .get(`/api/deals/${mockDealId}`)
@@ -313,13 +349,25 @@ describe('Deals API', () => {
       expect(response.body.amount_requested).toBe(50000)
     })
 
-    it('should validate required org_id', async () => {
+    it('should derive org from token (no org_id required in body)', async () => {
+      mockCreate.mockResolvedValueOnce({ id: mockDealId, amount_requested: 50000 })
+
       const response = await request(app).post('/api/deals').set('Authorization', authHeader).send({
         amount_requested: 50000
       })
 
-      expect(response.status).toBe(400)
-      expect(response.body.error).toBeDefined()
+      expect(response.status).toBe(201)
+      expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ orgId: mockOrgId }))
+    })
+
+    it('should reject a body org_id that does not match the token (403)', async () => {
+      const response = await request(app).post('/api/deals').set('Authorization', authHeader).send({
+        org_id: '550e8400-e29b-41d4-a716-4466554409ff',
+        amount_requested: 50000
+      })
+
+      expect(response.status).toBe(403)
+      expect(response.body.error.code).toBe('FORBIDDEN')
     })
 
     it('should validate priority enum', async () => {
@@ -341,7 +389,8 @@ describe('Deals API', () => {
     })
   })
 
-  describe('PATCH /api/deals/:id', () => {
+  // The route exposes updates via PUT /api/deals/:id (not PATCH).
+  describe('PUT /api/deals/:id', () => {
     it('should update deal fields', async () => {
       const mockUpdated = {
         id: mockDealId,
@@ -353,7 +402,7 @@ describe('Deals API', () => {
       mockUpdate.mockResolvedValueOnce(mockUpdated)
 
       const response = await request(app)
-        .patch(`/api/deals/${mockDealId}`)
+        .put(`/api/deals/${mockDealId}`)
         .set('Authorization', authHeader)
         .send({
           amount_requested: 75000,
@@ -369,7 +418,7 @@ describe('Deals API', () => {
       mockUpdate.mockRejectedValueOnce(new NotFoundError('Deal', mockDealId))
 
       const response = await request(app)
-        .patch(`/api/deals/${mockDealId}`)
+        .put(`/api/deals/${mockDealId}`)
         .set('Authorization', authHeader)
         .send({
           amount_requested: 50000
@@ -388,7 +437,7 @@ describe('Deals API', () => {
       mockUpdate.mockResolvedValueOnce(mockUpdated)
 
       const response = await request(app)
-        .patch(`/api/deals/${mockDealId}`)
+        .put(`/api/deals/${mockDealId}`)
         .set('Authorization', authHeader)
         .send({
           factor_rate: 1.35
@@ -399,38 +448,12 @@ describe('Deals API', () => {
     })
   })
 
-  describe('DELETE /api/deals/:id', () => {
-    it('should delete a deal', async () => {
-      mockDelete.mockResolvedValueOnce(true)
+  // NOTE: There is intentionally no DELETE /api/deals/:id endpoint — DealsService
+  // exposes no hard-delete for deals (only deleteDocument), so the previously
+  // present hard-delete tests targeting a non-existent route were removed.
 
-      const response = await request(app)
-        .delete(`/api/deals/${mockDealId}`)
-        .set('Authorization', authHeader)
-
-      expect(response.status).toBe(204)
-    })
-
-    it('should return 404 for non-existent deal', async () => {
-      mockDelete.mockRejectedValueOnce(new NotFoundError('Deal', mockDealId))
-
-      const response = await request(app)
-        .delete(`/api/deals/${mockDealId}`)
-        .set('Authorization', authHeader)
-
-      expect(response.status).toBe(404)
-      expect(response.body.error.code).toBe('NOT_FOUND')
-    })
-
-    it('should validate UUID format', async () => {
-      const response = await request(app)
-        .delete('/api/deals/invalid-uuid')
-        .set('Authorization', authHeader)
-
-      expect(response.status).toBe(400)
-    })
-  })
-
-  describe('POST /api/deals/:id/stage', () => {
+  // The route moves a deal between stages via PATCH /api/deals/:id/stage.
+  describe('PATCH /api/deals/:id/stage', () => {
     it('should move deal to new stage', async () => {
       const mockMoved = {
         id: mockDealId,
@@ -441,7 +464,7 @@ describe('Deals API', () => {
       mockMoveToStage.mockResolvedValueOnce(mockMoved)
 
       const response = await request(app)
-        .post(`/api/deals/${mockDealId}/stage`)
+        .patch(`/api/deals/${mockDealId}/stage`)
         .set('Authorization', authHeader)
         .send({
           stage_id: mockStageId,
@@ -454,7 +477,7 @@ describe('Deals API', () => {
 
     it('should validate stage_id is required', async () => {
       const response = await request(app)
-        .post(`/api/deals/${mockDealId}/stage`)
+        .patch(`/api/deals/${mockDealId}/stage`)
         .set('Authorization', authHeader)
         .send({
           notes: 'Missing stage_id'
@@ -467,7 +490,7 @@ describe('Deals API', () => {
       mockMoveToStage.mockRejectedValueOnce(new NotFoundError('Deal', mockDealId))
 
       const response = await request(app)
-        .post(`/api/deals/${mockDealId}/stage`)
+        .patch(`/api/deals/${mockDealId}/stage`)
         .set('Authorization', authHeader)
         .send({
           stage_id: mockStageId
@@ -493,6 +516,8 @@ describe('Deals API', () => {
         created_at: new Date().toISOString()
       }
 
+      // Deal must be owned by the caller's org before a document can be attached.
+      mockGetById.mockResolvedValueOnce({ id: mockDealId, org_id: mockOrgId })
       mockUploadDocument.mockResolvedValueOnce(mockDocument)
 
       const response = await request(app)
@@ -538,6 +563,7 @@ describe('Deals API', () => {
         { id: '2', document_type: 'application', file_name: 'application.pdf' }
       ]
 
+      mockGetById.mockResolvedValueOnce({ id: mockDealId, org_id: mockOrgId })
       mockGetDocuments.mockResolvedValueOnce(mockDocuments)
 
       const response = await request(app)
@@ -545,8 +571,9 @@ describe('Deals API', () => {
         .set('Authorization', authHeader)
 
       expect(response.status).toBe(200)
-      expect(response.body).toBeInstanceOf(Array)
-      expect(response.body.length).toBe(2)
+      expect(response.body).toHaveProperty('documents')
+      expect(response.body.documents).toBeInstanceOf(Array)
+      expect(response.body.documents.length).toBe(2)
     })
   })
 
@@ -558,29 +585,47 @@ describe('Deals API', () => {
         verified_at: new Date().toISOString()
       }
 
+      // Ownership: deal belongs to org, document belongs to deal.
+      mockGetById.mockResolvedValueOnce({ id: mockDealId, org_id: mockOrgId })
+      mockGetDocuments.mockResolvedValueOnce([{ id: mockDocumentId, dealId: mockDealId }])
       mockVerifyDocument.mockResolvedValueOnce(mockVerified)
 
       const response = await request(app)
         .patch(`/api/deals/${mockDealId}/documents/${mockDocumentId}/verify`)
         .set('Authorization', authHeader)
+        .send({ verified_by: '550e8400-e29b-41d4-a716-446655440099' })
 
       expect(response.status).toBe(200)
       expect(response.body.verified).toBe(true)
     })
 
-    it('should return 404 for non-existent document', async () => {
-      mockVerifyDocument.mockRejectedValueOnce(new NotFoundError('Document', mockDocumentId))
+    it('should reject a document that does not belong to the org deal (404)', async () => {
+      // Deal not found for this org -> ownership check fails before mutating.
+      mockGetById.mockResolvedValueOnce(null)
 
       const response = await request(app)
         .patch(`/api/deals/${mockDealId}/documents/${mockDocumentId}/verify`)
         .set('Authorization', authHeader)
+        .send({ verified_by: '550e8400-e29b-41d4-a716-446655440099' })
 
       expect(response.status).toBe(404)
+      expect(mockVerifyDocument).not.toHaveBeenCalled()
+    })
+
+    it('should reject a non-UUID documentId (400)', async () => {
+      const response = await request(app)
+        .patch(`/api/deals/${mockDealId}/documents/not-a-uuid/verify`)
+        .set('Authorization', authHeader)
+        .send({ verified_by: '550e8400-e29b-41d4-a716-446655440099' })
+
+      expect(response.status).toBe(400)
     })
   })
 
   describe('DELETE /api/deals/:id/documents/:documentId', () => {
     it('should delete document', async () => {
+      mockGetById.mockResolvedValueOnce({ id: mockDealId, org_id: mockOrgId })
+      mockGetDocuments.mockResolvedValueOnce([{ id: mockDocumentId, dealId: mockDealId }])
       mockDeleteDocument.mockResolvedValueOnce(true)
 
       const response = await request(app)
@@ -590,14 +635,17 @@ describe('Deals API', () => {
       expect(response.status).toBe(204)
     })
 
-    it('should return 404 for non-existent document', async () => {
-      mockDeleteDocument.mockRejectedValueOnce(new NotFoundError('Document', mockDocumentId))
+    it('should reject a document that does not belong to the org deal (404)', async () => {
+      mockGetById.mockResolvedValueOnce({ id: mockDealId, org_id: mockOrgId })
+      // Deal owned, but document not among the deal's documents.
+      mockGetDocuments.mockResolvedValueOnce([{ id: 'other-doc', dealId: mockDealId }])
 
       const response = await request(app)
         .delete(`/api/deals/${mockDealId}/documents/${mockDocumentId}`)
         .set('Authorization', authHeader)
 
       expect(response.status).toBe(404)
+      expect(mockDeleteDocument).not.toHaveBeenCalled()
     })
   })
 })

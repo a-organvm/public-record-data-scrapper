@@ -4,6 +4,7 @@
  * Shared utilities, fixtures, and mock data for service tests
  */
 
+import { vi, expect } from 'vitest'
 import {
   UCCFiling,
   Prospect,

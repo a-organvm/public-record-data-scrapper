@@ -49,7 +49,7 @@ export class CaliforniaUCCSource extends BaseDataSource {
 
       if (!response.ok) {
         // Fallback to manual search URL
-        const manualUrl = `https://businesssearch.sos.ca.gov/UCC/Search?query=${encodeURIComponent(debtorName || fileNumber)}`
+        const manualUrl = `https://businesssearch.sos.ca.gov/UCC/Search?query=${encodeURIComponent(String(debtorName || fileNumber || ''))}`
         return {
           available: false,
           manualSearchUrl: manualUrl,
@@ -500,9 +500,10 @@ export class UCCAggregatorSource extends BaseDataSource {
   async fetchData(query: Record<string, unknown>): Promise<DataSourceResponse> {
     return this.executeFetch(async () => {
       const { debtorName, state, nationwide } = query
+      const stateStr = typeof state === 'string' ? state : undefined
 
-      const results = []
-      const errors = []
+      const results: Array<{ source: string; data: Record<string, unknown> }> = []
+      const errors: Array<{ source: string; error: string }> = []
 
       // If nationwide, query all sources
       // If state-specific, query only relevant sources
@@ -510,7 +511,7 @@ export class UCCAggregatorSource extends BaseDataSource {
         ? this.sources
         : this.sources.filter((s) => {
             const name = s.getConfig().name
-            return !state || name.includes('aggregator') || name.includes(state.toLowerCase())
+            return !stateStr || name.includes('aggregator') || name.includes(stateStr.toLowerCase())
           })
 
       // Query all sources in parallel
@@ -520,7 +521,7 @@ export class UCCAggregatorSource extends BaseDataSource {
           if (result.success && result.data) {
             results.push({
               source: source.getConfig().name,
-              data: result.data
+              data: result.data as Record<string, unknown>
             })
           }
         } catch (error) {
@@ -540,7 +541,7 @@ export class UCCAggregatorSource extends BaseDataSource {
       results.forEach((r) => {
         const filings = (r.data.filings || []) as Array<Record<string, unknown>>
         filings.forEach((filing) => {
-          const key = `${filing.fileNumber}-${filing.state || state}`
+          const key = `${filing.fileNumber}-${filing.state || stateStr}`
           if (!filingSet.has(key)) {
             filingSet.add(key)
             allFilings.push({
@@ -553,12 +554,14 @@ export class UCCAggregatorSource extends BaseDataSource {
 
       // Sort by filing date (most recent first)
       allFilings.sort(
-        (a, b) => new Date(b.filingDate || 0).getTime() - new Date(a.filingDate || 0).getTime()
+        (a, b) =>
+          new Date((b.filingDate as string | number) || 0).getTime() -
+          new Date((a.filingDate as string | number) || 0).getTime()
       )
 
       return {
         searchType: nationwide ? 'nationwide' : 'state',
-        state,
+        state: stateStr,
         sourcesQueried: sourcesToQuery.length,
         sourcesSucceeded: results.length,
         sourcesFailed: errors.length,

@@ -1,4 +1,5 @@
 import express, { Express, Request, Response } from 'express'
+import type { Server as HttpServer } from 'http'
 import cors from 'cors'
 import helmet from 'helmet'
 import compression from 'compression'
@@ -13,6 +14,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler'
 import { requestLogger } from './middleware/requestLogger'
 import { createRateLimiter, closeRateLimiterConnection } from './middleware/rateLimiter'
 import { authMiddleware } from './middleware/authMiddleware'
+import { orgContextMiddleware } from './middleware/orgContext'
 import { httpsRedirect } from './middleware/httpsRedirect'
 import { dataTierRouter } from './middleware/dataTier'
 import { auditMiddleware } from './middleware/auditMiddleware'
@@ -27,6 +29,7 @@ import jobsRouter from './routes/jobs'
 import contactsRouter from './routes/contacts'
 import dealsRouter from './routes/deals'
 import webhooksRouter from './routes/webhooks'
+import billingRouter from './routes/billing'
 import statusRouter from './routes/status'
 import competitiveRouter from './routes/competitive'
 import outreachRouter from './routes/outreach'
@@ -43,6 +46,8 @@ import { redisConnection } from './queue/connection'
 
 export class Server {
   private app: Express
+  private httpServer: HttpServer | null = null
+  private shuttingDown = false
 
   constructor() {
     this.app = express()
@@ -52,6 +57,12 @@ export class Server {
   }
 
   private setupMiddleware(): void {
+    // Trust proxy configuration. Controls whether Express derives req.ip /
+    // req.secure / req.protocol from X-Forwarded-* headers. Defaults to false
+    // (do not trust) and must be opted into when running behind a known proxy
+    // (ALB/Nginx). Rate limiting and HTTPS redirect rely on this being correct.
+    this.app.set('trust proxy', config.app.trustProxy)
+
     // HTTPS redirect (before everything else in production)
     this.app.use(httpsRedirect)
 
@@ -81,9 +92,18 @@ export class Server {
     // Parsing for webhook form data (Twilio sends as x-www-form-urlencoded)
     this.app.use('/api/webhooks', express.urlencoded({ extended: true, limit: '1mb' }))
 
-    // Parsing (for all other routes)
-    this.app.use(express.json({ limit: '10mb' }))
-    this.app.use(express.urlencoded({ extended: true, limit: '10mb' }))
+    // Billing (Stripe) webhook + routes: Stripe signatures are verified against
+    // the RAW request body, so this path must NOT be JSON-parsed. Mount raw body
+    // parsing before the global JSON parser. The billing route handler receives
+    // req.body as a Buffer and passes it to Stripe's constructEvent.
+    this.app.use('/api/billing', express.raw({ type: 'application/json', limit: '1mb' }))
+
+    // Parsing (for all other routes). Default to a conservative 1mb limit; the
+    // larger 10mb allowance is only granted on the specific routes that ingest
+    // bulk payloads (e.g. enrichment uploads). Keeping the global default small
+    // limits the blast radius of oversized-body / memory-exhaustion abuse.
+    this.app.use(express.json({ limit: '1mb' }))
+    this.app.use(express.urlencoded({ extended: true, limit: '1mb' }))
 
     // Compression
     this.app.use(compression())
@@ -114,16 +134,23 @@ export class Server {
     // Webhook routes (signature verification, no JWT auth)
     this.app.use('/api/webhooks', webhooksRouter)
 
-    // Protected API routes (authentication required)
-    this.app.use('/api/prospects', authMiddleware, prospectsRouter)
-    this.app.use('/api/competitors', authMiddleware, competitorsRouter)
-    this.app.use('/api/portfolio', authMiddleware, portfolioRouter)
-    this.app.use('/api/enrichment', authMiddleware, enrichmentRouter)
-    this.app.use('/api/jobs', authMiddleware, jobsRouter)
-    this.app.use('/api/contacts', authMiddleware, contactsRouter)
-    this.app.use('/api/deals', authMiddleware, dealsRouter)
-    this.app.use('/api/competitive', authMiddleware, competitiveRouter)
-    this.app.use('/api/outreach', authMiddleware, outreachRouter)
+    // Billing routes (Stripe). The webhook is authenticated via Stripe signature
+    // verification on the raw body (mounted above), not JWT.
+    this.app.use('/api/billing', billingRouter)
+
+    // Protected API routes (authentication required).
+    // orgContextMiddleware runs AFTER authMiddleware (so req.user.orgId is
+    // populated) and BEFORE the routers, binding the tenant context that the
+    // core DB client uses to SET app.current_org_id for RLS (migration 018).
+    this.app.use('/api/prospects', authMiddleware, orgContextMiddleware, prospectsRouter)
+    this.app.use('/api/competitors', authMiddleware, orgContextMiddleware, competitorsRouter)
+    this.app.use('/api/portfolio', authMiddleware, orgContextMiddleware, portfolioRouter)
+    this.app.use('/api/enrichment', authMiddleware, orgContextMiddleware, enrichmentRouter)
+    this.app.use('/api/jobs', authMiddleware, orgContextMiddleware, jobsRouter)
+    this.app.use('/api/contacts', authMiddleware, orgContextMiddleware, contactsRouter)
+    this.app.use('/api/deals', authMiddleware, orgContextMiddleware, dealsRouter)
+    this.app.use('/api/competitive', authMiddleware, orgContextMiddleware, competitiveRouter)
+    this.app.use('/api/outreach', authMiddleware, orgContextMiddleware, outreachRouter)
 
     // Root endpoint
     this.app.get('/', (req, res) => {
@@ -264,8 +291,8 @@ export class Server {
       process.exit(1)
     }
 
-    // Start server
-    this.app.listen(port, host, () => {
+    // Start server (retain the HTTP server handle so we can drain it on shutdown)
+    this.httpServer = this.app.listen(port, host, () => {
       console.log('')
       console.log('🚀 UCC-MCA Intelligence API Server')
       console.log('─────────────────────────────────────')
@@ -281,27 +308,55 @@ export class Server {
     })
   }
 
-  async shutdown(): Promise<void> {
+  async shutdown(signal?: string): Promise<void> {
+    // Guard against repeated SIGTERM/SIGINT triggering concurrent shutdowns.
+    if (this.shuttingDown) {
+      console.log('Shutdown already in progress, ignoring duplicate signal')
+      return
+    }
+    this.shuttingDown = true
+
     console.log('')
-    console.log('Shutting down server...')
+    console.log(`Shutting down server${signal ? ` (${signal})` : ''}...`)
 
-    // Stop job scheduler
-    jobScheduler.stop()
+    // Force exit if graceful shutdown hangs (e.g. a connection won't drain).
+    const forceExitTimer = setTimeout(() => {
+      console.error('✗ Graceful shutdown timed out after 30s — forcing exit')
+      process.exit(1)
+    }, 30_000)
+    forceExitTimer.unref()
 
-    // Close queues
-    await closeQueues()
+    try {
+      // Stop accepting new connections and drain in-flight HTTP requests.
+      if (this.httpServer) {
+        await new Promise<void>((resolve, reject) => {
+          this.httpServer!.close((err) => (err ? reject(err) : resolve()))
+        })
+      }
 
-    // Close rate limiter Redis connection
-    await closeRateLimiterConnection()
+      // Stop job scheduler
+      jobScheduler.stop()
 
-    // Disconnect from Redis
-    await redisConnection.disconnect()
+      // Close queues
+      await closeQueues()
 
-    // Disconnect from database
-    await database.disconnect()
+      // Close rate limiter Redis connection
+      await closeRateLimiterConnection()
 
-    console.log('✓ Server shutdown complete')
-    process.exit(0)
+      // Disconnect from Redis
+      await redisConnection.disconnect()
+
+      // Disconnect from database
+      await database.disconnect()
+
+      console.log('✓ Server shutdown complete')
+      clearTimeout(forceExitTimer)
+      process.exit(0)
+    } catch (error) {
+      console.error('✗ Error during shutdown:', error)
+      clearTimeout(forceExitTimer)
+      process.exit(1)
+    }
   }
 
   private maskConnectionString(url: string): string {
@@ -320,10 +375,29 @@ export class Server {
 
 // Start server if this file is run directly
 const server = new Server()
-server.start()
+server.start().catch((error) => {
+  console.error('Fatal error during server startup:', error)
+  process.exit(1)
+})
 
-// Graceful shutdown
-process.on('SIGTERM', () => server.shutdown())
-process.on('SIGINT', () => server.shutdown())
+// Graceful shutdown on termination signals (guarded against duplicates inside
+// shutdown()).
+process.on('SIGTERM', () => {
+  void server.shutdown('SIGTERM')
+})
+process.on('SIGINT', () => {
+  void server.shutdown('SIGINT')
+})
+
+// Process-level safety nets: log loudly and shut down cleanly rather than
+// leaving the process in an undefined state.
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled promise rejection:', reason)
+  void server.shutdown('unhandledRejection')
+})
+process.on('uncaughtException', (error) => {
+  console.error('[FATAL] Uncaught exception:', error)
+  void server.shutdown('uncaughtException')
+})
 
 export default Server

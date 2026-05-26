@@ -49,6 +49,20 @@ interface UnifiedInboxProps {
 type FilterChannel = 'all' | CommunicationChannel
 type FilterDirection = 'all' | CommunicationDirection
 
+// Only permit safe link schemes; reject javascript:/data:/etc. so attachment
+// URLs can't smuggle script-execution URLs into an href.
+const SAFE_URL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
+function sanitizeUrl(url?: string): string | undefined {
+  if (!url) return undefined
+  const trimmed = url.trim()
+  try {
+    const parsed = new URL(trimmed, window.location.origin)
+    return SAFE_URL_PROTOCOLS.has(parsed.protocol) ? trimmed : undefined
+  } catch {
+    return undefined
+  }
+}
+
 const channelConfig: Record<
   CommunicationChannel,
   { icon: typeof Envelope; color: string; label: string }
@@ -418,21 +432,36 @@ export function UnifiedInbox({
                     <div>
                       <h4 className="text-sm font-medium mb-2">Attachments</h4>
                       <div className="space-y-2">
-                        {selectedCommunication.attachments.map((attachment, index) => (
-                          <a
-                            key={index}
-                            href={attachment.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-2 p-2 rounded-lg bg-muted hover:bg-muted/80 transition-colors"
-                          >
-                            <Envelope size={14} className="text-muted-foreground" />
-                            <span className="text-sm">{attachment.name}</span>
-                            <span className="text-xs text-muted-foreground">
-                              ({Math.round(attachment.size / 1024)}KB)
-                            </span>
-                          </a>
-                        ))}
+                        {selectedCommunication.attachments.map((attachment, index) => {
+                          const safeUrl = sanitizeUrl(attachment.url)
+                          const content = (
+                            <>
+                              <Envelope size={14} className="text-muted-foreground" />
+                              <span className="text-sm">{attachment.name}</span>
+                              <span className="text-xs text-muted-foreground">
+                                ({Math.round(attachment.size / 1024)}KB)
+                              </span>
+                            </>
+                          )
+                          return safeUrl ? (
+                            <a
+                              key={index}
+                              href={safeUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 p-2 rounded-lg bg-muted hover:bg-muted/80 transition-colors"
+                            >
+                              {content}
+                            </a>
+                          ) : (
+                            <div
+                              key={index}
+                              className="flex items-center gap-2 p-2 rounded-lg bg-muted opacity-70"
+                            >
+                              {content}
+                            </div>
+                          )
+                        })}
                       </div>
                     </div>
                   )}

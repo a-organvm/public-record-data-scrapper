@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { ProspectsService } from '../../services/ProspectsService'
-import { NotFoundError, ValidationError, DatabaseError } from '../../errors'
+import { NotFoundError, ValidationError, DatabaseError, ConflictError } from '../../errors'
 
 // Mock the database module
 vi.mock('../../database/connection', () => ({
@@ -327,13 +327,19 @@ describe('ProspectsService', () => {
 
       mockQuery.mockResolvedValueOnce([mockUpdated])
 
+      // update() accepts camelCase Prospect fields and maps them to snake_case
+      // columns via an explicit allowlist.
       const result = await service.update('test-id', {
-        company_name: 'Updated Name',
-        priority_score: 85
+        companyName: 'Updated Name',
+        priorityScore: 85
       } as Partial<import('@public-records/core').Prospect>)
 
       expect(result).toBeDefined()
       expect(result.company_name).toBe('Updated Name')
+      // Verify the SET clause used the mapped snake_case columns.
+      const updateCall = mockQuery.mock.calls[0]
+      expect(updateCall[0]).toContain('company_name = $')
+      expect(updateCall[0]).toContain('priority_score = $')
     })
 
     it('should throw NotFoundError for non-existent id', async () => {
@@ -409,9 +415,21 @@ describe('ProspectsService', () => {
     })
 
     it('should throw NotFoundError if prospect does not exist', async () => {
-      mockQuery.mockResolvedValueOnce([])
+      // claim() does a conditional UPDATE (no match -> empty), then a
+      // disambiguation SELECT: empty -> the prospect truly does not exist.
+      mockQuery
+        .mockResolvedValueOnce([]) // UPDATE matched nothing
+        .mockResolvedValueOnce([]) // existence check: not found
 
       await expect(service.claim('non-existent', 'user-123')).rejects.toThrow(NotFoundError)
+    })
+
+    it('should throw ConflictError if prospect is already claimed', async () => {
+      mockQuery
+        .mockResolvedValueOnce([]) // UPDATE matched nothing (precondition failed)
+        .mockResolvedValueOnce([{ claimed_by: 'someone-else' }]) // exists -> already claimed
+
+      await expect(service.claim('test-id', 'user-123')).rejects.toThrow(ConflictError)
     })
 
     it('should handle database errors', async () => {
@@ -437,9 +455,10 @@ describe('ProspectsService', () => {
 
     it('should handle partial failures', async () => {
       mockQuery
-        .mockResolvedValueOnce([{ id: '1', status: 'claimed' }])
-        .mockResolvedValueOnce([]) // Not found
-        .mockResolvedValueOnce([{ id: '3', status: 'claimed' }])
+        .mockResolvedValueOnce([{ id: '1', status: 'claimed' }]) // #1 UPDATE ok
+        .mockResolvedValueOnce([]) // #2 UPDATE matched nothing
+        .mockResolvedValueOnce([]) // #2 existence check: not found -> failure
+        .mockResolvedValueOnce([{ id: '3', status: 'claimed' }]) // #3 UPDATE ok
 
       const result = await service.batchClaim(['1', '2', '3'], 'user-123')
 
@@ -455,7 +474,12 @@ describe('ProspectsService', () => {
     })
 
     it('should return success counts on all failures', async () => {
-      mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce([])
+      // Each failed claim issues an UPDATE (empty) + existence check (empty).
+      mockQuery
+        .mockResolvedValueOnce([]) // #1 UPDATE
+        .mockResolvedValueOnce([]) // #1 existence check
+        .mockResolvedValueOnce([]) // #2 UPDATE
+        .mockResolvedValueOnce([]) // #2 existence check
 
       const result = await service.batchClaim(['1', '2'], 'user-123')
 

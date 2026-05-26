@@ -156,7 +156,7 @@ export class CompetitorsService {
     const safeSortOrder = sort_order.toUpperCase() === 'DESC' ? 'DESC' : 'ASC'
     const query = `
       SELECT
-        uuid_generate_v4() as id,
+        md5(secured_party_normalized)::uuid as id,
         secured_party_normalized as name,
         COUNT(*) as filing_count,
         COALESCE(SUM(lien_amount), 0) as total_amount,
@@ -207,11 +207,13 @@ export class CompetitorsService {
    * @returns The competitor if found, null otherwise
    */
   async getById(id: string) {
-    // For competitors, we aggregate data by name
-    // Since we don't store competitors separately, we need to query UCC filings
+    // Competitors are aggregated from UCC filings rather than stored separately.
+    // The competitor id is a stable UUID derived from md5(secured_party_normalized)
+    // (see list()), so we filter the aggregate by matching that derived id rather
+    // than returning an arbitrary row.
     const query = `
       SELECT
-        $1::uuid as id,
+        md5(secured_party_normalized)::uuid as id,
         secured_party_normalized as name,
         COUNT(*) as filing_count,
         COALESCE(SUM(lien_amount), 0) as total_amount,
@@ -220,11 +222,7 @@ export class CompetitorsService {
         MIN(filing_date) as first_filing,
         MAX(filing_date) as last_filing
       FROM ucc_filings
-      WHERE secured_party_normalized = (
-        SELECT secured_party_normalized
-        FROM ucc_filings
-        LIMIT 1
-      )
+      WHERE md5(secured_party_normalized)::uuid = $1::uuid
       GROUP BY secured_party_normalized
     `
 

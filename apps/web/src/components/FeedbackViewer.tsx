@@ -62,8 +62,13 @@ export function FeedbackViewer() {
 
   const loadFeedback = () => {
     const stored = localStorage.getItem('ui-feedback')
-    if (stored) {
-      setFeedback(JSON.parse(stored))
+    if (!stored) return
+    try {
+      const parsed = JSON.parse(stored)
+      setFeedback(Array.isArray(parsed) ? (parsed as FeedbackEntry[]) : [])
+    } catch (error) {
+      console.error('Failed to parse stored feedback', error)
+      setFeedback([])
     }
   }
 

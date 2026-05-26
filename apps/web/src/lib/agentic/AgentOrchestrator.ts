@@ -25,6 +25,12 @@ export interface CollectionResult {
   recordsCollected: number
   duration: number
   errors?: string[]
+  /**
+   * True when recordsCollected was produced by a simulation rather than a real
+   * collector. Consumers/dashboards MUST NOT report simulated results as real
+   * ingestion. Absent/false means the numbers came from an actual collection.
+   */
+  simulated?: boolean
 }
 
 export interface OrchestrationStatus {
@@ -200,7 +206,12 @@ export class AgentOrchestrator {
         throw new Error(`Agent not found for state ${stateCode}`)
       }
 
-      // Simulate collection (in production, would actually collect)
+      // NOTE: This is a SIMULATED collection — no real collector is invoked.
+      // Surface that clearly so dashboards never treat these counts as real
+      // ingestion. Replace with a real collector call when one is wired up.
+      console.warn(
+        `[Orchestrator] Simulated collection for state ${stateCode}; results are not real ingestion.`
+      )
       await new Promise((resolve) => setTimeout(resolve, 500))
       const recordsCollected = Math.floor(Math.random() * 100) + 10
 
@@ -215,10 +226,11 @@ export class AgentOrchestrator {
       this.status.totalCollections++
 
       return {
-        agentId: agent['customId'],
+        agentId: agent.getCustomId(),
         success: true,
         recordsCollected,
-        duration: Date.now() - startTime
+        duration: Date.now() - startTime,
+        simulated: true
       }
     } catch (error) {
       this.status.failedCollections++
@@ -251,7 +263,11 @@ export class AgentOrchestrator {
         throw new Error(`Entry point agent not found: ${entryPointId}`)
       }
 
-      // Simulate collection
+      // NOTE: This is a SIMULATED collection — no real entry-point collector
+      // is invoked. Mark it so consumers do not report it as real ingestion.
+      console.warn(
+        `[Orchestrator] Simulated collection for entry point ${entryPointId}; results are not real ingestion.`
+      )
       await new Promise((resolve) => setTimeout(resolve, 300))
       const recordsCollected = Math.floor(Math.random() * 500) + 50
 
@@ -262,7 +278,8 @@ export class AgentOrchestrator {
         agentId: entryPointId,
         success: true,
         recordsCollected,
-        duration: Date.now() - startTime
+        duration: Date.now() - startTime,
+        simulated: true
       }
     } catch (error) {
       this.status.failedCollections++

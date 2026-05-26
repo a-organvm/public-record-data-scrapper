@@ -62,6 +62,15 @@ const mockCycleResult = {
   pendingImprovements: []
 }
 
+beforeEach(() => {
+  // usePersistentState persists 'agentic-last-run'/'agentic-improvements' to
+  // localStorage; clear it between tests so the auto-run guard (which depends
+  // on lastRunTime being empty) is not affected by state leaked from prior tests.
+  if (typeof window !== 'undefined') {
+    window.localStorage.clear()
+  }
+})
+
 afterEach(() => {
   vi.restoreAllMocks()
 })

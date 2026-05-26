@@ -42,7 +42,11 @@ router.get('/funder/:name', async (req, res) => {
 // GET /api/competitive/events/recent — recent filing events
 router.get('/events/recent', async (req, res) => {
   try {
-    const hours = parseInt(req.query.hours as string) || 168 // default 7 days
+    // Parse with explicit radix, guard NaN/non-positive, and clamp to a sane
+    // upper bound (90 days) so a caller cannot request an unbounded window.
+    const parsedHours = parseInt(req.query.hours as string, 10)
+    const hours =
+      Number.isFinite(parsedHours) && parsedHours > 0 ? Math.min(parsedHours, 24 * 90) : 168 // default 7 days
     const events = await database.query(
       `SELECT id, prospect_id as "prospectId", event_type as "eventType",
               filing_id as "filingId", event_date as "eventDate",

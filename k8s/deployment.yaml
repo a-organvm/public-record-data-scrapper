@@ -34,8 +34,11 @@ spec:
 
       containers:
         - name: api
-          image: ghcr.io/your-org/ucc-mca-platform:latest
-          imagePullPolicy: Always
+          # Pin to an immutable tag/digest at deploy time. Do not use :latest.
+          # TODO: replace ${IMAGE_TAG} with a concrete version tag or @sha256 digest
+          # via your deploy tooling (kustomize/helm/CI image substitution).
+          image: ghcr.io/your-org/ucc-mca-platform:${IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
 
           ports:
             - name: http
@@ -134,8 +137,11 @@ spec:
 
       containers:
         - name: worker
-          image: ghcr.io/your-org/ucc-mca-platform:latest
-          imagePullPolicy: Always
+          # Pin to an immutable tag/digest at deploy time. Do not use :latest.
+          # TODO: replace ${IMAGE_TAG} with a concrete version tag or @sha256 digest
+          # via your deploy tooling (kustomize/helm/CI image substitution).
+          image: ghcr.io/your-org/ucc-mca-platform:${IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
           command: ["node", "dist/server/worker.js"]
 
           envFrom:

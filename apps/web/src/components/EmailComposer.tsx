@@ -33,6 +33,18 @@ interface EmailComposerProps {
   onSendEmail: (email: Omit<OutreachEmail, 'id' | 'createdAt' | 'createdBy'>) => void
 }
 
+// Radix Select forbids empty-string item values; use a sentinel for "blank".
+const BLANK_TEMPLATE_VALUE = '__blank__'
+
+// Produce a syntactically plausible placeholder email only when the company name
+// yields a non-empty slug; otherwise leave the disabled field empty rather than
+// fabricate an obviously-invalid address like "contact@.com".
+function buildPlaceholderRecipient(companyName: string): string {
+  const slug = companyName.toLowerCase().replace(/[^a-z0-9]+/g, '')
+  if (!slug) return ''
+  return `${companyName} <contact@${slug}.com>`
+}
+
 export function EmailComposer({ prospect, open, onOpenChange, onSendEmail }: EmailComposerProps) {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [subject, setSubject] = useState('')
@@ -41,8 +53,11 @@ export function EmailComposer({ prospect, open, onOpenChange, onSendEmail }: Ema
   const [previewMode, setPreviewMode] = useState(false)
 
   const handleTemplateSelect = (templateId: string) => {
-    setSelectedTemplateId(templateId)
-    const template = DEFAULT_EMAIL_TEMPLATES.find((t) => t.id === templateId)
+    // Radix Select cannot use an empty-string value, so the "blank" option uses
+    // a sentinel. Normalize it back to '' for internal state.
+    const normalizedId = templateId === BLANK_TEMPLATE_VALUE ? '' : templateId
+    setSelectedTemplateId(normalizedId)
+    const template = DEFAULT_EMAIL_TEMPLATES.find((t) => t.id === normalizedId)
 
     if (template) {
       // Prepare template data
@@ -143,12 +158,15 @@ export function EmailComposer({ prospect, open, onOpenChange, onSendEmail }: Ema
           {/* Template Selection */}
           <div>
             <Label className="text-sm font-medium mb-2 block">Email Template</Label>
-            <Select value={selectedTemplateId} onValueChange={handleTemplateSelect}>
+            <Select
+              value={selectedTemplateId || BLANK_TEMPLATE_VALUE}
+              onValueChange={handleTemplateSelect}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Choose a template or start from scratch" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Blank Template</SelectItem>
+                <SelectItem value={BLANK_TEMPLATE_VALUE}>Blank Template</SelectItem>
                 {Object.entries(groupedTemplates).map(([category, templates]) => (
                   <div key={category}>
                     <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
@@ -175,7 +193,7 @@ export function EmailComposer({ prospect, open, onOpenChange, onSendEmail }: Ema
               </Label>
               <Input
                 id="recipient"
-                value={`${prospect.companyName} <contact@${prospect.companyName.toLowerCase().replace(/\s+/g, '')}.com>`}
+                value={buildPlaceholderRecipient(prospect.companyName)}
                 disabled
                 className="bg-muted"
               />
