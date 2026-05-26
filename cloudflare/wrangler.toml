@@ -44,7 +44,10 @@ id = "0000000000000000000000000000000000"  # TODO: `wrangler kv namespace create
 
 [[r2_buckets]]
 binding = "ARTIFACTS"
-bucket_name = "cronus-assets"
+# Top-level (local dev / bare `wrangler deploy`) intentionally does NOT point at
+# the production `cronus-assets` bucket — only [env.production] does. Create a
+# dev bucket or rely on local R2 emulation under `wrangler dev`.
+bucket_name = "cronus-assets-dev"
 
 # Scheduled triggers — the $0 async pipeline (Cron + a D1 jobs drain).
 #   "0 2 * * *"    daily 02:00 UTC  → UCC ingestion (was ucc-ingestion queue)
@@ -69,12 +72,12 @@ name = "ucc-mca-edge-staging"
 [[env.staging.d1_databases]]
 binding = "DB"
 database_name = "ucc-mca"
-database_id = "00000000-0000-0000-0000-000000000000"  # TODO: staging D1 id (can reuse a dedicated staging db)
+database_id = "REPLACE_WITH_STAGING_D1_ID"  # TODO: a DEDICATED staging D1 id — must NOT equal production's
 migrations_dir = "migrations"
 
 [[env.staging.kv_namespaces]]
 binding = "KV"
-id = "0000000000000000000000000000000000"  # TODO: staging KV namespace id
+id = "REPLACE_WITH_STAGING_KV_ID"  # TODO: a DEDICATED staging KV id — must NOT equal production's
 
 [[env.staging.r2_buckets]]
 binding = "ARTIFACTS"
@@ -97,12 +100,12 @@ name = "ucc-mca-edge-production"
 [[env.production.d1_databases]]
 binding = "DB"
 database_name = "ucc-mca"
-database_id = "00000000-0000-0000-0000-000000000000"  # TODO: production D1 id
+database_id = "REPLACE_WITH_PRODUCTION_D1_ID"  # TODO: the PRODUCTION D1 id — must NOT equal staging's
 migrations_dir = "migrations"
 
 [[env.production.kv_namespaces]]
 binding = "KV"
-id = "0000000000000000000000000000000000"  # TODO: production KV namespace id
+id = "REPLACE_WITH_PRODUCTION_KV_ID"  # TODO: the PRODUCTION KV id — must NOT equal staging's
 
 [[env.production.r2_buckets]]
 binding = "ARTIFACTS"

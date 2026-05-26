@@ -48,12 +48,20 @@ async function runHealthScores(env: Env): Promise<void> {
 }
 
 /**
- * Process a single dequeued job. Stub for now; switch on `job.type` as routes
- * are ported. Throwing here marks the job failed (caught by the drain).
+ * Process a single dequeued job. Dispatch by `job.type` as routes are ported.
+ *
+ * No handlers are implemented yet, so the default path THROWS rather than
+ * returning — otherwise the drain would mark unhandled jobs `done` and silently
+ * discard real work (telos invariant #5: no silent failure). Add a `case` for
+ * each job type at the same time you port the route that enqueues it.
  */
 async function processJob(env: Env, job: JobRow): Promise<void> {
-  // TODO: dispatch by job.type. Keep all work org-scoped via job.org_id.
-  console.log(`[drain] processing job ${job.id} type=${job.type} org=${job.org_id ?? 'none'} — stub`)
+  switch (job.type) {
+    // case 'enrichment':  return runEnrichmentJob(env, job)   // when ported
+    // case 'ingestion':   return runIngestionJob(env, job)
+    default:
+      throw new Error(`No handler for job type "${job.type}" — not yet ported (org=${job.org_id ?? 'none'})`)
+  }
 }
 
 /**
@@ -80,12 +88,20 @@ export async function drainJobs(env: Env): Promise<void> {
 
   for (const job of jobs) {
     try {
-      // Claim the job (best-effort; duplicate delivery is acceptable at-least-once).
-      await run(
+      // Atomic claim: the status='pending' guard + changes check means only one
+      // drain wins a job, so overlapping ticks (a manual /__scheduled during a
+      // real cron) can't double-process. Claim is at-most-once; processing stays
+      // at-least-once if a later step fails (the job returns to 'pending').
+      const claim = await run(
         env,
-        `UPDATE jobs SET status = 'processing', attempts = attempts + 1 WHERE id = ?`,
+        `UPDATE jobs SET status = 'processing', attempts = attempts + 1
+          WHERE id = ? AND status = 'pending'`,
         job.id
       )
+      if (claim.meta.changes !== 1) {
+        // Already claimed by another tick — skip without touching it.
+        continue
+      }
 
       await processJob(env, job)
 

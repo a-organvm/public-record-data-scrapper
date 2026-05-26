@@ -47,7 +47,17 @@ jobs:
 
       - name: Install edge deps
         working-directory: cloudflare
-        run: npm ci || npm install
+        run: npm ci --ignore-scripts || npm install --ignore-scripts
+
+      # Apply D1 migrations to the REMOTE staging DB BEFORE deploying the Worker,
+      # so the new code never goes live against an unmigrated/stale schema.
+      - name: Apply D1 migrations (staging)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: cloudflare
+          command: d1 migrations apply ucc-mca --env staging --remote
 
       - name: Deploy Worker (staging)
         # TODO: SHA-pin this action (replace the tag with the commit SHA it
@@ -84,7 +94,15 @@ jobs:
 
       - name: Install edge deps
         working-directory: cloudflare
-        run: npm ci || npm install
+        run: npm ci --ignore-scripts || npm install --ignore-scripts
+
+      - name: Apply D1 migrations (production)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: cloudflare
+          command: d1 migrations apply ucc-mca --env production --remote
 
       - name: Deploy Worker (production)
         # TODO: SHA-pin this action before trusting it in production CI.
