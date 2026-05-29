@@ -373,31 +373,40 @@ export class Server {
   }
 }
 
-// Start server if this file is run directly
-const server = new Server()
-server.start().catch((error) => {
-  console.error('Fatal error during server startup:', error)
-  process.exit(1)
-})
+// Start the server only when this module is executed directly — never on
+// import (e.g. by tests or tooling). The esbuild bundle (scripts/build-server.mjs)
+// shims `import.meta.url` to `pathToFileURL(__filename)`, so this guard holds in
+// both the bundled CJS entrypoint (`node dist/server.cjs`) and the raw ESM source
+// (`tsx server/index.ts`); importing the module yields the `Server` class with no
+// side effects.
+const invokedDirectly = process.argv[1] === fileURLToPath(import.meta.url)
 
-// Graceful shutdown on termination signals (guarded against duplicates inside
-// shutdown()).
-process.on('SIGTERM', () => {
-  void server.shutdown('SIGTERM')
-})
-process.on('SIGINT', () => {
-  void server.shutdown('SIGINT')
-})
+if (invokedDirectly) {
+  const server = new Server()
+  server.start().catch((error) => {
+    console.error('Fatal error during server startup:', error)
+    process.exit(1)
+  })
 
-// Process-level safety nets: log loudly and shut down cleanly rather than
-// leaving the process in an undefined state.
-process.on('unhandledRejection', (reason) => {
-  console.error('[FATAL] Unhandled promise rejection:', reason)
-  void server.shutdown('unhandledRejection')
-})
-process.on('uncaughtException', (error) => {
-  console.error('[FATAL] Uncaught exception:', error)
-  void server.shutdown('uncaughtException')
-})
+  // Graceful shutdown on termination signals (guarded against duplicates inside
+  // shutdown()).
+  process.on('SIGTERM', () => {
+    void server.shutdown('SIGTERM')
+  })
+  process.on('SIGINT', () => {
+    void server.shutdown('SIGINT')
+  })
+
+  // Process-level safety nets: log loudly and shut down cleanly rather than
+  // leaving the process in an undefined state.
+  process.on('unhandledRejection', (reason) => {
+    console.error('[FATAL] Unhandled promise rejection:', reason)
+    void server.shutdown('unhandledRejection')
+  })
+  process.on('uncaughtException', (error) => {
+    console.error('[FATAL] Uncaught exception:', error)
+    void server.shutdown('uncaughtException')
+  })
+}
 
 export default Server
