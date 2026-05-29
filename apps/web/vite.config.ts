@@ -49,12 +49,48 @@ export default defineConfig({
         secure: true,
         rewrite: (p) => p.replace(/^\/ext\/usaspending/, '')
       },
-      // NY Dept. of State open data (Socrata) — real state business registrations.
+      // State open-data (Socrata) domains — real state public records, no key.
       '/ext/nyopendata': {
         target: 'https://data.ny.gov',
         changeOrigin: true,
         secure: true,
         rewrite: (p) => p.replace(/^\/ext\/nyopendata/, '')
+      },
+      '/ext/data-tx': {
+        target: 'https://data.texas.gov',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (p) => p.replace(/^\/ext\/data-tx/, '')
+      },
+      '/ext/data-pa': {
+        target: 'https://data.pa.gov',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (p) => p.replace(/^\/ext\/data-pa/, '')
+      },
+      '/ext/data-co': {
+        target: 'https://data.colorado.gov',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (p) => p.replace(/^\/ext\/data-co/, '')
+      },
+      '/ext/data-or': {
+        target: 'https://data.oregon.gov',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (p) => p.replace(/^\/ext\/data-or/, '')
+      },
+      '/ext/data-ct': {
+        target: 'https://data.ct.gov',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (p) => p.replace(/^\/ext\/data-ct/, '')
+      },
+      '/ext/data-ia': {
+        target: 'https://mydata.iowa.gov',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (p) => p.replace(/^\/ext\/data-ia/, '')
       },
       '/ext/sec': {
         target: 'https://www.sec.gov',

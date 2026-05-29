@@ -13,7 +13,7 @@ import { fetchPortfolio } from '@/lib/api/portfolio'
 import { fetchUserActions } from '@/lib/api/userActions'
 import {
   fetchLiveProspects,
-  fetchNYBusinessRecords,
+  fetchMultiStatePublicRecords,
   deriveCompetitorsFromProspects
 } from '@/lib/data-sources/live-prospects'
 
@@ -129,13 +129,14 @@ export function useDataFetching({
         let liveProspects: Prospect[]
         let sourceName: string
         try {
-          liveProspects = await fetchNYBusinessRecords(signal, { limit: 80 })
-          sourceName = 'NY Dept. of State — business registrations'
+          const multi = await fetchMultiStatePublicRecords(signal, { perState: 18 })
+          liveProspects = multi.prospects
+          sourceName = `${multi.states.length}-state public records · ${multi.states.join(', ')}`
         } catch (primaryError) {
           if (signal?.aborted) {
             return false
           }
-          console.warn('NY open-data unavailable; trying USAspending.', primaryError)
+          console.warn('State open-data unavailable; trying USAspending.', primaryError)
           liveProspects = await fetchLiveProspects(signal, { limit: 60 })
           sourceName = 'USAspending.gov — federal award recipients'
         }
