@@ -33,12 +33,17 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     allowedHosts: true,
+    // Proxy API calls to the Express server (default :3000) so the SPA's
+    // relative `/api` base resolves to the backend in local dev instead of
+    // hitting the Vite static server (which would return index.html as HTML).
+    proxy: {
+      '/api': {
+        target: process.env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+        changeOrigin: true
+      }
+    },
     fs: {
-      allow: [
-        appRoot,
-        resolve(appRoot, '../../packages'),
-        resolve(appRoot, '../../node_modules')
-      ]
+      allow: [appRoot, resolve(appRoot, '../../packages'), resolve(appRoot, '../../node_modules')]
     }
   }
 })

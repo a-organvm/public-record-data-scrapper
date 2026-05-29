@@ -45,9 +45,16 @@ function App() {
   const [tourOpen, setTourOpen] = useState(false)
   const { dataTier } = useDataTier()
 
-  const useDemoData =
-    import.meta.env.DEV &&
-    ['1', 'true', 'yes'].includes(String(import.meta.env.VITE_USE_MOCK_DATA ?? '').toLowerCase())
+  // Preview (mock) data is the default source so the workspace is always
+  // populated. Set VITE_USE_MOCK_DATA=false AND VITE_API_BASE_URL once the live
+  // backend (auth + seeded DB) is wired. Either way, useDataFetching falls back
+  // to preview data if a live load fails, so the UI is never an empty shell.
+  const mockFlag = String(import.meta.env.VITE_USE_MOCK_DATA ?? '').toLowerCase()
+  const useDemoData = ['false', '0', 'no'].includes(mockFlag)
+    ? false
+    : ['1', 'true', 'yes'].includes(mockFlag)
+      ? true
+      : !import.meta.env.VITE_API_BASE_URL
 
   // Data fetching
   const data = useDataFetching({ useMockData: useDemoData, dataTier })
