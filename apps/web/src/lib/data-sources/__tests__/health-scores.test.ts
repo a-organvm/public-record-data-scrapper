@@ -1,9 +1,9 @@
 /**
  * Tests for Health Score Data Sources
  *
- * TODO: These tests have mocking issues where the mocked data doesn't
- * match the expected return structure from the data sources.
- * The tests need to be updated to properly mock the data source implementations.
+ * Covers graceful degradation when API credentials/params are absent
+ * (success === false with a defined error) and that each source reports
+ * its `source` name. `fetch` is mocked via vi.fn(); no network is hit.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
