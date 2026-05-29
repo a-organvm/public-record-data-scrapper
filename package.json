@@ -20,6 +20,7 @@
     "start": "node dist/server.cjs",
     "start:worker": "node --import tsx server/worker.ts",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "optimize": "vite optimize --config apps/web/vite.config.ts",
     "preview": "npm --workspace apps/web run preview",
     "test": "npm --workspace apps/web run test",
