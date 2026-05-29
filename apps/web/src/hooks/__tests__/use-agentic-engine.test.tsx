@@ -32,6 +32,33 @@ vi.mock('@github/spark/hooks', async () => {
   }
 })
 
+// jsdom in this config does not provide window.localStorage, and usePersistentState
+// (used by the hook under test) reads/writes it. Provide a functional in-memory mock,
+// mirroring the pattern in usePersistentState.test.ts / use-safe-kv.test.ts.
+const localStorageMock = (() => {
+  let store: Record<string, string> = {}
+  return {
+    getItem: (key: string) => (key in store ? store[key] : null),
+    setItem: (key: string, value: string) => {
+      store[key] = String(value)
+    },
+    removeItem: (key: string) => {
+      delete store[key]
+    },
+    clear: () => {
+      store = {}
+    },
+    key: (index: number) => Object.keys(store)[index] ?? null,
+    get length() {
+      return Object.keys(store).length
+    }
+  }
+})()
+Object.defineProperty(window, 'localStorage', {
+  value: localStorageMock,
+  writable: true
+})
+
 const baseMetrics: PerformanceMetrics = {
   avgResponseTime: 500,
   errorRate: 0.02,

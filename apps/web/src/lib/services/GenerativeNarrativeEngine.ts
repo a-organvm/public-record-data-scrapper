@@ -268,6 +268,13 @@ Format as plain text with markdown section headers.
    * Call the configured LLM API.
    */
   private async callLLM(prompt: string): Promise<string> {
+    // Demo mode (VITE_USE_MOCK_DATA='true'): return a structured mock response so
+    // the narrative pipeline works without a live LLM key, mirroring the app's
+    // mock-data convention (see lib/config/dataPipeline.ts).
+    if (import.meta.env.VITE_USE_MOCK_DATA === 'true') {
+      return this.generateMockResponse()
+    }
+
     if (!this.apiKey) {
       throw new Error('GenerativeNarrativeEngine requires a live LLM API key')
     }
@@ -303,6 +310,42 @@ Format as plain text with markdown section headers.
     }
 
     return text
+  }
+
+  /**
+   * Structured mock LLM response for demo mode (VITE_USE_MOCK_DATA='true').
+   * Matches the section format parseNarrativeResponse expects so the full
+   * narrative pipeline produces realistic output without a live API key.
+   */
+  private generateMockResponse(): string {
+    return [
+      '## SUMMARY',
+      'This prospect shows strong indicators of active financing needs based on recent UCC filing activity and growth signals, suggesting a high-likelihood MCA candidate worth prioritizing for outreach.',
+      '',
+      '## KEY_FINDINGS',
+      '- Recent UCC filing activity indicates existing secured financing relationships',
+      '- Revenue trajectory and growth signals align with typical MCA-qualified profiles',
+      '- Health indicators suggest stable operations with capacity for additional financing',
+      '',
+      '## OPPORTUNITY_ANALYSIS',
+      "The prospect's financing history and operational profile present a clear opportunity for a competitively positioned MCA offer, particularly given the timing relative to existing obligations.",
+      '',
+      '## RISK_FACTORS',
+      '- Existing secured positions may affect available collateral',
+      '- Limited visibility into current cash-flow seasonality',
+      '- Competitive lender activity observed in the same reporting period',
+      '',
+      '## RECOMMENDED_ACTIONS',
+      '- Prioritize outreach within the next 14 days while signals are fresh',
+      '- Prepare a stacked-offer analysis accounting for existing UCC positions',
+      '- Validate revenue estimates with a soft bank-statement request',
+      '',
+      '## MARKET_CONTEXT',
+      'The prospect operates in a segment with above-average MCA adoption and active secured-lending competition.',
+      '',
+      '## COMPETITIVE_LANDSCAPE',
+      "Multiple lenders appear active in this prospect's financing history, indicating a competitive but addressable opportunity."
+    ].join('\n')
   }
 
   /**
