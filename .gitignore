@@ -13,6 +13,12 @@ dist-ssr
 *-dist
 *.local
 
+# `server/` here is the backend SOURCE tree. The global ~/.config/git/ignore carries
+# a `/server/` rule (a build-output convention from other projects) that would
+# silently stop NEW files under server/ from being tracked. Re-include it explicitly
+# (server/node_modules, server/dist, etc. remain ignored via the rules above).
+!/server/
+
 # Test coverage
 coverage
 !apps/web/src/features/coverage/
