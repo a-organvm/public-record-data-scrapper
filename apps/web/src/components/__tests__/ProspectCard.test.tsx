@@ -124,7 +124,9 @@ describe('ProspectCard', () => {
       score: 92,
       sentimentTrend: 'improving',
       reviewCount: 25,
-      violationCount: 0
+      violationCount: 0,
+      avgSentiment: 0.85,
+      lastUpdated: '2026-01-15T00:00:00Z'
     },
     timeSinceDefault: 730, // 2 years
     defaultDate: '2022-01-15',
@@ -134,6 +136,7 @@ describe('ProspectCard', () => {
         id: 's1',
         type: 'hiring',
         description: 'Hiring new staff',
+        score: 75,
         confidence: 0.9,
         detectedDate: '2024-01-01'
       },
@@ -141,6 +144,7 @@ describe('ProspectCard', () => {
         id: 's2',
         type: 'expansion',
         description: 'Opening new location',
+        score: 75,
         confidence: 0.85,
         detectedDate: '2024-01-05'
       }
