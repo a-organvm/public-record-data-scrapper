@@ -212,8 +212,8 @@ describe('ProspectDetailDialog', () => {
     uccFilings: [
       {
         id: 'ucc-1',
-        filingNumber: 'UCC-123',
         filingDate: '2023-06-15',
+        debtorName: 'Test Company LLC',
         filingType: 'UCC-1',
         securedParty: 'Bank of America',
         state: 'CA',
