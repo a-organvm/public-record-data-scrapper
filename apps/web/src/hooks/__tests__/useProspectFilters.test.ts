@@ -1,13 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useProspectFilters } from '../useProspectFilters'
-import type {
-  Prospect,
-  HealthGrade,
-  SentimentTrend,
-  ProspectStatus,
-  GrowthSignalType
-} from '@public-records/core'
+import type { Prospect, HealthGrade, ProspectStatus, SignalType } from '@public-records/core'
 
 // Helper to create mock prospects
 function createMockProspect(overrides: Partial<Prospect> = {}): Prospect {
@@ -17,7 +11,6 @@ function createMockProspect(overrides: Partial<Prospect> = {}): Prospect {
     state: 'NY',
     industry: 'technology',
     priorityScore: 75,
-    lienAmount: 500000,
     filingDate: new Date().toISOString(),
     lastUpdated: new Date().toISOString(),
     status: 'new',
@@ -26,9 +19,10 @@ function createMockProspect(overrides: Partial<Prospect> = {}): Prospect {
     healthScore: {
       score: 80,
       grade: 'B' as HealthGrade,
-      trend: 'stable',
+      sentimentTrend: 'stable',
+      reviewCount: 15,
+      avgSentiment: 0.85,
       lastUpdated: new Date().toISOString(),
-      sentimentTrend: 'positive' as SentimentTrend,
       violationCount: 0
     },
     growthSignals: [],
@@ -347,11 +341,11 @@ describe('useProspectFilters', () => {
             growthSignals: [
               {
                 id: 's1',
-                type: 'hiring' as GrowthSignalType,
+                type: 'hiring' as SignalType,
                 description: 'Hiring signal',
                 detectedDate: new Date().toISOString(),
-                strength: 'strong',
-                source: 'test'
+                score: 75,
+                confidence: 0.85
               }
             ]
           }),
@@ -361,11 +355,11 @@ describe('useProspectFilters', () => {
             growthSignals: [
               {
                 id: 's2',
-                type: 'expansion' as GrowthSignalType,
+                type: 'expansion' as SignalType,
                 description: 'Expansion signal',
                 detectedDate: new Date().toISOString(),
-                strength: 'medium',
-                source: 'test'
+                score: 75,
+                confidence: 0.85
               }
             ]
           })
@@ -391,14 +385,14 @@ describe('useProspectFilters', () => {
             id: '1',
             healthScore: {
               ...createMockProspect().healthScore,
-              sentimentTrend: 'positive' as SentimentTrend
+              sentimentTrend: 'improving'
             }
           }),
           createMockProspect({
             id: '2',
             healthScore: {
               ...createMockProspect().healthScore,
-              sentimentTrend: 'negative' as SentimentTrend
+              sentimentTrend: 'declining'
             }
           })
         ]
@@ -408,12 +402,12 @@ describe('useProspectFilters', () => {
         act(() => {
           result.current.setAdvancedFilters({
             ...result.current.advancedFilters,
-            sentimentTrends: ['positive']
+            sentimentTrends: ['improving']
           })
         })
 
         expect(result.current.filteredProspects).toHaveLength(1)
-        expect(result.current.filteredProspects[0].healthScore.sentimentTrend).toBe('positive')
+        expect(result.current.filteredProspects[0].healthScore.sentimentTrend).toBe('improving')
       })
     })
 
@@ -425,11 +419,11 @@ describe('useProspectFilters', () => {
             growthSignals: [
               {
                 id: 's1',
-                type: 'hiring' as GrowthSignalType,
+                type: 'hiring' as SignalType,
                 description: 'test',
                 detectedDate: new Date().toISOString(),
-                strength: 'strong',
-                source: 'test'
+                score: 75,
+                confidence: 0.85
               }
             ]
           }),
@@ -439,19 +433,19 @@ describe('useProspectFilters', () => {
             growthSignals: [
               {
                 id: 's2',
-                type: 'hiring' as GrowthSignalType,
+                type: 'hiring' as SignalType,
                 description: 'test',
                 detectedDate: new Date().toISOString(),
-                strength: 'strong',
-                source: 'test'
+                score: 75,
+                confidence: 0.85
               },
               {
                 id: 's3',
-                type: 'expansion' as GrowthSignalType,
+                type: 'expansion' as SignalType,
                 description: 'test',
                 detectedDate: new Date().toISOString(),
-                strength: 'medium',
-                source: 'test'
+                score: 75,
+                confidence: 0.85
               }
             ]
           })
