@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useProspectSorting } from '../useProspectSorting'
-import type { Prospect, HealthGrade, SentimentTrend, GrowthSignalType } from '@public-records/core'
+import type { Prospect, HealthGrade, SignalType } from '@public-records/core'
 
 // Helper to create mock prospects
 function createMockProspect(overrides: Partial<Prospect> = {}): Prospect {
@@ -11,7 +11,6 @@ function createMockProspect(overrides: Partial<Prospect> = {}): Prospect {
     state: 'NY',
     industry: 'technology',
     priorityScore: 75,
-    lienAmount: 500000,
     filingDate: new Date().toISOString(),
     lastUpdated: new Date().toISOString(),
     status: 'new',
@@ -20,9 +19,10 @@ function createMockProspect(overrides: Partial<Prospect> = {}): Prospect {
     healthScore: {
       score: 80,
       grade: 'B' as HealthGrade,
-      trend: 'stable',
+      sentimentTrend: 'stable',
+      reviewCount: 15,
+      avgSentiment: 0.85,
       lastUpdated: new Date().toISOString(),
-      sentimentTrend: 'positive' as SentimentTrend,
       violationCount: 0
     },
     growthSignals: [],
@@ -58,19 +58,19 @@ describe('useProspectSorting', () => {
         growthSignals: [
           {
             id: 's1',
-            type: 'hiring' as GrowthSignalType,
+            type: 'hiring' as SignalType,
             description: 'Hiring',
             detectedDate: new Date().toISOString(),
-            strength: 'strong',
-            source: 'test'
+            score: 75,
+            confidence: 0.85
           },
           {
             id: 's2',
-            type: 'expansion' as GrowthSignalType,
+            type: 'expansion' as SignalType,
             description: 'Expanding',
             detectedDate: new Date().toISOString(),
-            strength: 'medium',
-            source: 'test'
+            score: 75,
+            confidence: 0.85
           }
         ],
         timeSinceDefault: 365 // 1 year
@@ -83,11 +83,11 @@ describe('useProspectSorting', () => {
         growthSignals: [
           {
             id: 's3',
-            type: 'hiring' as GrowthSignalType,
+            type: 'hiring' as SignalType,
             description: 'Hiring',
             detectedDate: new Date().toISOString(),
-            strength: 'weak',
-            source: 'test'
+            score: 75,
+            confidence: 0.85
           }
         ],
         timeSinceDefault: 1095 // 3 years
