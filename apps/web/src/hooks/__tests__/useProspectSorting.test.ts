@@ -11,8 +11,6 @@ function createMockProspect(overrides: Partial<Prospect> = {}): Prospect {
     state: 'NY',
     industry: 'technology',
     priorityScore: 75,
-    filingDate: new Date().toISOString(),
-    lastUpdated: new Date().toISOString(),
     status: 'new',
     timeSinceDefault: 365,
     estimatedRevenue: 1000000,
@@ -22,17 +20,13 @@ function createMockProspect(overrides: Partial<Prospect> = {}): Prospect {
       sentimentTrend: 'stable',
       reviewCount: 15,
       avgSentiment: 0.85,
-      lastUpdated: new Date().toISOString(),
-      violationCount: 0
+      violationCount: 0,
+      lastUpdated: new Date().toISOString()
     },
     growthSignals: [],
-    enrichedData: null,
-    debtorName: 'Test Debtor',
-    securedPartyName: 'Test Secured Party',
-    filingType: 'UCC-1',
-    filingNumber: 'FL-2024-001',
-    expirationDate: new Date().toISOString(),
-    collateralDescription: 'Test collateral',
+    uccFilings: [],
+    defaultDate: '2024-01-01',
+    narrative: 'Test',
     ...overrides
   }
 }

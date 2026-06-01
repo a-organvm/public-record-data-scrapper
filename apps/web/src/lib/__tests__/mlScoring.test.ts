@@ -30,11 +30,6 @@ describe('mlScoring', () => {
       lastUpdated: '2024-01-15'
     },
     status: 'new',
-    filingDate: '2024-01-01',
-    filingType: 'UCC-1',
-    securedParty: 'Test Bank',
-    collateralDescription: 'Equipment',
-    signals: [],
     uccFilings: [createMockUCCFiling()],
     growthSignals: [
       {

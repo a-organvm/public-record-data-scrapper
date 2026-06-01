@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { exportProspects } from '../exportUtils'
 import type { Prospect } from '@public-records/core'
@@ -11,46 +12,48 @@ const mockCreateObjectURL = vi.fn(() => 'blob:mock-url')
 const mockRevokeObjectURL = vi.fn()
 
 describe('exportUtils', () => {
-  const createMockProspect = (overrides: Partial<Prospect> = {}): Prospect => ({
-    id: 'test-id',
-    companyName: 'Test Company',
-    state: 'CA',
-    industry: 'technology',
-    priorityScore: 85,
-    healthScore: {
-      grade: 'B',
-      score: 75,
-      sentimentTrend: 'improving',
-      reviewCount: 15,
-      avgSentiment: 0.85,
-      violationCount: 2,
-      lastUpdated: '2024-01-15'
-    },
-    status: 'new',
-    growthSignals: [
-      {
-        id: 'sig-1',
-        type: 'expansion',
-        description: 'New office',
-        detectedDate: '2026-01-15',
-        confidence: 85,
-        score: 80
+  const createMockProspect = (overrides: Partial<Prospect> = {}): Prospect =>
+    ({
+      id: 'test-id',
+      companyName: 'Test Company',
+      state: 'CA',
+      industry: 'technology' as const,
+      priorityScore: 85,
+      healthScore: {
+        grade: 'B',
+        score: 75,
+        sentimentTrend: 'improving',
+        reviewCount: 15,
+        avgSentiment: 0.85,
+        violationCount: 2,
+        lastUpdated: '2024-01-15'
       },
-      {
-        id: 'sig-2',
-        type: 'hiring',
-        description: 'Hiring 10 people',
-        detectedDate: '2026-01-15',
-        confidence: 75,
-        score: 70
-      }
-    ],
-    narrative: 'Test narrative',
-    defaultDate: '2024-01-01',
-    timeSinceDefault: 30,
-    estimatedRevenue: 5000000,
-    ...overrides
-  })
+      status: 'new' as const,
+      growthSignals: [
+        {
+          id: 'sig-1',
+          type: 'expansion' as const,
+          description: 'New office',
+          detectedDate: '2026-01-15',
+          confidence: 85,
+          score: 80
+        },
+        {
+          id: 'sig-2',
+          type: 'hiring' as const,
+          description: 'Hiring 10 people',
+          detectedDate: '2026-01-15',
+          confidence: 75,
+          score: 70
+        }
+      ],
+      uccFilings: [],
+      narrative: 'Test narrative',
+      defaultDate: '2024-01-01',
+      timeSinceDefault: 30,
+      estimatedRevenue: 5000000,
+      ...overrides
+    }) as Prospect
 
   beforeEach(() => {
     // Mock document methods
@@ -121,7 +124,7 @@ describe('exportUtils', () => {
         exportProspects(prospects, 'json')
 
         expect(mockCreateObjectURL).toHaveBeenCalled()
-        const blobArg = mockCreateObjectURL.mock.calls[0][0]
+        const blobArg = (mockCreateObjectURL.mock.calls[0] as any)[0]
         expect(blobArg).toBeInstanceOf(Blob)
         expect(blobArg.type).toBe('application/json')
       })
@@ -131,7 +134,7 @@ describe('exportUtils', () => {
 
         exportProspects([prospect])
 
-        const blobArg = mockCreateObjectURL.mock.calls[0][0]
+        const blobArg = (mockCreateObjectURL.mock.calls[0] as any)[0]
         expect(blobArg.type).toBe('application/json')
       })
 
@@ -159,7 +162,7 @@ describe('exportUtils', () => {
         exportProspects([prospect], 'csv')
 
         expect(mockCreateObjectURL).toHaveBeenCalled()
-        const blobArg = mockCreateObjectURL.mock.calls[0][0]
+        const blobArg = (mockCreateObjectURL.mock.calls[0] as any)[0]
         expect(blobArg).toBeInstanceOf(Blob)
         expect(blobArg.type).toBe('text/csv')
       })
@@ -172,7 +175,7 @@ describe('exportUtils', () => {
 
         exportProspects(prospects, 'csv')
 
-        const blobArg = mockCreateObjectURL.mock.calls[0][0]
+        const blobArg = (mockCreateObjectURL.mock.calls[0] as any)[0]
         expect(blobArg.type).toBe('text/csv')
       })
     })

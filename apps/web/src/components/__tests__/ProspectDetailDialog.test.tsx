@@ -226,9 +226,11 @@ describe('ProspectDetailDialog', () => {
       recoveryLikelihood: 75,
       modelVersion: '2.1',
       factors: {
-        financialHealth: 85,
-        marketConditions: 72,
-        historicalPerformance: 90
+        healthTrend: 85,
+        signalQuality: 72,
+        industryRisk: 40,
+        timeToRecovery: 55,
+        financialStability: 90
       },
       lastUpdated: '2024-01-15T10:00:00Z'
     }

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -349,7 +350,7 @@ describe('ProspectCard', () => {
       ['services', '💼'],
       ['technology', '💻']
     ])('shows correct icon for %s industry', (industry, icon) => {
-      const prospect = { ...mockProspect, industry }
+      const prospect = { ...mockProspect, industry: industry as any }
       render(<ProspectCard {...defaultProps} prospect={prospect} />)
       expect(screen.getByText(icon)).toBeInTheDocument()
     })
