@@ -258,7 +258,13 @@ describe('EmailComposer', () => {
       confidence: 88,
       recoveryLikelihood: 75,
       modelVersion: '1.0',
-      factors: {},
+      factors: {
+        healthTrend: 0.5,
+        signalQuality: 0.7,
+        industryRisk: 0.3,
+        timeToRecovery: 0.6,
+        financialStability: 0.8
+      },
       lastUpdated: '2024-01-15'
     }
   }
