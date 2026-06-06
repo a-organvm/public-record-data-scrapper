@@ -9,6 +9,15 @@ import { database } from '../database/connection'
 const router = Router()
 
 /**
+ * Hard ceiling on the serialized callback payload persisted to audit_logs.
+ * The cycle review + improvement arrays are stored verbatim as the durable
+ * audit record, so without a cap a client could push an unbounded blob into
+ * the compliance sink. 128KB comfortably fits a real council cycle while
+ * rejecting abuse.
+ */
+const MAX_CALLBACK_PAYLOAD_BYTES = 128 * 1024
+
+/**
  * Resolves the caller's tenant (org) from the authenticated JWT and enforces
  * multi-tenant isolation. Mirrors the contract used by deals.ts: the org is
  * ALWAYS derived from `req.user.orgId` and never trusted from the client. A
@@ -133,6 +142,27 @@ router.post(
     const authReq = req as AuthenticatedRequest
     const body = req.body as z.infer<typeof callbackPayloadSchema>
 
+    // Serialize once: this exact string is both size-checked and persisted.
+    const serializedState = JSON.stringify({
+      review: body.review,
+      executedImprovements: body.executedImprovements,
+      pendingImprovements: body.pendingImprovements
+    })
+
+    // Cap the payload before it reaches the durable audit sink. Reject
+    // oversized blobs (413) with a named reason rather than persisting them.
+    const payloadBytes = Buffer.byteLength(serializedState, 'utf8')
+    if (payloadBytes > MAX_CALLBACK_PAYLOAD_BYTES) {
+      res.status(413).json({
+        error: {
+          message: `Callback payload too large: ${payloadBytes} bytes exceeds the ${MAX_CALLBACK_PAYLOAD_BYTES}-byte limit`,
+          code: 'PAYLOAD_TOO_LARGE',
+          statusCode: 413
+        }
+      })
+      return
+    }
+
     // Persist verbatim to audit_logs. The cycle review id is the entity id so
     // the record is retrievable by AuditService.getEntityHistory.
     await database.query(
@@ -145,11 +175,7 @@ router.post(
         'agentic_cycle_callback',
         'agentic_cycle',
         body.review.id,
-        JSON.stringify({
-          review: body.review,
-          executedImprovements: body.executedImprovements,
-          pendingImprovements: body.pendingImprovements
-        })
+        serializedState
       ]
     )
 

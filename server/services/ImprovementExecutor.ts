@@ -22,6 +22,28 @@
 import { getEnrichmentQueue } from '../queue/queues'
 import { AlertService, type AlertType, type AlertSeverity } from './AlertService'
 import { ScoringService } from './ScoringService'
+import { database } from '../database/connection'
+
+/**
+ * Verifies which of the supplied prospect ids actually belong to `orgId` and
+ * returns ONLY the verified subset. The `prospectIds` arriving from the web
+ * layer are attacker-influenceable (a client could forge ids belonging to
+ * another tenant), so every id an action would touch MUST be filtered through
+ * this org-ownership gate before any side effect.
+ *
+ * Injectable for testing; the production default queries the `prospects` table
+ * (org_id is NOT NULL with an FK — migration 014).
+ */
+export type ProspectOwnershipFilter = (prospectIds: string[], orgId: string) => Promise<string[]>
+
+const defaultProspectOwnershipFilter: ProspectOwnershipFilter = async (prospectIds, orgId) => {
+  if (prospectIds.length === 0) return []
+  const rows = await database.query<{ id: string }>(
+    'SELECT id FROM prospects WHERE id = ANY($1) AND org_id = $2',
+    [prospectIds, orgId]
+  )
+  return rows.map((row) => row.id)
+}
 
 /**
  * Minimal server-side mirror of the web `Improvement` contract
@@ -89,15 +111,18 @@ function alertTypeForCategory(category: string): AlertType {
 export class ImprovementExecutor {
   private readonly alertService: AlertService
   private readonly scoringService: ScoringService
+  private readonly verifyProspectOwnership: ProspectOwnershipFilter
 
   constructor(
     deps: {
       alertService?: AlertService
       scoringService?: ScoringService
+      verifyProspectOwnership?: ProspectOwnershipFilter
     } = {}
   ) {
     this.alertService = deps.alertService ?? new AlertService()
     this.scoringService = deps.scoringService ?? new ScoringService()
+    this.verifyProspectOwnership = deps.verifyProspectOwnership ?? defaultProspectOwnershipFilter
   }
 
   /**
@@ -141,14 +166,27 @@ export class ImprovementExecutor {
     improvement: ExecutableImprovement,
     orgId: string
   ): Promise<ExecutionResult> {
-    const prospectIds = improvement.prospectIds ?? []
+    const requestedIds = improvement.prospectIds ?? []
+
+    if (requestedIds.length === 0) {
+      return {
+        executed: false,
+        action: 're-enrichment',
+        details: {},
+        reason: `category ${improvement.category} requires prospectIds but none were provided`
+      }
+    }
+
+    // Org-ownership gate: act ONLY on prospects that belong to the caller's
+    // tenant. Forged / cross-tenant ids are dropped here before any side effect.
+    const prospectIds = await this.verifyProspectOwnership(requestedIds, orgId)
 
     if (prospectIds.length === 0) {
       return {
         executed: false,
         action: 're-enrichment',
         details: {},
-        reason: `category ${improvement.category} requires prospectIds but none were provided`
+        reason: 'no prospects belong to this organization'
       }
     }
 
@@ -219,14 +257,28 @@ export class ImprovementExecutor {
     orgId: string,
     category: string
   ): Promise<ExecutionResult> {
-    const prospectId = improvement.prospectIds?.[0]
+    const requestedIds = improvement.prospectIds ?? []
+
+    if (requestedIds.length === 0) {
+      return {
+        executed: false,
+        action: 'alert',
+        details: {},
+        reason: `category ${category} requires a target prospectId but none was provided`
+      }
+    }
+
+    // Org-ownership gate: only raise an alert against a prospect that belongs
+    // to the caller's tenant. A forged cross-tenant id is dropped here.
+    const ownedIds = await this.verifyProspectOwnership(requestedIds, orgId)
+    const prospectId = ownedIds[0]
 
     if (!prospectId) {
       return {
         executed: false,
         action: 'alert',
         details: {},
-        reason: `category ${category} requires a target prospectId but none was provided`
+        reason: 'no prospects belong to this organization'
       }
     }
 

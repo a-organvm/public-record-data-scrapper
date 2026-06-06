@@ -5,14 +5,19 @@ const mocks = vi.hoisted(() => ({
   mockQueueAdd: vi.fn(),
   mockGetEnrichmentQueue: vi.fn(),
   mockCreateAlert: vi.fn(),
-  mockScoreProspect: vi.fn()
+  mockScoreProspect: vi.fn(),
+  mockVerifyProspectOwnership: vi.fn()
 }))
 
 vi.mock('../../queue/queues', () => ({
   getEnrichmentQueue: mocks.mockGetEnrichmentQueue
 }))
 
-import { ImprovementExecutor, type ExecutableImprovement } from '../../services/ImprovementExecutor'
+import {
+  ImprovementExecutor,
+  type ExecutableImprovement,
+  type ProspectOwnershipFilter
+} from '../../services/ImprovementExecutor'
 import type { AlertService } from '../../services/AlertService'
 import type { ScoringService } from '../../services/ScoringService'
 
@@ -21,13 +26,18 @@ const orgId = 'org-1'
 function buildExecutor(): ImprovementExecutor {
   const alertService = { createAlert: mocks.mockCreateAlert } as unknown as AlertService
   const scoringService = { scoreProspect: mocks.mockScoreProspect } as unknown as ScoringService
-  return new ImprovementExecutor({ alertService, scoringService })
+  const verifyProspectOwnership =
+    mocks.mockVerifyProspectOwnership as unknown as ProspectOwnershipFilter
+  return new ImprovementExecutor({ alertService, scoringService, verifyProspectOwnership })
 }
 
 describe('ImprovementExecutor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.mockGetEnrichmentQueue.mockReturnValue({ add: mocks.mockQueueAdd })
+    // Default ownership filter: every requested id belongs to the org. Tests
+    // that exercise the org-isolation gate override this per-case.
+    mocks.mockVerifyProspectOwnership.mockImplementation(async (ids: string[]) => ids)
   })
 
   describe('data-quality / performance', () => {
@@ -106,6 +116,97 @@ describe('ImprovementExecutor', () => {
       expect(result.executed).toBe(false)
       expect(result.action).toBe('re-score')
       expect(result.reason).toContain('no prospect could be re-scored')
+    })
+  })
+
+  describe('org-ownership isolation', () => {
+    it('acts only on the prospects that belong to the org (mixed set)', async () => {
+      // Caller supplies one owned id and one foreign id; the gate keeps only
+      // the owned one, and the enqueue must see only that one.
+      mocks.mockVerifyProspectOwnership.mockResolvedValueOnce(['mine'])
+      mocks.mockQueueAdd.mockResolvedValueOnce({ id: 'job-iso' })
+
+      const improvement: ExecutableImprovement = {
+        id: 'imp-iso-1',
+        category: 'data-quality',
+        title: 'Re-enrich',
+        prospectIds: ['mine', 'foreign-org-prospect']
+      }
+
+      const result = await buildExecutor().execute(improvement, orgId)
+
+      expect(mocks.mockVerifyProspectOwnership).toHaveBeenCalledWith(
+        ['mine', 'foreign-org-prospect'],
+        orgId
+      )
+      expect(result.executed).toBe(true)
+      expect(result.details).toMatchObject({ jobId: 'job-iso', prospectIds: ['mine'] })
+      expect(mocks.mockQueueAdd).toHaveBeenCalledWith(
+        'enrich-batch',
+        expect.objectContaining({ prospectIds: ['mine'], orgId })
+      )
+    })
+
+    it('fails closed when every supplied id belongs to another org', async () => {
+      mocks.mockVerifyProspectOwnership.mockResolvedValueOnce([])
+
+      const improvement: ExecutableImprovement = {
+        id: 'imp-iso-2',
+        category: 'data-quality',
+        title: 'Re-enrich foreign prospects',
+        prospectIds: ['foreign-1', 'foreign-2']
+      }
+
+      const result = await buildExecutor().execute(improvement, orgId)
+
+      expect(result.executed).toBe(false)
+      expect(result.reason).toBe('no prospects belong to this organization')
+      expect(mocks.mockQueueAdd).not.toHaveBeenCalled()
+      expect(mocks.mockScoreProspect).not.toHaveBeenCalled()
+    })
+
+    it('drops a foreign-org target before raising an alert (fails closed)', async () => {
+      mocks.mockVerifyProspectOwnership.mockResolvedValueOnce([])
+
+      const improvement: ExecutableImprovement = {
+        id: 'imp-iso-3',
+        category: 'security',
+        title: 'Encrypt PII',
+        prospectIds: ['foreign-prospect']
+      }
+
+      const result = await buildExecutor().execute(improvement, orgId)
+
+      expect(result.executed).toBe(false)
+      expect(result.action).toBe('alert')
+      expect(result.reason).toBe('no prospects belong to this organization')
+      expect(mocks.mockCreateAlert).not.toHaveBeenCalled()
+    })
+
+    it('raises an alert only against the owned subset of the target ids', async () => {
+      // Two ids supplied, only the second is owned; the alert targets it.
+      mocks.mockVerifyProspectOwnership.mockResolvedValueOnce(['owned-prospect'])
+      mocks.mockCreateAlert.mockResolvedValueOnce({
+        id: 'alert-iso',
+        prospectId: 'owned-prospect',
+        type: 'score_critical'
+      })
+
+      const improvement: ExecutableImprovement = {
+        id: 'imp-iso-4',
+        category: 'security',
+        title: 'Encrypt PII',
+        prospectIds: ['foreign-prospect', 'owned-prospect']
+      }
+
+      const result = await buildExecutor().execute(improvement, orgId)
+
+      expect(result.executed).toBe(true)
+      expect(result.action).toBe('alert')
+      expect(result.details).toMatchObject({ alertId: 'alert-iso', prospectId: 'owned-prospect' })
+      expect(mocks.mockCreateAlert).toHaveBeenCalledWith(
+        expect.objectContaining({ orgId, prospectId: 'owned-prospect' })
+      )
     })
   })
 

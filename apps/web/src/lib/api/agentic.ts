@@ -43,20 +43,31 @@ export interface AgenticApiClient {
 }
 
 /**
- * Flattens a full `Improvement` into the execute request shape. `prospectIds`
- * are passed through when the improvement carries them (the engine attaches
- * flagged ids before execution).
+ * Flattens a full `Improvement` into the execute request shape.
+ *
+ * `prospectIds` resolution order:
+ *   1. an explicit `prospectIds` argument (a caller narrowing the target set),
+ *   2. the improvement's own `prospectIds`,
+ *   3. the originating suggestion's `prospectIds` (where an agent attached the
+ *      flagged prospect ids when the finding referenced specific prospects).
+ *
+ * When none of those carry ids the field is omitted, and the server-side
+ * executor fails closed for actionable categories — the correct honest outcome
+ * for a genuinely system-level suggestion.
  */
 export function toExecuteRequest(
   improvement: Improvement,
   prospectIds?: string[]
 ): ExecuteImprovementRequest {
+  const resolvedProspectIds =
+    prospectIds ?? improvement.prospectIds ?? improvement.suggestion.prospectIds
+
   return {
     id: improvement.id,
     category: improvement.suggestion.category,
     title: improvement.suggestion.title,
     description: improvement.suggestion.description,
-    prospectIds
+    prospectIds: resolvedProspectIds
   }
 }
 

@@ -5,7 +5,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { AgenticEngine } from './AgenticEngine'
-import { SystemContext } from './types'
+import { SystemContext, Improvement } from './types'
 import type { AgenticApiClient, ExecutionResult } from '../api/agentic'
 
 /**
@@ -274,6 +274,87 @@ describe('AgenticEngine', () => {
 
     it('should throw error for non-existent improvement', async () => {
       await expect(engine.approveAndExecute('non-existent-id', mockContext)).rejects.toThrow()
+    })
+
+    it('forwards the suggestion prospectIds to the execute request', async () => {
+      const apiClient = makeApiClient({
+        executed: true,
+        action: 're-enrichment',
+        details: { jobId: 'job-7' }
+      })
+      const engineWithIds = new AgenticEngine(undefined, { apiClient })
+
+      // Inject a prospect-specific improvement (as an agent would emit it) so
+      // the engine has concrete ids to forward.
+      const improvement: Improvement = {
+        id: 'imp-with-ids',
+        suggestion: {
+          id: 'sug-with-ids',
+          category: 'data-quality',
+          priority: 'high',
+          title: 'Re-enrich stale prospects',
+          description: 'Refresh stale rows',
+          reasoning: 'stale',
+          estimatedImpact: 'higher completeness',
+          automatable: true,
+          safetyScore: 75,
+          prospectIds: ['p1', 'p2']
+        },
+        status: 'detected',
+        detectedAt: new Date().toISOString()
+      }
+      engineWithIds.setImprovements([improvement])
+
+      await engineWithIds.approveAndExecute('imp-with-ids', mockContext)
+
+      expect(apiClient.executeImprovement).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'imp-with-ids',
+          category: 'data-quality',
+          prospectIds: ['p1', 'p2']
+        })
+      )
+    })
+
+    it('omits prospectIds for a system-level suggestion that carries none', async () => {
+      const apiClient = makeApiClient({
+        executed: false,
+        action: 'none',
+        details: {},
+        reason: 'category data-quality requires prospectIds but none were provided'
+      })
+      const engineNoIds = new AgenticEngine(undefined, { apiClient })
+
+      const improvement: Improvement = {
+        id: 'imp-no-ids',
+        suggestion: {
+          id: 'sug-no-ids',
+          category: 'data-quality',
+          priority: 'high',
+          title: 'Implement automated data enrichment pipeline',
+          description: 'System-level pipeline work',
+          reasoning: 'architecture',
+          estimatedImpact: 'platform-wide',
+          automatable: true,
+          safetyScore: 75
+          // No prospectIds: genuinely system-level.
+        },
+        status: 'detected',
+        detectedAt: new Date().toISOString()
+      }
+      engineNoIds.setImprovements([improvement])
+
+      const result = await engineNoIds.approveAndExecute('imp-no-ids', mockContext)
+
+      // The request carries no ids, and the server (mock) fails closed with the
+      // named reason — the correct honest outcome for a system-level suggestion.
+      expect(apiClient.executeImprovement).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'imp-no-ids', prospectIds: undefined })
+      )
+      expect(result.success).toBe(false)
+      expect(result.feedback).toContain('requires prospectIds')
+      const stored = engineNoIds.getImprovements().find((i) => i.id === 'imp-no-ids')
+      expect(stored?.status).toBe('rejected')
     })
 
     it('should mark an improvement completed when the server confirms a real action', async () => {

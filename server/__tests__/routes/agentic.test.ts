@@ -28,7 +28,9 @@ const cycleId = '550e8400-e29b-41d4-a716-4466554400aa'
 
 function buildApp(): Express {
   const app = express()
-  app.use(express.json())
+  // Use a generous express body limit (above the route's own 128KB cap) so the
+  // route-level size guard — not express's parser — is the gate under test.
+  app.use(express.json({ limit: '2mb' }))
   app.use('/api/agentic', authMiddleware, agenticRouter)
   app.use(notFoundHandler)
   app.use(errorHandler)
@@ -183,6 +185,26 @@ describe('Agentic Routes', () => {
         .send(payload)
 
       expect(response.status).toBe(403)
+      expect(mocks.mockDbQuery).not.toHaveBeenCalled()
+    })
+
+    it('rejects an oversized payload (413) before persisting to audit_logs', async () => {
+      // Build a payload whose serialized form comfortably exceeds the 128KB cap
+      // (each pending improvement id is ~200 bytes; 2000 of them clears it).
+      const oversizedPending = Array.from({ length: 2000 }, (_, i) => ({
+        id: `imp-${i}`,
+        blob: 'x'.repeat(200)
+      }))
+
+      const response = await request(app)
+        .post('/api/agentic/callbacks')
+        .set('Authorization', authHeader)
+        .send({ ...payload, pendingImprovements: oversizedPending })
+
+      expect(response.status).toBe(413)
+      expect(response.body.error.code).toBe('PAYLOAD_TOO_LARGE')
+      expect(response.body.error.message).toContain('too large')
+      // Nothing reaches the durable audit sink.
       expect(mocks.mockDbQuery).not.toHaveBeenCalled()
     })
   })
