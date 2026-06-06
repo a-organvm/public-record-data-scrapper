@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { DataEnrichmentService } from '../DataEnrichmentService'
+import { DataEnrichmentService, EnrichmentNotConfiguredError } from '../DataEnrichmentService'
 import {
   createMockEnrichmentSources,
   createMockUCCFiling,
@@ -89,107 +89,108 @@ describe('DataEnrichmentService', () => {
     })
   })
 
-  describe('detectGrowthSignals', () => {
-    it('should return growth signals array', async () => {
-      const filing = createMockUCCFiling()
-      const { prospect } = await service.enrichProspect(filing)
+  describe('EnrichmentNotConfiguredError', () => {
+    it('is a typed error that names the missing live wiring', () => {
+      const err = new EnrichmentNotConfiguredError('revenue-estimate', 'ML revenue model')
+      expect(err).toBeInstanceOf(Error)
+      expect(err.name).toBe('EnrichmentNotConfiguredError')
+      expect(err.capability).toBe('revenue-estimate')
+      expect(err.message).toMatch(/not wired to a live provider/i)
+      expect(err.message).toMatch(/ML revenue model/)
+    })
+  })
 
+  describe('detectGrowthSignals (fail-closed)', () => {
+    it('should never fabricate growth signals when no live provider is wired', async () => {
+      const filing = createMockUCCFiling()
+      const { prospect, result } = await service.enrichProspect(filing)
+
+      // Fail closed: no provider wired => empty signals, never invented ones.
       expect(prospect.growthSignals).toBeDefined()
       expect(Array.isArray(prospect.growthSignals)).toBe(true)
+      expect(prospect.growthSignals).toHaveLength(0)
+
+      // And the failure is surfaced as a named reason, not hidden.
+      expect(result.success).toBe(false)
+      expect(result.errors.some((e) => /growth signal/i.test(e))).toBe(true)
+      expect(result.enrichedFields).not.toContain('growthSignals')
     })
 
-    it('should detect different signal types', async () => {
-      const filing = createMockUCCFiling()
-      const { prospect } = await service.enrichProspect(filing)
-
-      // The current implementation returns empty arrays from internal methods
-      // but the growthSignals field is always defined
-      expect(prospect.growthSignals).toBeDefined()
-    })
-
-    it('should sort signals by date', async () => {
+    it('should preserve existing signals rather than overwrite with fabrication', async () => {
       const filing = createMockUCCFiling()
       const existingData = createMockProspect()
       existingData.growthSignals = createMockGrowthSignals()
 
       const { prospect } = await service.enrichProspect(filing, existingData)
 
-      // If there are signals from existing data, they should be preserved
-      // If no existing data, signals will be empty (current implementation returns [])
-      expect(prospect.growthSignals).toBeDefined()
+      // Detection throws (fail closed), so the existing signals are kept as-is;
+      // nothing fabricated is appended.
+      expect(prospect.growthSignals).toEqual(existingData.growthSignals)
     })
   })
 
-  describe('calculateHealthScore', () => {
-    it('should calculate overall health score', async () => {
+  describe('calculateHealthScore (fail-closed)', () => {
+    it('should return an explicit "unavailable" health sentinel, not a random grade', async () => {
       const filing = createMockUCCFiling()
-      const { prospect } = await service.enrichProspect(filing)
+      const { prospect, result } = await service.enrichProspect(filing)
 
-      expect(prospect.healthScore.score).toBeGreaterThanOrEqual(0)
-      expect(prospect.healthScore.score).toBeLessThanOrEqual(100)
+      // Fail closed: the placeholder is the typed UNAVAILABLE sentinel, never a
+      // fabricated grade/score/sentiment.
+      expect(prospect.healthScore).toEqual(DataEnrichmentService.UNAVAILABLE_HEALTH_SCORE)
+      expect(prospect.healthScore.score).toBe(0)
+      expect(prospect.healthScore.reviewCount).toBe(0)
+      expect(prospect.healthScore.violationCount).toBe(0)
+      // Sentinel lastUpdated is '' so consumers can tell "never enriched" apart.
+      expect(prospect.healthScore.lastUpdated).toBe('')
+
+      // The health-score enrichment failure is surfaced, not silently swallowed.
+      expect(result.errors.some((e) => /health score/i.test(e))).toBe(true)
+      expect(result.enrichedFields).not.toContain('healthScore')
     })
 
-    it('should assign health grade', async () => {
+    it('should throw a typed error from calculateHealthScore', async () => {
+      // calculateHealthScore is private; assert via the surfaced error message
+      // that it names what live wiring is missing.
       const filing = createMockUCCFiling()
-      const { prospect } = await service.enrichProspect(filing)
+      const { result } = await service.enrichProspect(filing)
 
-      expect(prospect.healthScore.grade).toMatch(/^[A-F]$/)
-    })
-
-    it('should include review count', async () => {
-      const filing = createMockUCCFiling()
-      const { prospect } = await service.enrichProspect(filing)
-
-      expect(prospect.healthScore.reviewCount).toBeDefined()
-      expect(typeof prospect.healthScore.reviewCount).toBe('number')
-    })
-
-    it('should include sentiment trend', async () => {
-      const filing = createMockUCCFiling()
-      const { prospect } = await service.enrichProspect(filing)
-
-      expect(prospect.healthScore.sentimentTrend).toBeDefined()
-      expect(['stable', 'improving', 'declining']).toContain(prospect.healthScore.sentimentTrend)
-    })
-
-    it('should include last updated date', async () => {
-      const filing = createMockUCCFiling()
-      const { prospect } = await service.enrichProspect(filing)
-
-      expect(prospect.healthScore.lastUpdated).toBeDefined()
+      const healthError = result.errors.find((e) => /health score/i.test(e))
+      expect(healthError).toBeDefined()
+      expect(healthError).toMatch(/not wired to a live provider/i)
     })
   })
 
-  describe('estimateRevenue', () => {
-    it('should estimate revenue based on industry', async () => {
-      const filing = createMockUCCFiling()
-      const { prospect } = await service.enrichProspect(filing)
-
-      expect(prospect.estimatedRevenue).toBeDefined()
-      if (prospect.estimatedRevenue) {
-        expect(prospect.estimatedRevenue).toBeGreaterThan(0)
-      }
-    })
-
-    it('should use UCC filing amount as baseline', async () => {
+  describe('estimateRevenue (fail-closed)', () => {
+    it('should never fabricate revenue from a random lien multiple', async () => {
       const filing = createMockUCCFiling({ lienAmount: 500000 })
-      const { prospect } = await service.enrichProspect(filing)
+      const { prospect, result } = await service.enrichProspect(filing)
 
-      // Revenue estimate should correlate with UCC amount (4-6x lien amount)
-      expect(prospect.estimatedRevenue).toBeDefined()
-      if (prospect.estimatedRevenue) {
-        expect(prospect.estimatedRevenue).toBeGreaterThan(500000)
-      }
+      // Fail closed: no estimate is produced, the field stays undefined.
+      expect(prospect.estimatedRevenue).toBeUndefined()
+      expect(result.errors.some((e) => /revenue/i.test(e))).toBe(true)
+      expect(result.enrichedFields).not.toContain('estimatedRevenue')
     })
 
-    it('should skip revenue estimation if already provided', async () => {
+    it('should surface a named reason for the missing revenue provider', async () => {
+      const filing = createMockUCCFiling()
+      const { result } = await service.enrichProspect(filing)
+
+      const revenueError = result.errors.find((e) => /revenue/i.test(e))
+      expect(revenueError).toBeDefined()
+      expect(revenueError).toMatch(/not wired to a live provider/i)
+    })
+
+    it('should preserve an already-provided revenue (no estimation attempted)', async () => {
       const filing = createMockUCCFiling()
       const existingData = createMockProspect()
       existingData.estimatedRevenue = 10000000
 
-      const { prospect } = await service.enrichProspect(filing, existingData)
+      const { prospect, result } = await service.enrichProspect(filing, existingData)
 
       expect(prospect.estimatedRevenue).toBe(10000000)
+      // Revenue estimation is skipped entirely when a value already exists, so
+      // there is no revenue error in that path.
+      expect(result.errors.some((e) => /revenue/i.test(e))).toBe(false)
     })
   })
 
@@ -349,11 +350,12 @@ describe('DataEnrichmentService', () => {
       expect(true).toBe(true)
     })
 
-    it('should estimate revenue using internal logic', async () => {
+    it('should fail closed on revenue rather than invent a number', async () => {
       const filing = createMockUCCFiling()
       const { prospect } = await service.enrichProspect(filing)
 
-      expect(prospect.estimatedRevenue).toBeDefined()
+      // No live revenue provider => no fabricated estimate.
+      expect(prospect.estimatedRevenue).toBeUndefined()
     })
 
     it('should handle empty sources gracefully', async () => {
@@ -368,24 +370,41 @@ describe('DataEnrichmentService', () => {
     })
   })
 
-  describe('refreshProspectData', () => {
-    it('should refresh prospect data', async () => {
+  describe('refreshProspectData (fail-closed)', () => {
+    it('should not crash, and should surface failures instead of refreshing with fabrication', async () => {
       const prospect = createMockProspect()
       const { prospect: refreshed, result } = await service.refreshProspectData(prospect)
 
       expect(refreshed).toBeDefined()
       expect(refreshed.id).toBe(prospect.id)
-      expect(result.enrichedFields.length).toBeGreaterThan(0)
+      // No live providers => nothing is re-enriched, every attempted field errors.
+      expect(result.enrichedFields).toHaveLength(0)
+      expect(result.errors.length).toBeGreaterThan(0)
+      expect(result.success).toBe(false)
     })
 
-    it('should refresh specific fields', async () => {
+    it('should report a named reason when a refreshed field has no provider', async () => {
       const prospect = createMockProspect()
       const { result } = await service.refreshProspectData(prospect, ['healthScore'])
 
-      expect(result.enrichedFields).toContain('healthScore')
+      expect(result.enrichedFields).not.toContain('healthScore')
+      const healthError = result.errors.find((e) => /health score/i.test(e))
+      expect(healthError).toMatch(/not wired to a live provider/i)
     })
 
-    it('should recalculate priority and narrative', async () => {
+    it('should not overwrite existing data with fabrication on refresh', async () => {
+      const prospect = createMockProspect()
+      const originalRevenue = prospect.estimatedRevenue
+
+      const { prospect: refreshed } = await service.refreshProspectData(prospect, [
+        'estimatedRevenue'
+      ])
+
+      // estimateRevenue throws => the existing revenue is preserved untouched.
+      expect(refreshed.estimatedRevenue).toBe(originalRevenue)
+    })
+
+    it('should still recalculate priority and narrative deterministically', async () => {
       const prospect = createMockProspect()
 
       const { prospect: refreshed } = await service.refreshProspectData(prospect)

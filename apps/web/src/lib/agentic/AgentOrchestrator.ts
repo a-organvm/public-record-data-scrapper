@@ -206,31 +206,25 @@ export class AgentOrchestrator {
         throw new Error(`Agent not found for state ${stateCode}`)
       }
 
-      // NOTE: This is a SIMULATED collection — no real collector is invoked.
-      // Surface that clearly so dashboards never treat these counts as real
-      // ingestion. Replace with a real collector call when one is wired up.
-      console.warn(
-        `[Orchestrator] Simulated collection for state ${stateCode}; results are not real ingestion.`
-      )
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      const recordsCollected = Math.floor(Math.random() * 100) + 10
+      // Fail closed: no real collector is wired here. The previous code
+      // returned Math.random() filings and fed them into agent.updateMetrics,
+      // polluting dashboards with fabricated ingestion volume. We refuse to do
+      // that: updateMetrics is NOT called (metrics only reflect real
+      // collections), recordsCollected stays 0, and a named reason is returned.
+      // Real ingestion runs via the server ingestion jobs.
+      const reason = 'live collection not wired — use server ingestion jobs'
+      console.warn(`[Orchestrator] State ${stateCode}: ${reason}. No metrics updated.`)
 
-      // Update agent metrics
-      agent.updateMetrics({
-        recentFilings: recordsCollected,
-        lastUpdate: new Date().toISOString(),
-        successRate: 100
-      })
-
-      this.status.successfulCollections++
+      this.status.failedCollections++
       this.status.totalCollections++
 
       return {
         agentId: agent.getCustomId(),
-        success: true,
-        recordsCollected,
+        success: false,
+        recordsCollected: 0,
         duration: Date.now() - startTime,
-        simulated: true
+        simulated: false,
+        errors: [reason]
       }
     } catch (error) {
       this.status.failedCollections++
@@ -241,6 +235,7 @@ export class AgentOrchestrator {
         success: false,
         recordsCollected: 0,
         duration: Date.now() - startTime,
+        simulated: false,
         errors: [error instanceof Error ? error.message : 'Unknown error']
       }
     } finally {
@@ -263,23 +258,22 @@ export class AgentOrchestrator {
         throw new Error(`Entry point agent not found: ${entryPointId}`)
       }
 
-      // NOTE: This is a SIMULATED collection — no real entry-point collector
-      // is invoked. Mark it so consumers do not report it as real ingestion.
-      console.warn(
-        `[Orchestrator] Simulated collection for entry point ${entryPointId}; results are not real ingestion.`
-      )
-      await new Promise((resolve) => setTimeout(resolve, 300))
-      const recordsCollected = Math.floor(Math.random() * 500) + 50
+      // Fail closed: no real entry-point collector is wired. Same rationale as
+      // collectFromState — we never fabricate a record count or report it as
+      // real ingestion. Returns an explicit failed result with a named reason.
+      const reason = 'live collection not wired — use server ingestion jobs'
+      console.warn(`[Orchestrator] Entry point ${entryPointId}: ${reason}. No metrics updated.`)
 
-      this.status.successfulCollections++
+      this.status.failedCollections++
       this.status.totalCollections++
 
       return {
         agentId: entryPointId,
-        success: true,
-        recordsCollected,
+        success: false,
+        recordsCollected: 0,
         duration: Date.now() - startTime,
-        simulated: true
+        simulated: false,
+        errors: [reason]
       }
     } catch (error) {
       this.status.failedCollections++
@@ -290,6 +284,7 @@ export class AgentOrchestrator {
         success: false,
         recordsCollected: 0,
         duration: Date.now() - startTime,
+        simulated: false,
         errors: [error instanceof Error ? error.message : 'Unknown error']
       }
     } finally {

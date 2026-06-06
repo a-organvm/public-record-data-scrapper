@@ -164,22 +164,26 @@ describe('AgentOrchestrator', () => {
       orchestrator = new AgentOrchestrator(config)
     })
 
-    it('should collect from specific state', async () => {
+    it('should fail closed for a valid state (no real collector wired)', async () => {
       const result = await orchestrator.collectFromState('NY')
 
       expect(result.agentId).toBeDefined()
-      expect(result.success).toBeDefined()
-      expect(result.recordsCollected).toBeGreaterThanOrEqual(0)
-      expect(result.duration).toBeGreaterThan(0)
+      // Fail closed: never fabricates records, never reports simulated success.
+      expect(result.success).toBe(false)
+      expect(result.recordsCollected).toBe(0)
+      expect(result.simulated).toBe(false)
+      expect(result.errors?.[0]).toContain('live collection not wired')
+      expect(result.duration).toBeGreaterThanOrEqual(0)
     })
 
-    it('should update metrics on success', async () => {
+    it('should count the unwired collection as a failure, not a success', async () => {
       await orchestrator.collectFromState('NY')
 
       const status = orchestrator.getStatus()
       expect(status.totalCollections).toBe(1)
-      expect(status.successfulCollections).toBe(1)
-      expect(status.failedCollections).toBe(0)
+      // No real records => not counted as a successful collection.
+      expect(status.successfulCollections).toBe(0)
+      expect(status.failedCollections).toBe(1)
     })
 
     it('should handle non-existent state', async () => {
@@ -199,14 +203,16 @@ describe('AgentOrchestrator', () => {
       expect(status.totalCollections).toBe(1)
     })
 
-    it('should update agent metrics after collection', async () => {
-      const result = await orchestrator.collectFromState('NY')
+    it('should NOT fabricate agent metrics for an unwired collection', async () => {
+      const agent = orchestrator.getStateAgent('NY')
+      const before = agent?.getMetrics()?.recentFilings
 
-      if (result.success) {
-        const agent = orchestrator.getStateAgent('NY')
-        const metrics = agent?.getMetrics()
-        expect(metrics?.recentFilings).toBeGreaterThan(0)
-      }
+      await orchestrator.collectFromState('NY')
+
+      // updateMetrics is never called with fabricated numbers, so recentFilings
+      // is unchanged by the unwired collection attempt.
+      const after = agent?.getMetrics()?.recentFilings
+      expect(after).toBe(before)
     })
   })
 
@@ -331,7 +337,8 @@ describe('AgentOrchestrator', () => {
 
       expect(results.length).toBeGreaterThan(0)
       results.forEach((result) => {
-        expect(result.duration).toBeGreaterThan(0)
+        // Unwired collections complete synchronously, so duration may be 0.
+        expect(result.duration).toBeGreaterThanOrEqual(0)
       })
     }, 15000)
 
@@ -500,18 +507,28 @@ describe('AgentOrchestrator', () => {
 
       const orch = new AgentOrchestrator(config)
 
-      // Collect from valid and invalid states to get mixed results
+      // Mix valid (but unwired) and non-existent states. Both fail closed, but
+      // with distinct, named reasons — and the orchestrator keeps going.
       const results = await Promise.all([
         orch.collectFromState('NY'),
         orch.collectFromState('INVALID'),
         orch.collectFromState('CA')
       ])
 
-      const successful = results.filter((r) => r.success).length
-      const failed = results.filter((r) => !r.success).length
+      expect(results).toHaveLength(3)
+      // Every result fails closed with no fabricated records.
+      results.forEach((r) => {
+        expect(r.success).toBe(false)
+        expect(r.recordsCollected).toBe(0)
+        expect(r.errors?.length).toBeGreaterThan(0)
+      })
 
-      expect(successful).toBeGreaterThan(0)
-      expect(failed).toBeGreaterThan(0)
+      // Valid-but-unwired states report the "not wired" reason; the bogus state
+      // reports "not found". Distinct reasons prove the orchestrator continued.
+      const unwired = results.filter((r) => r.errors?.[0]?.includes('not wired')).length
+      const notFound = results.filter((r) => r.errors?.[0]?.includes('not found')).length
+      expect(unwired).toBe(2)
+      expect(notFound).toBe(1)
     }, 15000)
 
     it('should return errors in failed collection results', async () => {
@@ -601,7 +618,9 @@ describe('AgentOrchestrator', () => {
         const orch = new AgentOrchestrator(config)
         const results = await orch.collectFromAllSources()
         expect(results).toHaveLength(1)
-        expect(results[0].success).toBe(true)
+        // Fail closed: unwired collection returns a failed, non-fabricated result.
+        expect(results[0].success).toBe(false)
+        expect(results[0].recordsCollected).toBe(0)
       })
     })
 
@@ -681,7 +700,9 @@ describe('AgentOrchestrator', () => {
 
         const status = orch.getStatus()
         expect(status.totalCollections).toBe(3)
-        expect(status.successfulCollections).toBe(3)
+        // Fail closed: unwired collections are counted as failures, not successes.
+        expect(status.successfulCollections).toBe(0)
+        expect(status.failedCollections).toBe(3)
         expect(status.collectionsInProgress).toBe(0)
       })
     })
@@ -767,7 +788,9 @@ describe('AgentOrchestrator', () => {
         })
 
         expect(results.length).toBe(1)
-        expect(results[0].success).toBe(true)
+        // Fail closed: unwired collection returns a failed, non-fabricated result.
+        expect(results[0].success).toBe(false)
+        expect(results[0].recordsCollected).toBe(0)
       })
     })
   })

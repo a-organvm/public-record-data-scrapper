@@ -40,6 +40,28 @@ export interface EnrichmentResult {
   timestamp: string
 }
 
+/**
+ * Thrown when an enrichment capability is requested but no live provider is
+ * wired up for it. Fail-closed: we never fabricate revenue, health, or growth
+ * data. Mirrors the honest-gate pattern in
+ * server/services/EnrichmentService.ts ("not wired to live providers yet").
+ *
+ * Consumers should catch this and surface "enrichment unavailable" rather than
+ * crash or invent numbers.
+ */
+export class EnrichmentNotConfiguredError extends Error {
+  readonly capability: string
+
+  constructor(capability: string, missing: string) {
+    super(
+      `Enrichment capability "${capability}" is not wired to a live provider yet. ` +
+        `Missing: ${missing}. No fabricated value will be returned.`
+    )
+    this.name = 'EnrichmentNotConfiguredError'
+    this.capability = capability
+  }
+}
+
 export class DataEnrichmentService {
   private sources: EnrichmentSource[]
 
@@ -173,55 +195,79 @@ export class DataEnrichmentService {
   }
 
   private async detectHiringSignals(companyName: string): Promise<GrowthSignal[]> {
-    // In a real implementation, this would scrape job boards (Indeed, LinkedIn, etc.)
-    // For now, return empty array or simulated data
+    // Fail closed: a real implementation would scrape job boards (Indeed,
+    // LinkedIn, etc.). No live provider is wired, so we refuse rather than
+    // fabricate signals.
     void companyName
-    return []
+    throw new EnrichmentNotConfiguredError(
+      'growth-signals:hiring',
+      'job-board scraping provider (Indeed/LinkedIn)'
+    )
   }
 
   private async detectPermitSignals(companyName: string, state: string): Promise<GrowthSignal[]> {
-    // In a real implementation, this would scrape municipal permit databases
+    // Fail closed: a real implementation would scrape municipal permit
+    // databases.
     void companyName
     void state
-    return []
+    throw new EnrichmentNotConfiguredError(
+      'growth-signals:permits',
+      'municipal permit database provider'
+    )
   }
 
   private async detectContractSignals(companyName: string): Promise<GrowthSignal[]> {
-    // In a real implementation, this would check government contract databases (USASpending.gov, etc.)
+    // Fail closed: a real implementation would check government contract
+    // databases (USASpending.gov, etc.).
     void companyName
-    return []
+    throw new EnrichmentNotConfiguredError(
+      'growth-signals:contracts',
+      'government contract database provider (USASpending)'
+    )
   }
 
   private async detectExpansionSignals(companyName: string): Promise<GrowthSignal[]> {
-    // In a real implementation, this would scrape news, press releases, business journals
+    // Fail closed: a real implementation would scrape news, press releases,
+    // business journals.
     void companyName
-    return []
+    throw new EnrichmentNotConfiguredError(
+      'growth-signals:expansion',
+      'news / press-release provider'
+    )
   }
 
   private async detectEquipmentSignals(companyName: string): Promise<GrowthSignal[]> {
-    // In a real implementation, this would check equipment financing databases
+    // Fail closed: a real implementation would check equipment financing
+    // databases.
     void companyName
-    return []
+    throw new EnrichmentNotConfiguredError(
+      'growth-signals:equipment',
+      'equipment financing database provider'
+    )
   }
 
   /**
-   * Calculate health score for a company
+   * Calculate health score for a company.
+   *
+   * Fail closed: a real implementation would scrape reviews (Google/Yelp/BBB),
+   * check violation databases, and analyze sentiment. None of that is wired, so
+   * we throw rather than return a fabricated grade.
    */
   private async calculateHealthScore(companyName: string, state: string): Promise<HealthScore> {
     void companyName
     void state
-    // In a real implementation, this would:
-    // 1. Scrape online reviews (Google, Yelp, BBB)
-    // 2. Check violation databases (OSHA, health dept, etc.)
-    // 3. Analyze sentiment from reviews
-    // 4. Track trends over time
-
-    // For now, return a default health score
-    return this.generateDefaultHealthScore()
+    throw new EnrichmentNotConfiguredError(
+      'health-score',
+      'review/sentiment + violation-database providers'
+    )
   }
 
   /**
-   * Estimate company revenue
+   * Estimate company revenue.
+   *
+   * Fail closed: a real implementation would use an ML model or a commercial
+   * data provider. Deriving revenue from a random multiple of the lien amount
+   * (or a random point inside an industry band) is fabrication, so we throw.
    */
   private async estimateRevenue(
     companyName: string,
@@ -230,29 +276,13 @@ export class DataEnrichmentService {
     lienAmount?: number
   ): Promise<number> {
     void companyName
+    void industry
     void state
-    // ML-based revenue estimation
-    // Factors: industry, location, lien amount, employee count, etc.
-
-    // Simple heuristic: lien amount is typically 10-30% of annual revenue
-    if (lienAmount) {
-      const multiplier = 4 + Math.random() * 2 // 4-6x lien amount
-      return Math.round(lienAmount * multiplier)
-    }
-
-    // Industry-based estimates
-    const industryAverages: Record<IndustryType, [number, number]> = {
-      restaurant: [500000, 2000000],
-      retail: [800000, 3000000],
-      construction: [1000000, 5000000],
-      healthcare: [1500000, 6000000],
-      manufacturing: [2000000, 8000000],
-      services: [600000, 2500000],
-      technology: [1000000, 4000000]
-    }
-
-    const [min, max] = industryAverages[industry]
-    return Math.round(min + Math.random() * (max - min))
+    void lienAmount
+    throw new EnrichmentNotConfiguredError(
+      'revenue-estimate',
+      'ML revenue model or commercial revenue-data provider'
+    )
   }
 
   /**
@@ -306,49 +336,27 @@ export class DataEnrichmentService {
   }
 
   /**
-   * Generate default health score
+   * Return an explicit "health unavailable" placeholder.
+   *
+   * Fail closed: this is NOT a fabricated grade. It is a typed sentinel meaning
+   * "no health data has been collected yet" — score 0, grade 'F' (worst, so it
+   * never inflates priority), zero reviews/violations, and a sentinel
+   * lastUpdated of '' so consumers can distinguish "never enriched" from a real
+   * timestamp. Real values only arrive once calculateHealthScore is wired to a
+   * live provider.
    */
+  static readonly UNAVAILABLE_HEALTH_SCORE: HealthScore = {
+    grade: 'F' as HealthGrade,
+    score: 0,
+    sentimentTrend: 'stable',
+    reviewCount: 0,
+    avgSentiment: 0,
+    violationCount: 0,
+    lastUpdated: ''
+  }
+
   private generateDefaultHealthScore(): HealthScore {
-    const grades: HealthGrade[] = ['A', 'B', 'C', 'D', 'F']
-    const weights = [0.15, 0.3, 0.35, 0.15, 0.05]
-    const rand = Math.random()
-    let cumulative = 0
-    let grade: HealthGrade = 'C'
-
-    for (let i = 0; i < grades.length; i++) {
-      cumulative += weights[i]
-      if (rand <= cumulative) {
-        grade = grades[i]
-        break
-      }
-    }
-
-    const scoreMap: Record<HealthGrade, [number, number]> = {
-      A: [85, 100],
-      B: [70, 84],
-      C: [55, 69],
-      D: [40, 54],
-      F: [0, 39]
-    }
-
-    const [min, max] = scoreMap[grade]
-    const score = Math.round(min + Math.random() * (max - min))
-
-    return {
-      grade,
-      score,
-      sentimentTrend:
-        Math.random() > 0.5 ? 'stable' : Math.random() > 0.5 ? 'improving' : 'declining',
-      reviewCount: Math.round(50 + Math.random() * 450),
-      avgSentiment: 0.3 + (score / 100) * 0.6,
-      violationCount:
-        grade === 'A'
-          ? 0
-          : grade === 'B'
-            ? Math.round(Math.random() * 2)
-            : Math.round(1 + Math.random() * 5),
-      lastUpdated: new Date().toISOString().split('T')[0]
-    }
+    return { ...DataEnrichmentService.UNAVAILABLE_HEALTH_SCORE }
   }
 
   /**

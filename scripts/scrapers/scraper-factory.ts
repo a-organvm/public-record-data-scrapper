@@ -4,9 +4,14 @@
  * Centralized factory for creating UCC scrapers with different implementations
  *
  * Three implementation options:
- * 1. MOCK: Fast, free, demonstrates architecture (default)
+ * 1. MOCK: Canned filings — TESTS ONLY. Never the default outside NODE_ENV=test.
  * 2. PUPPETEER: Real web scraping, free but complex
  * 3. API: Commercial service, reliable and legal (recommended for production)
+ *
+ * Fail-closed default: the factory defaults to a REAL implementation ('api')
+ * so the product never silently serves fabricated filings. Mock scrapers are
+ * still available for tests and for an explicit `SCRAPER_IMPLEMENTATION=mock`
+ * opt-in, and instantiating one outside a test environment logs a loud warning.
  */
 
 import { BaseScraper } from './base-scraper'
@@ -33,8 +38,55 @@ export interface ScraperFactoryConfig {
  * Scraper Factory
  */
 export class ScraperFactory {
-  private static defaultImplementation: ScraperImplementation =
-    (process.env.SCRAPER_IMPLEMENTATION as ScraperImplementation) || 'mock'
+  /**
+   * Resolve the default implementation, failing closed to a REAL implementation.
+   *
+   * Priority:
+   * 1. Explicit `SCRAPER_IMPLEMENTATION` env (respects an intentional `mock`).
+   * 2. `mock` ONLY when running under tests (`NODE_ENV=test`).
+   * 3. Otherwise `api` (real). We never silently default to `mock` in dev/prod —
+   *    that would serve fabricated filings.
+   */
+  private static resolveDefaultImplementation(): ScraperImplementation {
+    const explicit = process.env.SCRAPER_IMPLEMENTATION as ScraperImplementation | undefined
+    if (explicit) {
+      return explicit
+    }
+    if (process.env.NODE_ENV === 'test') {
+      return 'mock'
+    }
+    return 'api'
+  }
+
+  private static get defaultImplementation(): ScraperImplementation {
+    return this.resolveDefaultImplementation()
+  }
+
+  /**
+   * Whether mock scrapers are sanctioned in the current environment (tests, or
+   * an explicit opt-in). Used to gate the loud out-of-test warning.
+   */
+  private static isMockSanctioned(): boolean {
+    return (
+      process.env.NODE_ENV === 'test' ||
+      (process.env.SCRAPER_IMPLEMENTATION as ScraperImplementation | undefined) === 'mock'
+    )
+  }
+
+  /**
+   * Loudly warn when a mock scraper is created outside a test environment.
+   * Mock scrapers return canned filings; using them in dev/prod fabricates data.
+   */
+  private static warnIfMockOutsideTest(state: SupportedState): void {
+    if (process.env.NODE_ENV === 'test') {
+      return
+    }
+    console.warn(
+      `[ScraperFactory] ⚠️  Instantiating MOCK ${state} scraper outside a test environment. ` +
+        `Mock scrapers return CANNED filings and MUST NOT be treated as real ingestion. ` +
+        `Set SCRAPER_IMPLEMENTATION=api (or puppeteer) for real data.`
+    )
+  }
 
   /**
    * Create a scraper for a specific state
@@ -74,6 +126,7 @@ export class ScraperFactory {
   ): BaseScraper {
     switch (implementation) {
       case 'mock':
+        this.warnIfMockOutsideTest('CA')
         return new CaliforniaUCCScraper()
 
       case 'puppeteer':
@@ -99,6 +152,7 @@ export class ScraperFactory {
   ): BaseScraper {
     switch (implementation) {
       case 'mock':
+        this.warnIfMockOutsideTest('TX')
         return new TexasUCCScraper()
 
       case 'puppeteer':
@@ -124,6 +178,7 @@ export class ScraperFactory {
   ): BaseScraper {
     switch (implementation) {
       case 'mock':
+        this.warnIfMockOutsideTest('FL')
         return new FloridaUCCScraper()
 
       case 'puppeteer':
@@ -149,6 +204,7 @@ export class ScraperFactory {
   ): BaseScraper {
     switch (implementation) {
       case 'mock':
+        this.warnIfMockOutsideTest('NY')
         return new NewYorkUCCScraper()
 
       case 'puppeteer':
@@ -174,6 +230,7 @@ export class ScraperFactory {
   ): BaseScraper {
     switch (implementation) {
       case 'mock':
+        this.warnIfMockOutsideTest('IL')
         return new IllinoisUCCScraper()
 
       case 'puppeteer':
@@ -194,18 +251,24 @@ export class ScraperFactory {
    * Get recommended implementation based on environment
    */
   static getRecommendedImplementation(): ScraperImplementation {
-    // If API key is configured, recommend API
+    // Tests are the only context that may default to mock.
+    if (process.env.NODE_ENV === 'test') {
+      return 'mock'
+    }
+
+    // If API key is configured, recommend API (real + reliable).
     if (process.env.UCC_API_KEY) {
       return 'api'
     }
 
-    // If in production, recommend API (even if not configured yet)
-    if (process.env.NODE_ENV === 'production') {
-      return 'api'
+    // No API key: recommend Puppeteer if it is installed (real, free).
+    if (this.isImplementationAvailable('puppeteer').available) {
+      return 'puppeteer'
     }
 
-    // For development, use mock by default
-    return 'mock'
+    // Otherwise recommend API even if not configured yet — surfacing a real
+    // (configurable) path rather than silently recommending fabricated mock data.
+    return 'api'
   }
 
   /**
