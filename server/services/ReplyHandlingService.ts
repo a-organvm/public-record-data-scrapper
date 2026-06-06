@@ -104,7 +104,16 @@ export interface ReplyHandlingResult {
 // Opt-out wins over everything: it is a compliance obligation. Phrases are
 // matched against the lower-cased, whitespace-collapsed body.
 const OPT_OUT_PHRASES = [
+  // Carrier-standard CTIA opt-out keywords (single words matched on word
+  // boundaries). Over-suppression is the compliant direction, so the full
+  // CTIA set is honored. 'unstop' is deliberately EXCLUDED — it is an opt-IN
+  // keyword and must never be read as an opt-out.
   'stop',
+  'stopall',
+  'cancel',
+  'end',
+  'quit',
+  'revoke',
   'unsubscribe',
   'remove me',
   'remove from list',
@@ -162,11 +171,17 @@ const POSITIVE_PHRASES = [
  * "not interested" is not captured by the bare "interested" positive token.
  */
 export function classifyReply(body: string): ReplyDisposition {
-  const text = (body || '').toLowerCase().replace(/\s+/g, ' ').trim()
+  // Fold typographic apostrophes (’ U+2019, ʼ U+02BC, ‘ U+2018) to an ASCII
+  // apostrophe BEFORE matching, so a mobile-keyboard "don’t contact" matches
+  // the ASCII "don't contact" phrase. Without this fold, the curly-quote form
+  // would slip past the opt-out / negative phrase lists.
+  const text = (body || '').toLowerCase().replace(/[’ʼ‘]/g, "'").replace(/\s+/g, ' ').trim()
   if (!text) return 'neutral'
 
-  // Word-boundary match for short, ambiguous opt-out tokens like "stop" so we
-  // don't fire on substrings ("stopwatch"). Multi-word phrases use includes().
+  // Word-boundary match for short, ambiguous single-word tokens like "stop"
+  // and "pass" so we don't fire on substrings ("stopwatch", "passionate",
+  // "passport"). Multi-word phrases use includes(). Apostrophes count as word
+  // characters here so contraction phrases ("don't contact") still match.
   const hasPhrase = (phrase: string): boolean => {
     if (/^[a-z]+$/.test(phrase)) {
       const re = new RegExp(`\\b${phrase}\\b`)
@@ -176,7 +191,9 @@ export function classifyReply(body: string): ReplyDisposition {
   }
 
   if (OPT_OUT_PHRASES.some(hasPhrase)) return 'opt_out'
-  if (NEGATIVE_PHRASES.some((p) => text.includes(p))) return 'negative'
+  // Negatives use word-boundary matching too: a bare token like 'pass' must
+  // match "I'll pass" (whole word) without firing on 'passionate'/'passport'.
+  if (NEGATIVE_PHRASES.some(hasPhrase)) return 'negative'
   if (POSITIVE_PHRASES.some(hasPhrase)) return 'positive'
   return 'neutral'
 }

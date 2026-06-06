@@ -517,12 +517,33 @@ export class CommunicationsService {
             attachments: input.attachments
           })
 
+          // SendGridSend.sendTransactional does NOT throw on a provider error —
+          // it resolves to { status: 'failed', errors: [...] }. Recording 'sent'
+          // for that case would fabricate a delivered message (the campaign's
+          // cardinal sin). Fail closed: mark the row failed with the named
+          // provider reason and surface a 502 via ExternalServiceError.
+          if (result.status === 'failed') {
+            const providerReason = result.errors?.join('; ') || 'SendGrid rejected the message'
+            await this.updateCommunicationStatus(
+              communication.id,
+              'failed',
+              undefined,
+              providerReason
+            )
+            throw new ExternalServiceError('SendGrid', `Failed to send email: ${providerReason}`)
+          }
+
           // Update communication with sent status
           await this.updateCommunicationStatus(communication.id, 'sent', result.messageId)
 
           return { ...communication, status: 'sent', externalId: result.messageId }
         } catch (sendError) {
-          // Update communication with failed status
+          // A provider-returned failure (handled above) already recorded the
+          // failed row — re-throw as-is rather than double-writing the status.
+          if (sendError instanceof ExternalServiceError) throw sendError
+
+          // A thrown error (network/validation inside the adapter): record the
+          // failed status, then surface it as a 502.
           await this.updateCommunicationStatus(
             communication.id,
             'failed',
@@ -881,9 +902,16 @@ export class CommunicationsService {
   }
 
   /**
-   * Get pending follow-ups for a contact
+   * Get pending follow-ups for a contact within a tenant.
+   *
+   * The query is org-scoped (AND org_id = $2) so a contactId cannot leak
+   * follow-ups belonging to another tenant — the RLS policy is defense in
+   * depth, not the only guard.
    */
-  async getPendingFollowUps(contactId: string): Promise<
+  async getPendingFollowUps(
+    contactId: string,
+    orgId: string
+  ): Promise<
     Array<{
       id: string
       scheduledFor: string
@@ -894,9 +922,9 @@ export class CommunicationsService {
     try {
       const results = await database.query<ScheduledFollowUpRow>(
         `SELECT * FROM scheduled_followups
-         WHERE contact_id = $1 AND sent = false AND scheduled_for > NOW()
+         WHERE contact_id = $1 AND org_id = $2 AND sent = false AND scheduled_for > NOW()
          ORDER BY scheduled_for`,
-        [contactId]
+        [contactId, orgId]
       )
 
       return results.map((row) => ({
@@ -914,13 +942,17 @@ export class CommunicationsService {
   }
 
   /**
-   * Cancel a scheduled follow-up
+   * Cancel a scheduled follow-up within a tenant.
+   *
+   * The DELETE is org-scoped (AND org_id = $2) so a follow-up id from another
+   * tenant cannot be cancelled — a cross-org id deletes nothing and returns
+   * false (surfaced as a 404 by the route).
    */
-  async cancelFollowUp(id: string): Promise<boolean> {
+  async cancelFollowUp(id: string, orgId: string): Promise<boolean> {
     try {
       const results = await database.query(
-        'DELETE FROM scheduled_followups WHERE id = $1 AND sent = false',
-        [id]
+        'DELETE FROM scheduled_followups WHERE id = $1 AND org_id = $2 AND sent = false',
+        [id, orgId]
       )
       return (results as unknown as { rowCount: number }).rowCount > 0
     } catch (error) {

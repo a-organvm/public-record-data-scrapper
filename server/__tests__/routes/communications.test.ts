@@ -268,6 +268,23 @@ describe('Communications API', () => {
       expect(response.body.error.message).toMatch(/suppression/i)
     })
 
+    it('should surface a provider-returned send failure as a named 502', async () => {
+      // sendEmail throws ExternalServiceError('SendGrid', ...) when the provider
+      // returns a failure — the service never fabricates a success.
+      mockSendEmail.mockRejectedValueOnce(
+        new ExternalServiceError('SendGrid', 'Failed to send email: 451 mailbox unavailable')
+      )
+
+      const response = await request(app)
+        .post('/api/communications/send-email')
+        .set('Authorization', authHeader)
+        .send(validEmail)
+
+      expect(response.status).toBe(502)
+      expect(response.body.error.code).toBe('EXTERNAL_SERVICE_ERROR')
+      expect(response.body.error.details).toEqual(expect.objectContaining({ service: 'SendGrid' }))
+    })
+
     it('should reject a malformed email address (400)', async () => {
       const response = await request(app)
         .post('/api/communications/send-email')
@@ -351,7 +368,8 @@ describe('Communications API', () => {
 
       expect(response.status).toBe(200)
       expect(response.body.followUps.length).toBe(1)
-      expect(mockGetPendingFollowUps).toHaveBeenCalledWith(mockContactId)
+      // The resolved tenant orgId is forwarded so the lookup is org-scoped.
+      expect(mockGetPendingFollowUps).toHaveBeenCalledWith(mockContactId, mockOrgId)
     })
 
     it('POST /follow-ups should schedule and return 201', async () => {
@@ -396,6 +414,22 @@ describe('Communications API', () => {
         .set('Authorization', authHeader)
 
       expect(response.status).toBe(204)
+      // The resolved tenant orgId is forwarded so the cancel is org-scoped.
+      expect(mockCancelFollowUp).toHaveBeenCalledWith(mockCommId, mockOrgId)
+    })
+
+    it('DELETE /follow-ups/:id cannot cancel another org follow-up (404)', async () => {
+      // The service applies an org_id predicate, so a cross-org id deletes
+      // nothing and returns false -> the route surfaces a 404 (the foreign
+      // follow-up is uncancellable and indistinguishable from not-found).
+      mockCancelFollowUp.mockResolvedValueOnce(false)
+
+      const response = await request(app)
+        .delete(`/api/communications/follow-ups/${mockCommId}`)
+        .set('Authorization', authHeader)
+
+      expect(response.status).toBe(404)
+      expect(mockCancelFollowUp).toHaveBeenCalledWith(mockCommId, mockOrgId)
     })
   })
 })

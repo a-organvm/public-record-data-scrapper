@@ -20,6 +20,20 @@ describe('classifyReply', () => {
     expect(classifyReply('I was interested but please remove me')).toBe('opt_out')
   })
 
+  it('honors carrier-standard CTIA opt-out keywords', () => {
+    // CTIA-standard single-word keywords map to opt-out (word-boundary matched).
+    expect(classifyReply('CANCEL')).toBe('opt_out')
+    expect(classifyReply('quit')).toBe('opt_out')
+    expect(classifyReply('END')).toBe('opt_out')
+    expect(classifyReply('STOPALL')).toBe('opt_out')
+    expect(classifyReply('Please revoke my consent')).toBe('opt_out')
+  })
+
+  it('does not treat the opt-in keyword "unstop" as opt-out', () => {
+    // 'unstop' is an opt-IN keyword and must never read as opt-out.
+    expect(classifyReply('UNSTOP')).not.toBe('opt_out')
+  })
+
   it('does not fire opt-out on substrings of short tokens', () => {
     // "stopwatch" must not match the bare "stop" opt-out token.
     expect(classifyReply('I bought a stopwatch yesterday')).not.toBe('opt_out')
@@ -29,6 +43,24 @@ describe('classifyReply', () => {
     expect(classifyReply('Not interested, thanks')).toBe('negative')
     expect(classifyReply("We're all set")).toBe('negative')
     expect(classifyReply('no thanks')).toBe('negative')
+  })
+
+  it('matches the bare "pass" negative token only as a whole word', () => {
+    // "I'll pass" is a legitimate negative.
+    expect(classifyReply("I'll pass")).toBe('negative')
+    // "passionate"/"passport" must NOT be read as the negative "pass" token.
+    // "I am passionate about this, let's talk" is positive interest.
+    expect(classifyReply("I am passionate about this, let's talk")).toBe('positive')
+    // A passport-context reply is not a negative disposition.
+    expect(classifyReply('I just renewed my passport')).not.toBe('negative')
+  })
+
+  it('folds typographic apostrophes before matching (mobile keyboards)', () => {
+    // Curly apostrophe (U+2019) in "don’t contact" must match the ASCII opt-out
+    // phrase "don't contact".
+    expect(classifyReply('Please don’t contact me again')).toBe('opt_out')
+    // Negative contraction with a curly apostrophe still matches.
+    expect(classifyReply('No thanks, we’re all set')).toBe('negative')
   })
 
   it('classifies interest phrases as positive', () => {

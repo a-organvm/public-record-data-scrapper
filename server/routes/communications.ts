@@ -259,7 +259,7 @@ router.get(
     const communicationsService = new CommunicationsService()
     const query = followUpQuerySchema.parse(req.query)
 
-    const followUps = await communicationsService.getPendingFollowUps(query.contact_id)
+    const followUps = await communicationsService.getPendingFollowUps(query.contact_id, orgId)
 
     res.json({ followUps })
   })
@@ -305,7 +305,7 @@ router.delete(
     // (Express 5 types req.params values as `string | string[]`).
     const { id } = idParamSchema.parse(req.params)
 
-    const cancelled = await communicationsService.cancelFollowUp(id)
+    const cancelled = await communicationsService.cancelFollowUp(id, orgId)
 
     if (!cancelled) {
       return res.status(404).json({
