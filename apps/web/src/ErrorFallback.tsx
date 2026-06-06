@@ -3,13 +3,16 @@ import { Button } from '@public-records/ui/button'
 
 import { AlertTriangleIcon, RefreshCwIcon } from 'lucide-react'
 
+// react-error-boundary's FallbackProps types `error` as unknown — narrow it
+// here rather than asserting a shape the boundary cannot guarantee.
 export const ErrorFallback = ({
   error,
   resetErrorBoundary
 }: {
-  error: Error
+  error: unknown
   resetErrorBoundary: () => void
 }) => {
+  const message = error instanceof Error ? error.message : String(error)
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -25,7 +28,7 @@ export const ErrorFallback = ({
         <div className="bg-card border rounded-lg p-4 mb-6">
           <h3 className="font-semibold text-sm text-muted-foreground mb-2">Error Details:</h3>
           <pre className="text-xs text-destructive bg-muted/50 p-3 rounded border overflow-auto max-h-32">
-            {error.message}
+            {message}
           </pre>
         </div>
 

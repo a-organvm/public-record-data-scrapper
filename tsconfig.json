@@ -25,5 +25,5 @@
       "@public-records/ui/*": ["./packages/ui/src/*"]
     }
   },
-  "include": ["apps/web/src", "packages/core/src", "packages/ui/src"]
+  "include": ["apps/web/src", "packages/core/src", "packages/ui/src", "scripts/scrapers"]
 }

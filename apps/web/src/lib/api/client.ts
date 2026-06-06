@@ -29,7 +29,10 @@ export class TimeoutError extends Error {
 }
 
 export interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
-  body?: RequestInit['body'] | Record<string, unknown>
+  // `object` (rather than Record<string, unknown>) lets callers pass typed
+  // param interfaces directly — they lack index signatures, and the body is
+  // JSON.stringified below anyway.
+  body?: RequestInit['body'] | object
   /**
    * Request timeout in milliseconds
    * @default 30000 (30 seconds)

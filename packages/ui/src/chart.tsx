@@ -103,6 +103,16 @@ ${colorConfig
 
 const ChartTooltip = RechartsPrimitive.Tooltip
 
+// Shape of the items recharts passes in the tooltip `payload` array.
+type TooltipPayloadItem = {
+  name?: string
+  dataKey?: string | number
+  value?: number | string
+  color?: string
+  fill?: string
+  payload?: Record<string, unknown>
+}
+
 function ChartTooltipContent({
   active,
   payload,
@@ -119,22 +129,23 @@ function ChartTooltipContent({
   labelKey
 }: {
   active?: boolean
-  payload?: Array<{
-    name?: string
-    dataKey?: string | number
-    value?: number | string
-    color?: string
-    fill?: string
-    payload?: Record<string, unknown>
-  }>
+  payload?: TooltipPayloadItem[]
   label?: string | number
   className?: string
   indicator?: 'line' | 'dot' | 'dashed'
   hideLabel?: boolean
   hideIndicator?: boolean
-  labelFormatter?: (label: string | number) => ReactNode
+  // recharts contract: labelFormatter receives the resolved label plus the
+  // full payload array; formatter receives (value, name, item, index, payload).
+  labelFormatter?: (label: ReactNode, payload: TooltipPayloadItem[]) => ReactNode
   labelClassName?: string
-  formatter?: (value: unknown, name?: string) => ReactNode
+  formatter?: (
+    value: number | string | undefined,
+    name: string | undefined,
+    item: TooltipPayloadItem,
+    index: number,
+    payload: Record<string, unknown> | undefined
+  ) => ReactNode
   color?: string
   nameKey?: string
   labelKey?: string
@@ -156,9 +167,7 @@ function ChartTooltipContent({
 
     if (labelFormatter) {
       return (
-        <div className={cn('font-medium', labelClassName)}>
-          {labelFormatter ? labelFormatter(String(value)) : value}
-        </div>
+        <div className={cn('font-medium', labelClassName)}>{labelFormatter(value, payload)}</div>
       )
     }
 
@@ -184,7 +193,7 @@ function ChartTooltipContent({
     >
       {!nestLabel ? tooltipLabel : null}
       <div className="grid gap-1.5">
-        {payload.map((item) => {
+        {payload.map((item, index) => {
           const key = `${nameKey || item.name || item.dataKey || 'value'}`
           const itemConfig = getPayloadConfigFromPayload(config, item, key)
           const indicatorColor = color || item.payload?.fill || item.color
@@ -198,7 +207,7 @@ function ChartTooltipContent({
               )}
             >
               {formatter && item?.value !== undefined && item.name ? (
-                formatter(item.value, item.name)
+                formatter(item.value, item.name, item, index, item.payload)
               ) : (
                 <>
                   {itemConfig?.icon ? (

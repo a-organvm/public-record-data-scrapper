@@ -45,7 +45,9 @@ export class CaliforniaUCCScraperPuppeteer extends BaseScraper {
 
     this.log('info', 'Launching headless browser with stealth mode')
 
-    this.browser = await puppeteerExtra.launch({
+    // Assign through a local so the non-null type survives the await —
+    // TS resets property narrowing across await boundaries.
+    const browser = await puppeteerExtra.launch({
       headless: true,
       args: [
         '--no-sandbox',
@@ -57,8 +59,9 @@ export class CaliforniaUCCScraperPuppeteer extends BaseScraper {
         '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       ]
     })
+    this.browser = browser
 
-    return this.browser
+    return browser
   }
 
   /**

@@ -28,6 +28,25 @@ export interface EnrichmentProgress {
   error?: string
 }
 
+// Shapes of the sub-agent result payloads this orchestrator consumes. Each
+// AgentTaskResult.data is narrowed ONCE at the result boundary instead of
+// casting inline at every property access.
+interface DataAcquisitionPayload {
+  sources?: string[]
+  totalCost?: number
+  results?: Record<string, unknown>
+}
+
+interface UccScrapePayload {
+  filingCount?: number
+  searchUrl?: string
+  filings?: unknown[]
+}
+
+interface NormalizationPayload {
+  normalized?: { companyName?: string }
+}
+
 export class EnrichmentOrchestratorAgent extends BaseAgent {
   private dataAcquisitionAgent: DataAcquisitionAgent
   private scraperAgent: ScraperAgent
@@ -156,6 +175,7 @@ export class EnrichmentOrchestratorAgent extends BaseAgent {
         type: 'fetch-data',
         payload: { companyName, state, tier, userId }
       })
+      const dataPayload = (dataResult.data ?? {}) as DataAcquisitionPayload
 
       if (!dataResult.success) {
         progress[progress.length - 1].status = 'failed'
@@ -163,8 +183,8 @@ export class EnrichmentOrchestratorAgent extends BaseAgent {
       } else {
         progress[progress.length - 1].status = 'completed'
         progress[progress.length - 1].data = {
-          sources: (dataResult.data as Record<string, unknown>)?.sources || [],
-          cost: (dataResult.data as Record<string, unknown>)?.totalCost || 0
+          sources: dataPayload.sources ?? [],
+          cost: dataPayload.totalCost ?? 0
         }
       }
 
@@ -176,6 +196,7 @@ export class EnrichmentOrchestratorAgent extends BaseAgent {
       })
 
       let uccResult: AgentTaskResult | null = null
+      let uccPayload: UccScrapePayload = {}
       if (this.scraperAgent.isStateSupported(state)) {
         uccResult = await this.scraperAgent.executeTask({
           type: 'scrape-ucc',
@@ -186,10 +207,11 @@ export class EnrichmentOrchestratorAgent extends BaseAgent {
           progress[progress.length - 1].status = 'failed'
           progress[progress.length - 1].error = uccResult.error
         } else {
+          uccPayload = (uccResult.data ?? {}) as UccScrapePayload
           progress[progress.length - 1].status = 'completed'
           progress[progress.length - 1].data = {
-            filingCount: (uccResult.data as Record<string, unknown>)?.filingCount || 0,
-            searchUrl: (uccResult.data as Record<string, unknown>)?.searchUrl
+            filingCount: uccPayload.filingCount ?? 0,
+            searchUrl: uccPayload.searchUrl
           }
         }
       } else {
@@ -212,13 +234,11 @@ export class EnrichmentOrchestratorAgent extends BaseAgent {
           data: {
             companyName,
             state,
-            ...(((dataResult.data as Record<string, unknown>)?.results as Record<
-              string,
-              unknown
-            >) ?? {})
+            ...(dataPayload.results ?? {})
           }
         }
       })
+      const normalizePayload = (normalizeResult.data ?? {}) as NormalizationPayload
 
       if (!normalizeResult.success) {
         progress[progress.length - 1].status = 'failed'
@@ -234,12 +254,12 @@ export class EnrichmentOrchestratorAgent extends BaseAgent {
           payload: {
             userId,
             action: 'enrichment',
-            cost: (dataResult.data as Record<string, unknown>)?.totalCost || 0,
+            cost: dataPayload.totalCost ?? 0,
             success: true,
             metadata: {
               companyName,
               state,
-              sources: (dataResult.data as Record<string, unknown>)?.sources || []
+              sources: dataPayload.sources ?? []
             }
           }
         })
@@ -251,22 +271,16 @@ export class EnrichmentOrchestratorAgent extends BaseAgent {
         data: {
           companyName,
           state,
-          normalizedName:
-            (
-              (normalizeResult.data as Record<string, unknown>)?.normalized as Record<
-                string,
-                unknown
-              >
-            )?.companyName || companyName,
-          dataAcquisition: (dataResult.data as Record<string, unknown>)?.results || {},
-          uccFilings: ((uccResult?.data as Record<string, unknown>)?.filings as unknown[]) || [],
-          sources: ((dataResult.data as Record<string, unknown>)?.sources as string[]) || [],
+          normalizedName: normalizePayload.normalized?.companyName || companyName,
+          dataAcquisition: dataPayload.results ?? {},
+          uccFilings: uccPayload.filings ?? [],
+          sources: dataPayload.sources ?? [],
           searchUrls: {
-            ucc: (uccResult?.data as Record<string, unknown>)?.searchUrl
+            ucc: uccPayload.searchUrl
           }
         },
-        sources: ((dataResult.data as Record<string, unknown>)?.sources as string[]) || [],
-        cost: ((dataResult.data as Record<string, unknown>)?.totalCost as number) || 0,
+        sources: dataPayload.sources ?? [],
+        cost: dataPayload.totalCost ?? 0,
         timestamp: new Date().toISOString()
       }
 

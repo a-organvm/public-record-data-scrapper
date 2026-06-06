@@ -8,7 +8,7 @@
  * Set TX_UCC_USERNAME and TX_UCC_PASSWORD environment variables.
  */
 
-import { BaseScraper, ScraperResult } from '../base-scraper'
+import { BaseScraper, ScraperResult, UCCFiling } from '../base-scraper'
 import puppeteer, { Browser, Page } from 'puppeteer'
 import { existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
@@ -302,9 +302,12 @@ export class TexasScraper extends BaseScraper {
    */
   private async performSearch(companyName: string): Promise<ScraperResult> {
     let page: Page | null = null
-    let result: ScraperResult | null = null
+    // Held on an object property (not a let binding): TS control-flow analysis
+    // does not track assignments made through the `finalize` closure, so a
+    // plain `let` still reads as null in the `finally` block.
+    const outcome: { result: ScraperResult | null } = { result: null }
     const finalize = (next: ScraperResult): ScraperResult => {
-      result = next
+      outcome.result = next
       return next
     }
 
@@ -640,7 +643,7 @@ export class TexasScraper extends BaseScraper {
       })
     } finally {
       if (page) {
-        const keepPage = this.keepPageOpenOnFailure && result && !result.success
+        const keepPage = this.keepPageOpenOnFailure && outcome.result && !outcome.result.success
         if (!keepPage) {
           await page.close().catch((err) => {
             this.log('warn', 'Error closing page', {
