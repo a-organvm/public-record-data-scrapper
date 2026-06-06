@@ -1,4 +1,8 @@
+import { Worker } from 'bullmq'
+import { redisConnection } from '../connection'
+import { database } from '../../database/connection'
 import { getOutreachQueue } from '../queues'
+import type { TerminationDetectionJobData } from '../queues'
 
 export interface TerminationDetectionResult {
   detected: number
@@ -82,4 +86,33 @@ export async function processTerminationDetection(db: {
   }
 
   return { detected: terminated.length, eventsCreated }
+}
+
+export function createTerminationDetectionWorker() {
+  const { client } = redisConnection.connect()
+
+  const worker = new Worker<TerminationDetectionJobData, TerminationDetectionResult>(
+    'termination-detection',
+    () => processTerminationDetection(database),
+    {
+      connection: client,
+      concurrency: 1
+    }
+  )
+
+  worker.on('completed', (job, returnvalue) => {
+    console.log(`[Termination Detection Worker] Job ${job.id} completed:`, returnvalue)
+  })
+
+  worker.on('failed', (job, err) => {
+    console.error(`[Termination Detection Worker] Job ${job?.id} failed:`, err.message)
+  })
+
+  worker.on('error', (err) => {
+    console.error('[Termination Detection Worker] Worker error:', err)
+  })
+
+  console.log('✓ Termination detection worker started')
+
+  return worker
 }

@@ -1,3 +1,9 @@
+import { Worker, Job } from 'bullmq'
+import { redisConnection } from '../connection'
+import { database } from '../../database/connection'
+import { SendGridSend } from '../../integrations/sendgrid/send'
+import { SendGridClient } from '../../integrations/sendgrid/client'
+
 export interface CoverageDigest {
   generatedAt: string
   period: { from: string; to: string }
@@ -163,4 +169,57 @@ export async function processDigestJob(
   }
 
   return digest
+}
+
+export function createDigestWorker() {
+  const { client } = redisConnection.connect()
+
+  // Adapt SendGridSend to the narrow emailSender shape processDigestJob expects.
+  // When SendGrid is unconfigured, sendTransactional resolves with
+  // status 'failed' (it does not throw); the adapter surfaces that as
+  // success:false so the digest job records a no-send rather than a false send.
+  const sendgrid = new SendGridSend(new SendGridClient())
+  const emailSender = {
+    async sendTransactional(opts: {
+      to: { email: string }[]
+      from: { email: string; name?: string }
+      subject: string
+      html: string
+      text?: string
+    }): Promise<{ success: boolean }> {
+      const result = await sendgrid.sendTransactional({
+        to: opts.to,
+        from: opts.from,
+        subject: opts.subject,
+        html: opts.html,
+        text: opts.text
+      })
+      return { success: result.status === 'accepted' || result.status === 'queued' }
+    }
+  }
+
+  const worker = new Worker<DigestJobData, CoverageDigest>(
+    'coverage-digest',
+    (job: Job<DigestJobData>) => processDigestJob(database, emailSender, job.data.recipients),
+    {
+      connection: client,
+      concurrency: 1
+    }
+  )
+
+  worker.on('completed', (job) => {
+    console.log(`[Digest Worker] Job ${job.id} completed`)
+  })
+
+  worker.on('failed', (job, err) => {
+    console.error(`[Digest Worker] Job ${job?.id} failed:`, err.message)
+  })
+
+  worker.on('error', (err) => {
+    console.error('[Digest Worker] Worker error:', err)
+  })
+
+  console.log('✓ Coverage digest worker started')
+
+  return worker
 }

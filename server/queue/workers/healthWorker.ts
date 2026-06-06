@@ -3,6 +3,56 @@ import { redisConnection } from '../connection'
 import { HealthScoreJobData } from '../queues'
 import { database } from '../../database/connection'
 import { listEnabledIntegrations } from '../../config/tieredIntegrations'
+import { alertService } from '../../services/AlertService'
+
+/**
+ * After a portfolio company's health score is computed, fan out to the DEWS
+ * alert path. The DEWS thresholds are keyed on `prospects` (with org scoping),
+ * while the health worker processes `portfolio_companies` — the two are only
+ * joinable by normalized company name. For each prospect matching the company
+ * we record the score into portfolio_health_history and evaluate alert rules.
+ *
+ * Alert generation MUST NOT fail the health job: any error is logged and
+ * swallowed so a missing prospect link or alert-storage hiccup never breaks the
+ * health-score pipeline.
+ */
+async function runDewsAlertCheck(companyName: string, score: number): Promise<void> {
+  try {
+    const prospects = await database.query<{ id: string }>(
+      `SELECT id
+       FROM prospects
+       WHERE company_name_normalized = LOWER(TRIM($1))`,
+      [companyName]
+    )
+
+    if (prospects.length === 0) {
+      // No prospect mirrors this portfolio company — nothing to alert on. This is
+      // expected for portfolio-only companies; logged at debug volume.
+      return
+    }
+
+    for (const prospect of prospects) {
+      try {
+        const alerts = await alertService.recordHealthAndCheck(prospect.id, score)
+        if (alerts.length > 0) {
+          console.log(
+            `[Health Score Worker] DEWS: persisted ${alerts.length} alert(s) for prospect ${prospect.id} (${companyName})`
+          )
+        }
+      } catch (innerError) {
+        console.error(
+          `[Health Score Worker] DEWS alert check failed for prospect ${prospect.id}:`,
+          innerError
+        )
+      }
+    }
+  } catch (error) {
+    console.error(
+      `[Health Score Worker] DEWS alert check failed for company "${companyName}":`,
+      error
+    )
+  }
+}
 
 async function processHealthScore(job: Job<HealthScoreJobData>): Promise<void> {
   const { portfolioCompanyId, batchSize = 50, dataTier } = job.data
@@ -74,6 +124,9 @@ async function processHealthScore(job: Job<HealthScoreJobData>): Promise<void> {
             healthData.sentiment
           ]
         )
+
+        // Fan out to DEWS alerting — failures here never fail the health job.
+        await runDewsAlertCheck(company.company_name, healthData.score)
 
         completed++
         const progress = Math.floor((completed / total) * 100)

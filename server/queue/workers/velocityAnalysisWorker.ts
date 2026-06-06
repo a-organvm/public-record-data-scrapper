@@ -1,4 +1,8 @@
+import { Worker } from 'bullmq'
+import { redisConnection } from '../connection'
+import { database } from '../../database/connection'
 import { FilingVelocityService } from '../../services/FilingVelocityService'
+import type { VelocityAnalysisJobData } from '../queues'
 
 export interface VelocityAnalysisResult {
   processed: number
@@ -33,4 +37,33 @@ export async function processVelocityAnalysis(db: {
 
   console.log(`[velocity] Processed ${processed} prospects, ${errors} errors`)
   return { processed, errors }
+}
+
+export function createVelocityAnalysisWorker() {
+  const { client } = redisConnection.connect()
+
+  const worker = new Worker<VelocityAnalysisJobData, VelocityAnalysisResult>(
+    'velocity-analysis',
+    () => processVelocityAnalysis(database),
+    {
+      connection: client,
+      concurrency: 1
+    }
+  )
+
+  worker.on('completed', (job, returnvalue) => {
+    console.log(`[Velocity Analysis Worker] Job ${job.id} completed:`, returnvalue)
+  })
+
+  worker.on('failed', (job, err) => {
+    console.error(`[Velocity Analysis Worker] Job ${job?.id} failed:`, err.message)
+  })
+
+  worker.on('error', (err) => {
+    console.error('[Velocity Analysis Worker] Worker error:', err)
+  })
+
+  console.log('✓ Velocity analysis worker started')
+
+  return worker
 }
