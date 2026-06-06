@@ -392,10 +392,7 @@ export class ProspectsService {
         if (!existing[0]) {
           throw new NotFoundError('Prospect', id)
         }
-        throw new ConflictError(
-          `Prospect ${id} is already claimed`,
-          'prospect'
-        )
+        throw new ConflictError(`Prospect ${id} is already claimed`, 'prospect')
       }
 
       return results[0]
@@ -405,6 +402,45 @@ export class ProspectsService {
       }
       throw new DatabaseError(
         'Failed to claim prospect',
+        error instanceof Error ? error : undefined
+      )
+    }
+  }
+
+  /**
+   * Unclaim a prospect.
+   *
+   * Reverses {@link claim}: clears the claiming user and date and resets the
+   * status to 'new' so the prospect is available again. Idempotent at the data
+   * layer — re-unclaiming an already-unclaimed prospect simply re-applies the
+   * same values.
+   *
+   * @param id - The prospect's unique identifier
+   * @returns The updated prospect
+   * @throws {NotFoundError} If the prospect doesn't exist
+   * @throws {DatabaseError} If the database update fails
+   */
+  async unclaim(id: string): Promise<Prospect> {
+    try {
+      const results = await database.query<Prospect>(
+        `UPDATE prospects
+         SET status = 'new', claimed_by = NULL, claimed_date = NULL, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1
+         RETURNING *`,
+        [id]
+      )
+
+      if (!results[0]) {
+        throw new NotFoundError('Prospect', id)
+      }
+
+      return results[0]
+    } catch (error) {
+      if (error instanceof NotFoundError) {
+        throw error
+      }
+      throw new DatabaseError(
+        'Failed to unclaim prospect',
         error instanceof Error ? error : undefined
       )
     }
@@ -447,5 +483,78 @@ export class ProspectsService {
     }
 
     return { success, failed, errors }
+  }
+
+  /**
+   * Claim multiple prospects and return the resulting prospect rows.
+   *
+   * Unlike {@link batchClaim} (which returns an aggregate success/failure
+   * summary), this returns the updated prospect records for the rows that were
+   * successfully claimed — the shape the dashboard expects so it can patch its
+   * in-memory list. Prospects that fail to claim (already claimed, missing) are
+   * skipped rather than aborting the whole batch. Capped at 100 per batch.
+   *
+   * @param ids - Array of prospect IDs to claim
+   * @param userId - The ID of the user claiming the prospects
+   * @returns The successfully claimed prospect rows
+   * @throws {ValidationError} If batch size exceeds 100
+   */
+  async batchClaimReturning(ids: string[], userId: string): Promise<Prospect[]> {
+    const MAX_BATCH_SIZE = 100
+    if (ids.length > MAX_BATCH_SIZE) {
+      throw new ValidationError(`Batch size exceeds maximum of ${MAX_BATCH_SIZE}`)
+    }
+
+    const claimed: Prospect[] = []
+
+    for (const id of ids) {
+      try {
+        const prospect = await this.claim(id, userId)
+        claimed.push(prospect)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error'
+        console.error(`[ProspectsService] batchClaimReturning failed for id ${id}:`, message)
+      }
+    }
+
+    return claimed
+  }
+
+  /**
+   * Delete multiple prospects in a batch operation.
+   *
+   * Issues a single parameterized DELETE over the supplied ids. Missing ids are
+   * simply not deleted (no error) — the operation reports how many rows were
+   * removed. Capped at 100 per batch to bound query cost.
+   *
+   * @param ids - Array of prospect IDs to delete
+   * @returns Number of prospects deleted
+   * @throws {ValidationError} If batch size exceeds 100
+   * @throws {DatabaseError} If the database delete fails
+   */
+  async batchDelete(ids: string[]): Promise<{ deleted: number }> {
+    const MAX_BATCH_SIZE = 100
+    if (ids.length > MAX_BATCH_SIZE) {
+      throw new ValidationError(`Batch size exceeds maximum of ${MAX_BATCH_SIZE}`)
+    }
+
+    if (ids.length === 0) {
+      return { deleted: 0 }
+    }
+
+    try {
+      const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ')
+      const results = await database.query(
+        `DELETE FROM prospects WHERE id IN (${placeholders})`,
+        ids
+      )
+      const deleted = (results as { rowCount: number }).rowCount ?? 0
+      return { deleted }
+    } catch (error) {
+      throw new DatabaseError(
+        'Failed to delete prospects',
+        error instanceof Error ? error : undefined
+      )
+    }
   }
 }

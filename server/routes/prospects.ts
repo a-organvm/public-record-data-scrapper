@@ -50,6 +50,23 @@ const idParamSchema = z.object({
   id: z.string().uuid()
 })
 
+// A claiming user identifier. The dashboard sends a display name ('Current
+// User') rather than a UUID, so this is a non-empty string, not z.uuid().
+const claimBodySchema = z.object({
+  user: z.string().min(1)
+})
+
+const MAX_BATCH_SIZE = 100
+
+const batchClaimBodySchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(MAX_BATCH_SIZE),
+  user: z.string().min(1)
+})
+
+const batchDeleteBodySchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(MAX_BATCH_SIZE)
+})
+
 type ProspectsQuery = z.infer<typeof querySchema>
 
 const PROSPECT_TIER_LIMITS: Record<ResolvedDataTier, number> = {
@@ -104,6 +121,40 @@ router.get(
   })
 )
 
+// POST /api/prospects/batch/claim - Claim multiple prospects
+//
+// Registered before the parametrized `/:id` routes so the literal `batch`
+// segment is matched here rather than being captured as an `:id` (which would
+// fail UUID validation with a 400). Returns the claimed prospect rows so the
+// client can patch its in-memory list.
+router.post(
+  '/batch/claim',
+  validateRequest({ body: batchClaimBodySchema }),
+  asyncHandler(async (req, res) => {
+    const prospectsService = new ProspectsService()
+    const { ids, user } = req.body as { ids: string[]; user: string }
+    const claimed = await prospectsService.batchClaimReturning(ids, user)
+
+    res.json(claimed)
+  })
+)
+
+// DELETE /api/prospects/batch - Delete multiple prospects
+//
+// Registered before `/:id` for the same routing-precedence reason as the batch
+// claim route above.
+router.delete(
+  '/batch',
+  validateRequest({ body: batchDeleteBodySchema }),
+  asyncHandler(async (req, res) => {
+    const prospectsService = new ProspectsService()
+    const { ids } = req.body as { ids: string[] }
+    await prospectsService.batchDelete(ids)
+
+    res.status(204).send()
+  })
+)
+
 // GET /api/prospects/:id - Get prospect details
 router.get(
   '/:id',
@@ -135,6 +186,39 @@ router.post(
     const prospect = await prospectsService.create(req.body)
 
     res.status(201).json(prospect)
+  })
+)
+
+// POST /api/prospects/:id/claim - Claim a prospect for a user
+//
+// Sets status='claimed', claimed_by, claimed_date. The service performs an
+// atomic conditional update; a NotFoundError (404) or ConflictError (409,
+// already claimed) propagates to the error handler. Returns the claimed
+// prospect row (the shape the dashboard expects).
+router.post(
+  '/:id/claim',
+  validateRequest({ params: idParamSchema, body: claimBodySchema }),
+  asyncHandler(async (req, res) => {
+    const prospectsService = new ProspectsService()
+    const { user } = req.body as { user: string }
+    const prospect = await prospectsService.claim(req.params.id, user)
+
+    res.json(prospect)
+  })
+)
+
+// POST /api/prospects/:id/unclaim - Release a claimed prospect
+//
+// Reverses claim: status='new', clears claimed_by/claimed_date. Returns the
+// updated prospect row.
+router.post(
+  '/:id/unclaim',
+  validateRequest({ params: idParamSchema }),
+  asyncHandler(async (req, res) => {
+    const prospectsService = new ProspectsService()
+    const prospect = await prospectsService.unclaim(req.params.id)
+
+    res.json(prospect)
   })
 )
 
