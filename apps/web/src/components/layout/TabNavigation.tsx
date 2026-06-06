@@ -6,12 +6,16 @@ import {
   ArrowClockwise,
   Robot,
   ChartLineUp,
-  Broadcast
+  Broadcast,
+  Handshake,
+  AddressBook,
+  ChatCircle,
+  ShieldCheck
 } from '@phosphor-icons/react'
 
 export function TabNavigation() {
   return (
-    <TabsList className="glass-effect hidden md:grid w-full grid-cols-7 mb-4 sm:mb-6 gap-0 h-10 p-1">
+    <TabsList className="glass-effect hidden md:grid w-full grid-cols-11 mb-4 sm:mb-6 gap-0 h-10 p-1">
       <TabsTrigger
         value="prospects"
         data-tour="prospects-tab"
@@ -43,6 +47,22 @@ export function TabNavigation() {
       <TabsTrigger value="coverage" className="flex items-center gap-2 text-sm">
         <Broadcast size={18} weight="fill" />
         <span>Coverage</span>
+      </TabsTrigger>
+      <TabsTrigger value="deals" className="flex items-center gap-2 text-sm">
+        <Handshake size={18} weight="fill" />
+        <span>Deals</span>
+      </TabsTrigger>
+      <TabsTrigger value="contacts" className="flex items-center gap-2 text-sm">
+        <AddressBook size={18} weight="fill" />
+        <span>Contacts</span>
+      </TabsTrigger>
+      <TabsTrigger value="communications" className="flex items-center gap-2 text-sm">
+        <ChatCircle size={18} weight="fill" />
+        <span>Comms</span>
+      </TabsTrigger>
+      <TabsTrigger value="compliance" className="flex items-center gap-2 text-sm">
+        <ShieldCheck size={18} weight="fill" />
+        <span>Compliance</span>
       </TabsTrigger>
       <TabsTrigger value="requalification" className="flex items-center gap-2 text-sm">
         <ArrowClockwise size={18} weight="fill" />

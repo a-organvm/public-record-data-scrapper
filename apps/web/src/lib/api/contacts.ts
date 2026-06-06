@@ -143,7 +143,10 @@ export async function fetchContacts(
   signal?: AbortSignal
 ): Promise<ContactListResponse> {
   const searchParams = new URLSearchParams()
-  searchParams.set('org_id', params.org_id)
+  // org_id is optional client-side: the server derives the tenant from the
+  // authenticated token and only validates a supplied org_id for a match.
+  // Sending an empty value would fail that match check, so omit when blank.
+  if (params.org_id) searchParams.set('org_id', params.org_id)
   if (params.page) searchParams.set('page', String(params.page))
   if (params.limit) searchParams.set('limit', String(params.limit))
   if (params.search) searchParams.set('search', params.search)
