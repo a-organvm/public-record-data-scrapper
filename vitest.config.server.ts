@@ -54,9 +54,13 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './server'),
-      '@public-records/core': path.resolve(__dirname, './packages/core/src/index.ts'),
       '@public-records/core/database': path.resolve(__dirname, './packages/core/src/database.ts'),
-      '@public-records/core/identity': path.resolve(__dirname, './packages/core/src/identity.ts')
+      '@public-records/core/identity': path.resolve(__dirname, './packages/core/src/identity.ts'),
+      '@public-records/core/enrichment': path.resolve(
+        __dirname,
+        './packages/core/src/enrichment/index.ts'
+      ),
+      '@public-records/core': path.resolve(__dirname, './packages/core/src/index.ts')
     }
   }
 })

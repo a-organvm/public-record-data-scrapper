@@ -219,7 +219,10 @@ export async function fetchDeals(
   signal?: AbortSignal
 ): Promise<DealListResponse> {
   const searchParams = new URLSearchParams()
-  searchParams.set('org_id', params.org_id)
+  // org_id is optional client-side: the server derives the tenant from the
+  // authenticated token and only validates a supplied org_id for a match.
+  // Sending an empty value would fail that match check, so omit when blank.
+  if (params.org_id) searchParams.set('org_id', params.org_id)
   if (params.page) searchParams.set('page', String(params.page))
   if (params.limit) searchParams.set('limit', String(params.limit))
   if (params.stage_id) searchParams.set('stage_id', params.stage_id)

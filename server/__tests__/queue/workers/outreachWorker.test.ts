@@ -35,19 +35,60 @@ vi.mock('../../../services/OutreachSequenceService', () => ({
   OutreachSequenceService: mocks.MockOutreachSequenceService
 }))
 
-import { processOutreachJob } from '../../../queue/workers/outreachWorker'
-import type { OutreachJobData } from '../../../queue/workers/outreachWorker'
-
-function makeDb(scheduledCount = '0') {
-  return {
-    query: vi.fn().mockResolvedValue([{ count: scheduledCount }])
+// CommunicationsService is imported by the worker module but never constructed
+// in these tests (a mock sender is always injected). Stub it so importing the
+// worker does not pull in the integration clients / live database singleton.
+vi.mock('../../../services/CommunicationsService', () => ({
+  CommunicationsService: class {
+    sendEmail = vi.fn()
+    sendSMS = vi.fn()
   }
+}))
+
+import { processOutreachJob } from '../../../queue/workers/outreachWorker'
+import type { OutreachJobData, OutreachSender } from '../../../queue/workers/outreachWorker'
+
+// A db mock that answers the prospect/contact resolution queries and the
+// scheduled-step count. The first query (prospects) returns org_id, the second
+// (contacts) returns a primary contact, and any COUNT query returns the
+// scheduled-step count.
+function makeDb(opts: {
+  orgId?: string | null
+  contact?: { id: string; email: string | null; phone: string | null; mobile: string | null } | null
+  scheduledCount?: string
+}) {
+  const {
+    orgId = 'org-1',
+    contact = { id: 'c-1', email: 'owner@acme.test', phone: '5551234567', mobile: null },
+    scheduledCount = '0'
+  } = opts
+  const query = vi.fn((sql: string) => {
+    if (sql.includes('FROM prospects')) {
+      return Promise.resolve(orgId ? [{ org_id: orgId }] : [])
+    }
+    if (sql.includes('FROM contacts')) {
+      return Promise.resolve(contact ? [contact] : [])
+    }
+    if (sql.includes('COUNT(*)')) {
+      return Promise.resolve([{ count: scheduledCount }])
+    }
+    return Promise.resolve([])
+  })
+  return { query }
 }
 
 const baseJobData: OutreachJobData = {
   prospectId: 'prospect-123',
   triggerType: 'termination',
   triggeredBy: 'event'
+}
+
+function makeSender(overrides?: Partial<OutreachSender>): OutreachSender {
+  return {
+    sendEmail: vi.fn().mockResolvedValue({ status: 'sent', externalId: 'sg-1' }),
+    sendSMS: vi.fn().mockResolvedValue({ status: 'sent', externalId: 'tw-1' }),
+    ...overrides
+  }
 }
 
 describe('processOutreachJob', () => {
@@ -60,9 +101,8 @@ describe('processOutreachJob', () => {
       eligible: false,
       reason: 'Active or recent sequence exists (cooldown 30 days)'
     })
-    const db = makeDb()
 
-    const result = await processOutreachJob(baseJobData, db)
+    const result = await processOutreachJob(baseJobData, makeDb({}), makeSender())
 
     expect(result.skipped).toBe(true)
     expect(result.sequenceId).toBeNull()
@@ -71,146 +111,269 @@ describe('processOutreachJob', () => {
     expect(mocks.mockCreateSequence).not.toHaveBeenCalled()
   })
 
-  it('creates a sequence and processes immediate pending steps', async () => {
+  it('marks an email step SENT when CommunicationsService reports success', async () => {
     mocks.mockIsEligible.mockResolvedValue({ eligible: true })
-    mocks.mockCreateSequence.mockResolvedValue('seq-abc')
-    // Return one step, then null to end the loop, then null for the remaining check
+    mocks.mockCreateSequence.mockResolvedValue('seq-ok')
     mocks.mockGetNextPendingStep
-      .mockResolvedValueOnce({ id: 'step-1', stepNumber: 1, channel: 'email' })
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        stepNumber: 1,
+        channel: 'email',
+        subject: 'Hi',
+        body: 'Hello there'
+      })
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null)
     mocks.mockUpdateStepStatus.mockResolvedValue(undefined)
     mocks.mockCompleteSequence.mockResolvedValue(undefined)
-    const db = makeDb('0')
 
-    const result = await processOutreachJob(baseJobData, db)
+    const sender = makeSender()
+    const result = await processOutreachJob(baseJobData, makeDb({}), sender)
 
-    expect(result.skipped).toBe(false)
-    expect(result.sequenceId).toBe('seq-abc')
     expect(result.stepsSent).toBe(1)
-    expect(mocks.mockCreateSequence).toHaveBeenCalledWith(
-      'prospect-123',
-      'termination',
-      undefined,
-      undefined
+    expect(result.stepsFailed).toBe(0)
+    expect(sender.sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: 'org-1',
+        prospectId: 'prospect-123',
+        contactId: 'c-1',
+        toAddress: 'owner@acme.test',
+        subject: 'Hi',
+        body: 'Hello there'
+      })
     )
+    // Only marked 'sent' on real success, carrying the provider external id.
+    expect(mocks.mockUpdateStepStatus).toHaveBeenCalledWith('step-1', 'sent', 'sg-1')
   })
 
-  it('marks steps as sent with correct external IDs', async () => {
+  it('marks an SMS step SENT on success with the provider SID', async () => {
     mocks.mockIsEligible.mockResolvedValue({ eligible: true })
-    mocks.mockCreateSequence.mockResolvedValue('seq-xyz')
+    mocks.mockCreateSequence.mockResolvedValue('seq-sms')
     mocks.mockGetNextPendingStep
-      .mockResolvedValueOnce({ id: 'step-1', stepNumber: 1, channel: 'email' })
-      .mockResolvedValueOnce({ id: 'step-2', stepNumber: 2, channel: 'sms' })
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        stepNumber: 1,
+        channel: 'sms',
+        subject: null,
+        body: 'Quick call?'
+      })
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null)
     mocks.mockUpdateStepStatus.mockResolvedValue(undefined)
     mocks.mockCompleteSequence.mockResolvedValue(undefined)
-    const db = makeDb('0')
 
-    const result = await processOutreachJob(baseJobData, db)
+    const sender = makeSender()
+    const result = await processOutreachJob(baseJobData, makeDb({}), sender)
 
-    expect(result.stepsSent).toBe(2)
-    expect(mocks.mockUpdateStepStatus).toHaveBeenCalledWith(
-      'step-1',
-      'sent',
-      'outreach-seq-xyz-step-1'
+    expect(result.stepsSent).toBe(1)
+    expect(sender.sendSMS).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: 'org-1', toPhone: '5551234567', body: 'Quick call?' })
     )
-    expect(mocks.mockUpdateStepStatus).toHaveBeenCalledWith(
-      'step-2',
-      'sent',
-      'outreach-seq-xyz-step-2'
-    )
+    expect(mocks.mockUpdateStepStatus).toHaveBeenCalledWith('step-1', 'sent', 'tw-1')
   })
 
-  it('handles step failure gracefully and continues to next step', async () => {
+  it('fails CLOSED (failed, not sent) when the email provider is unconfigured (non-sent status)', async () => {
     mocks.mockIsEligible.mockResolvedValue({ eligible: true })
-    mocks.mockCreateSequence.mockResolvedValue('seq-fail')
+    mocks.mockCreateSequence.mockResolvedValue('seq-unconfigured')
     mocks.mockGetNextPendingStep
-      .mockResolvedValueOnce({ id: 'step-1', stepNumber: 1, channel: 'email' })
-      .mockResolvedValueOnce({ id: 'step-2', stepNumber: 2, channel: 'sms' })
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        stepNumber: 1,
+        channel: 'email',
+        subject: 'Hi',
+        body: 'Hello'
+      })
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null)
-    // First call fails, second succeeds
-    mocks.mockUpdateStepStatus
-      .mockRejectedValueOnce(new Error('Send error'))
-      .mockResolvedValue(undefined)
-    mocks.mockCompleteSequence.mockResolvedValue(undefined)
-    const db = makeDb('0')
+    mocks.mockUpdateStepStatus.mockResolvedValue(undefined)
 
-    const result = await processOutreachJob(baseJobData, db)
+    // Unconfigured SendGrid path: CommunicationsService returns a non-'sent'
+    // status rather than throwing.
+    const sender = makeSender({
+      sendEmail: vi.fn().mockResolvedValue({ status: 'failed' })
+    })
 
-    // step-1 failed (and got marked failed via catch), step-2 sent
-    expect(result.stepsSent).toBe(1)
-    expect(result.skipped).toBe(false)
-    // The catch block calls updateStepStatus with 'failed'
+    const result = await processOutreachJob(baseJobData, makeDb({}), sender)
+
+    expect(result.stepsSent).toBe(0)
+    expect(result.stepsFailed).toBe(1)
+    // Must be marked 'failed' with a reason — never 'sent'.
+    const call = mocks.mockUpdateStepStatus.mock.calls.find((c) => c[0] === 'step-1')
+    expect(call?.[1]).toBe('failed')
+    expect(call?.[3]).toMatch(/not sent|unconfigured/i)
+    // Assert it was NEVER marked sent.
+    expect(mocks.mockUpdateStepStatus).not.toHaveBeenCalledWith('step-1', 'sent', expect.anything())
+  })
+
+  it('fails CLOSED when the provider THROWS (e.g. Twilio unconfigured)', async () => {
+    mocks.mockIsEligible.mockResolvedValue({ eligible: true })
+    mocks.mockCreateSequence.mockResolvedValue('seq-throw')
+    mocks.mockGetNextPendingStep
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        stepNumber: 1,
+        channel: 'sms',
+        subject: null,
+        body: 'Hello'
+      })
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+    mocks.mockUpdateStepStatus.mockResolvedValue(undefined)
+
+    const sender = makeSender({
+      sendSMS: vi.fn().mockRejectedValue(new Error('Twilio: Failed to send SMS'))
+    })
+
+    const result = await processOutreachJob(baseJobData, makeDb({}), sender)
+
+    expect(result.stepsSent).toBe(0)
+    expect(result.stepsFailed).toBe(1)
     expect(mocks.mockUpdateStepStatus).toHaveBeenCalledWith(
       'step-1',
       'failed',
       undefined,
-      'Send error'
+      'Twilio: Failed to send SMS'
     )
-    expect(mocks.mockUpdateStepStatus).toHaveBeenCalledWith(
-      'step-2',
-      'sent',
-      'outreach-seq-fail-step-2'
-    )
+    expect(mocks.mockUpdateStepStatus).not.toHaveBeenCalledWith('step-1', 'sent', expect.anything())
   })
 
-  it('completes the sequence when all steps are done and none are scheduled', async () => {
+  it('fails CLOSED when no contact email is on file for an email step', async () => {
     mocks.mockIsEligible.mockResolvedValue({ eligible: true })
-    mocks.mockCreateSequence.mockResolvedValue('seq-complete')
+    mocks.mockCreateSequence.mockResolvedValue('seq-nocontact')
     mocks.mockGetNextPendingStep
-      .mockResolvedValueOnce({ id: 'step-1', stepNumber: 1, channel: 'email' })
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        stepNumber: 1,
+        channel: 'email',
+        subject: 'Hi',
+        body: 'Hello'
+      })
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+    mocks.mockUpdateStepStatus.mockResolvedValue(undefined)
+
+    const sender = makeSender()
+    const db = makeDb({ contact: { id: 'c-1', email: null, phone: null, mobile: null } })
+
+    const result = await processOutreachJob(baseJobData, db, sender)
+
+    expect(result.stepsSent).toBe(0)
+    expect(result.stepsFailed).toBe(1)
+    expect(sender.sendEmail).not.toHaveBeenCalled()
+    const call = mocks.mockUpdateStepStatus.mock.calls.find((c) => c[0] === 'step-1')
+    expect(call?.[1]).toBe('failed')
+    expect(call?.[3]).toMatch(/no contact email/i)
+  })
+
+  it('fails CLOSED for every step when the prospect has no org resolved', async () => {
+    mocks.mockIsEligible.mockResolvedValue({ eligible: true })
+    mocks.mockCreateSequence.mockResolvedValue('seq-noorg')
+    mocks.mockGetNextPendingStep
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        stepNumber: 1,
+        channel: 'email',
+        subject: 'Hi',
+        body: 'Hello'
+      })
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+    mocks.mockUpdateStepStatus.mockResolvedValue(undefined)
+
+    const sender = makeSender()
+    const db = makeDb({ orgId: null })
+
+    const result = await processOutreachJob(baseJobData, db, sender)
+
+    expect(result.stepsFailed).toBe(1)
+    expect(sender.sendEmail).not.toHaveBeenCalled()
+    const call = mocks.mockUpdateStepStatus.mock.calls.find((c) => c[0] === 'step-1')
+    expect(call?.[1]).toBe('failed')
+    expect(call?.[3]).toMatch(/no org/i)
+  })
+
+  it('mixes sent and failed across steps and reports both counts', async () => {
+    mocks.mockIsEligible.mockResolvedValue({ eligible: true })
+    mocks.mockCreateSequence.mockResolvedValue('seq-mixed')
+    mocks.mockGetNextPendingStep
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        stepNumber: 1,
+        channel: 'email',
+        subject: 'Hi',
+        body: 'A'
+      })
+      .mockResolvedValueOnce({
+        id: 'step-2',
+        stepNumber: 2,
+        channel: 'sms',
+        subject: null,
+        body: 'B'
+      })
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null)
     mocks.mockUpdateStepStatus.mockResolvedValue(undefined)
     mocks.mockCompleteSequence.mockResolvedValue(undefined)
-    const db = makeDb('0')
 
-    await processOutreachJob(baseJobData, db)
+    const sender = makeSender({
+      sendEmail: vi.fn().mockResolvedValue({ status: 'sent', externalId: 'sg-9' }),
+      sendSMS: vi.fn().mockResolvedValue({ status: 'failed' })
+    })
+
+    const result = await processOutreachJob(baseJobData, makeDb({}), sender)
+
+    expect(result.stepsSent).toBe(1)
+    expect(result.stepsFailed).toBe(1)
+    expect(mocks.mockUpdateStepStatus).toHaveBeenCalledWith('step-1', 'sent', 'sg-9')
+    const failCall = mocks.mockUpdateStepStatus.mock.calls.find((c) => c[0] === 'step-2')
+    expect(failCall?.[1]).toBe('failed')
+  })
+
+  it('completes the sequence when all steps done and none scheduled', async () => {
+    mocks.mockIsEligible.mockResolvedValue({ eligible: true })
+    mocks.mockCreateSequence.mockResolvedValue('seq-complete')
+    mocks.mockGetNextPendingStep
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        stepNumber: 1,
+        channel: 'email',
+        subject: 'Hi',
+        body: 'A'
+      })
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+    mocks.mockUpdateStepStatus.mockResolvedValue(undefined)
+    mocks.mockCompleteSequence.mockResolvedValue(undefined)
+
+    await processOutreachJob(baseJobData, makeDb({ scheduledCount: '0' }), makeSender())
 
     expect(mocks.mockCompleteSequence).toHaveBeenCalledWith('seq-complete')
   })
 
-  it('does not complete sequence when scheduled steps remain', async () => {
+  it('does not complete the sequence when scheduled steps remain', async () => {
     mocks.mockIsEligible.mockResolvedValue({ eligible: true })
     mocks.mockCreateSequence.mockResolvedValue('seq-partial')
     mocks.mockGetNextPendingStep
-      .mockResolvedValueOnce({ id: 'step-1', stepNumber: 1, channel: 'email' })
+      .mockResolvedValueOnce({
+        id: 'step-1',
+        stepNumber: 1,
+        channel: 'email',
+        subject: 'Hi',
+        body: 'A'
+      })
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null)
     mocks.mockUpdateStepStatus.mockResolvedValue(undefined)
-    const db = makeDb('2') // 2 scheduled steps remaining
 
-    await processOutreachJob(baseJobData, db)
+    await processOutreachJob(baseJobData, makeDb({ scheduledCount: '2' }), makeSender())
 
     expect(mocks.mockCompleteSequence).not.toHaveBeenCalled()
-  })
-
-  it('reports correct stepsSent count across multiple steps', async () => {
-    mocks.mockIsEligible.mockResolvedValue({ eligible: true })
-    mocks.mockCreateSequence.mockResolvedValue('seq-multi')
-    mocks.mockGetNextPendingStep
-      .mockResolvedValueOnce({ id: 'step-1', stepNumber: 1, channel: 'email' })
-      .mockResolvedValueOnce({ id: 'step-2', stepNumber: 2, channel: 'email' })
-      .mockResolvedValueOnce({ id: 'step-3', stepNumber: 3, channel: 'sms' })
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null)
-    mocks.mockUpdateStepStatus.mockResolvedValue(undefined)
-    mocks.mockCompleteSequence.mockResolvedValue(undefined)
-    const db = makeDb('0')
-
-    const result = await processOutreachJob(baseJobData, db)
-
-    expect(result.stepsSent).toBe(3)
   })
 
   it('passes capacityScore and filingEventId to createSequence', async () => {
     mocks.mockIsEligible.mockResolvedValue({ eligible: true })
     mocks.mockCreateSequence.mockResolvedValue('seq-cap')
     mocks.mockGetNextPendingStep.mockResolvedValue(null)
-    const db = makeDb('0')
 
     const jobData: OutreachJobData = {
       ...baseJobData,
@@ -218,7 +381,7 @@ describe('processOutreachJob', () => {
       capacityScore: 75
     }
 
-    await processOutreachJob(jobData, db)
+    await processOutreachJob(jobData, makeDb({}), makeSender())
 
     expect(mocks.mockCreateSequence).toHaveBeenCalledWith(
       'prospect-123',

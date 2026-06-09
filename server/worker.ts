@@ -3,6 +3,11 @@ import { initializeQueues, closeQueues } from './queue/queues'
 import { createIngestionWorker } from './queue/workers/ingestionWorker'
 import { createEnrichmentWorker } from './queue/workers/enrichmentWorker'
 import { createHealthWorker } from './queue/workers/healthWorker'
+import { createOutreachWorker } from './queue/workers/outreachWorker'
+import { createDigestWorker } from './queue/workers/digestWorker'
+import { createTerminationDetectionWorker } from './queue/workers/terminationDetectionWorker'
+import { createVelocityAnalysisWorker } from './queue/workers/velocityAnalysisWorker'
+import { createPortalProbeWorker } from './queue/workers/portalProbeWorker'
 import { redisConnection } from './queue/connection'
 import { config } from './config'
 
@@ -30,11 +35,18 @@ class WorkerProcess {
       // Initialize queues
       initializeQueues()
 
-      // Start workers
+      // Start workers — one consumer per queue the scheduler enqueues into.
+      // Every worker registered here is also drained by the 30s graceful
+      // shutdown handler below (via the shared this.workers list).
       console.log('Starting workers...')
       this.workers.push(createIngestionWorker())
       this.workers.push(createEnrichmentWorker())
       this.workers.push(createHealthWorker())
+      this.workers.push(createOutreachWorker())
+      this.workers.push(createDigestWorker())
+      this.workers.push(createTerminationDetectionWorker())
+      this.workers.push(createVelocityAnalysisWorker())
+      this.workers.push(createPortalProbeWorker())
 
       console.log('')
       console.log('✓ Worker process started successfully')

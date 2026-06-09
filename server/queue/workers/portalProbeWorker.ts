@@ -1,3 +1,7 @@
+import { Worker, Job } from 'bullmq'
+import { redisConnection } from '../connection'
+import { database } from '../../database/connection'
+
 export interface PortalProbeResult {
   stateCode: string
   probeTimestamp: string
@@ -178,6 +182,50 @@ export async function processProbeJob(
   }
 
   return results
+}
+
+export function createPortalProbeWorker() {
+  const { client } = redisConnection.connect()
+
+  // AlertService exposes no portal-probe `handleAlert` surface (its alert
+  // domain is prospect/health-shaped and does not persist), so probe alerts
+  // are routed to a logging adapter for now. Probe results themselves are
+  // always persisted to portal_probe_results — the worker's primary job runs
+  // against current schema; only the alert side-channel degrades to logging.
+  const alertService = {
+    async handleAlert(trigger: { type: string; stateCode: string; error?: string }) {
+      console.warn(
+        `[probe] ALERT (${trigger.type}) for ${trigger.stateCode}${trigger.error ? `: ${trigger.error}` : ''} — ` +
+          `no portal-probe alert sink wired; logged only`
+      )
+      return null
+    }
+  }
+
+  const worker = new Worker<PortalProbeJobData, PortalProbeResult[]>(
+    'portal-health-probes',
+    (job: Job<PortalProbeJobData>) => processProbeJob(job.data.states, database, alertService),
+    {
+      connection: client,
+      concurrency: 1
+    }
+  )
+
+  worker.on('completed', (job) => {
+    console.log(`[Portal Probe Worker] Job ${job.id} completed`)
+  })
+
+  worker.on('failed', (job, err) => {
+    console.error(`[Portal Probe Worker] Job ${job?.id} failed:`, err.message)
+  })
+
+  worker.on('error', (err) => {
+    console.error('[Portal Probe Worker] Worker error:', err)
+  })
+
+  console.log('✓ Portal probe worker started')
+
+  return worker
 }
 
 // Export for testing

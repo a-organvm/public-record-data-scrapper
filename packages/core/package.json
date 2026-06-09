@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./database": "./src/database.ts",
     "./identity": "./src/identity.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./enrichment": "./src/enrichment/index.ts"
   },
   "peerDependencies": {
     "pg": "^8.16.3"

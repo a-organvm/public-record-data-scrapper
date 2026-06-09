@@ -18,6 +18,10 @@ import { AnalyticsTab } from '@/features/analytics'
 import { RequalificationTab } from '@/features/requalification'
 import { AgenticTab } from '@/features/agentic'
 import { CoverageTab } from '@/features/coverage/CoverageTab'
+import { DealsTab } from '@/features/deals'
+import { ContactsTab } from '@/features/contacts'
+import { CommunicationsTab } from '@/features/communications'
+import { ComplianceTab } from '@/features/compliance'
 
 // Hooks
 import { useProspectFilters } from '@/hooks/useProspectFilters'
@@ -251,6 +255,22 @@ function App() {
 
             <TabsContent value="coverage" className="space-y-4 sm:space-y-6">
               <CoverageTab />
+            </TabsContent>
+
+            <TabsContent value="deals" className="space-y-4 sm:space-y-6">
+              <DealsTab />
+            </TabsContent>
+
+            <TabsContent value="contacts" className="space-y-4 sm:space-y-6">
+              <ContactsTab />
+            </TabsContent>
+
+            <TabsContent value="communications" className="space-y-4 sm:space-y-6">
+              <CommunicationsTab />
+            </TabsContent>
+
+            <TabsContent value="compliance" className="space-y-4 sm:space-y-6">
+              <ComplianceTab />
             </TabsContent>
 
             <TabsContent value="agentic" className="space-y-4 sm:space-y-6">
