@@ -332,14 +332,12 @@ export function validateScheduleConfig(data: unknown): ScheduleConfigOutput {
  * Get validation errors in human-readable format
  */
 export function formatValidationErrors(error: z.ZodError): string[] {
-  return (
-    (error as { issues?: Array<{ path: (string | number)[]; message: string }> }).issues?.map(
-      (err) => {
-        const path = err.path.join('.')
-        return `${path}: ${err.message}`
-      }
-    ) || []
-  )
+  // `issues` is the canonical typed accessor in zod v4 (`.errors` was the
+  // deprecated v3 alias). Path segments are PropertyKey, hence map(String).
+  return error.issues.map((err) => {
+    const path = err.path.map(String).join('.')
+    return `${path}: ${err.message}`
+  })
 }
 
 /**

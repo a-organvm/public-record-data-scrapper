@@ -521,28 +521,13 @@ export class PersonalizationEngine {
       [
         profile.preferences.preferredIndustries.length > 0,
         profile.preferences.preferredStates.length > 0,
-        (profile.preferences as unknown as Record<string, unknown>).preferredDealSizes &&
-          ((profile.preferences as unknown as Record<string, unknown>)
-            .preferredDealSizes as unknown[]) &&
-          (
-            (profile.preferences as unknown as Record<string, unknown>)
-              .preferredDealSizes as unknown[]
-          ).length > 0,
-        (profile.preferences as unknown as Record<string, unknown>).preferredChannels &&
-          ((profile.preferences as unknown as Record<string, unknown>)
-            .preferredChannels as unknown[]) &&
-          (
-            (profile.preferences as unknown as Record<string, unknown>)
-              .preferredChannels as unknown[]
-          ).length > 0
+        (profile.preferences.preferredDealSizes?.length ?? 0) > 0,
+        (profile.preferences.preferredChannels?.length ?? 0) > 0
       ].filter(Boolean).length / 4
 
     const behaviorCoverage = Math.min(profile.behavior.conversionPatterns.length / 25, 1)
     const feedbackCoverage = Math.min(
-      (profile as unknown as Record<string, unknown>).feedback
-        ? (((profile as unknown as Record<string, unknown>).feedback as Record<string, unknown>)
-            .totalInteractions as number) / 20
-        : 0,
+      profile.feedback ? profile.feedback.totalInteractions / 20 : 0,
       1
     )
 

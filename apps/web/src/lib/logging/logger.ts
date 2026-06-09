@@ -74,7 +74,8 @@ function createLogger(): winston.Logger {
   const env = process.env.NODE_ENV || 'development'
   const logLevel = process.env.LOG_LEVEL || (env === 'production' ? 'info' : 'debug')
 
-  const transports: winston.Transport[] = []
+  // winston exports its abstract transport base class as lowercase `transport`
+  const transports: winston.transport[] = []
 
   // Console transport (always enabled)
   transports.push(

@@ -267,7 +267,7 @@ export async function fetchDealStats(orgId: string, signal?: AbortSignal): Promi
 export async function createDeal(params: CreateDealParams, signal?: AbortSignal): Promise<Deal> {
   return apiRequest<Deal>('/deals', {
     method: 'POST',
-    body: params as unknown as Record<string, unknown>,
+    body: params,
     signal
   })
 }
@@ -280,7 +280,7 @@ export async function updateDeal(
 ): Promise<Deal> {
   return apiRequest<Deal>(`/deals/${encodeURIComponent(id)}?org_id=${encodeURIComponent(orgId)}`, {
     method: 'PUT',
-    body: params as unknown as Record<string, unknown>,
+    body: params,
     signal
   })
 }
@@ -295,7 +295,7 @@ export async function moveDealToStage(
     `/deals/${encodeURIComponent(id)}/stage?org_id=${encodeURIComponent(orgId)}`,
     {
       method: 'PATCH',
-      body: params as unknown as Record<string, unknown>,
+      body: params,
       signal
     }
   )
@@ -308,7 +308,7 @@ export async function uploadDealDocument(
 ): Promise<DealDocument> {
   return apiRequest<DealDocument>(`/deals/${encodeURIComponent(dealId)}/documents`, {
     method: 'POST',
-    body: params as unknown as Record<string, unknown>,
+    body: params,
     signal
   })
 }

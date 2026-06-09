@@ -113,26 +113,25 @@ export class MigrationRunner {
   private async runMigration(migration: Migration): Promise<void> {
     logger.info(`Running migration: ${migration.name}`)
 
-    try {
-      await this.client.query('BEGIN')
-
+    // withTransaction pins a single pooled connection for the whole
+    // BEGIN/SQL/COMMIT sequence (and ROLLBACKs on error). Issuing BEGIN/COMMIT
+    // through this.client.query() would route each statement through
+    // pool.query(), where they can land on different connections and lose
+    // atomicity entirely.
+    await this.client.withTransaction(async (tx) => {
       // Execute migration SQL
-      await this.client.query(migration.sql)
+      await tx.query(migration.sql)
 
       // Record migration along with its checksum so future edits can be
       // detected.
-      await this.client.query(
-        'INSERT INTO schema_migrations (id, name, checksum) VALUES ($1, $2, $3)',
-        [migration.id, migration.name, migration.checksum ?? computeChecksum(migration.sql)]
-      )
+      await tx.query('INSERT INTO schema_migrations (id, name, checksum) VALUES ($1, $2, $3)', [
+        migration.id,
+        migration.name,
+        migration.checksum ?? computeChecksum(migration.sql)
+      ])
+    })
 
-      await this.client.query('COMMIT')
-
-      logger.info(`Migration completed: ${migration.name}`)
-    } catch (error) {
-      await this.client.query('ROLLBACK')
-      throw error
-    }
+    logger.info(`Migration completed: ${migration.name}`)
   }
 
   /**

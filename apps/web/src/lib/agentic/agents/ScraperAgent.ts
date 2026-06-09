@@ -14,21 +14,11 @@ import {
   ImprovementSuggestion
 } from '../types'
 
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore - scripts directory not in tsconfig include; import resolved by bundler
-import { CaliforniaScraper } from '../../../../scripts/scrapers/states/california'
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore - scripts directory not in tsconfig include; import resolved by bundler
-import { TexasScraper } from '../../../../scripts/scrapers/states/texas'
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore - scripts directory not in tsconfig include; import resolved by bundler
-import { FloridaScraper } from '../../../../scripts/scrapers/states/florida'
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore - scripts directory not in tsconfig include; import resolved by bundler
-import { NewYorkScraper } from '../../../../scripts/scrapers/states/newyork'
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore - scripts directory not in tsconfig include; import resolved by bundler
-import { BaseScraper } from '../../../../scripts/scrapers/base-scraper'
+import { CaliforniaScraper } from '../../../../../../scripts/scrapers/states/california'
+import { TexasScraper } from '../../../../../../scripts/scrapers/states/texas'
+import { FloridaScraper } from '../../../../../../scripts/scrapers/states/florida'
+import { NewYorkScraper } from '../../../../../../scripts/scrapers/states/newyork'
+import { BaseScraper } from '../../../../../../scripts/scrapers/base-scraper'
 
 export class ScraperAgent extends BaseAgent {
   private scrapers: Map<string, BaseScraper> = new Map()

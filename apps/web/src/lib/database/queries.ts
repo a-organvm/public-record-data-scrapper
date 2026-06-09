@@ -307,8 +307,10 @@ export class QueryBuilder {
     ])
 
     for (const [key, value] of Object.entries(updates)) {
-      if (allowedColumns.has(key)) {
-        const snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase()
+      // Snake-case BEFORE the allowlist check — callers pass camelCase keys
+      // (claimedBy, claimedDate) and the allowlist holds column names.
+      const snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase()
+      if (allowedColumns.has(snakeKey)) {
         values.push(value)
         sets.push(`${snakeKey} = $${values.length}`)
       }

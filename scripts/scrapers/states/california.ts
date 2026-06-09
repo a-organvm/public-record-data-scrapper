@@ -5,7 +5,7 @@
  * Uses Puppeteer for real web scraping with anti-detection measures
  */
 
-import { BaseScraper, ScraperResult } from '../base-scraper'
+import { BaseScraper, ScraperResult, UCCFiling } from '../base-scraper'
 import puppeteer, { Browser, Page } from 'puppeteer'
 import { existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
@@ -162,9 +162,12 @@ export class CaliforniaScraper extends BaseScraper {
    */
   private async performSearch(companyName: string, searchUrl: string): Promise<ScraperResult> {
     let page: Page | null = null
-    let result: ScraperResult | null = null
+    // Held on an object property (not a let binding): TS control-flow analysis
+    // does not track assignments made through the `finalize` closure, so a
+    // plain `let` still reads as null in the `finally` block.
+    const outcome: { result: ScraperResult | null } = { result: null }
     const finalize = (next: ScraperResult): ScraperResult => {
-      result = next
+      outcome.result = next
       return next
     }
 
@@ -172,6 +175,9 @@ export class CaliforniaScraper extends BaseScraper {
       const browser = await this.getBrowser()
       page = await browser.newPage()
       this.lastPage = page
+      // Non-null alias for use inside closures below — TS resets the
+      // null-narrowing of `page` inside nested functions.
+      const activePage = page
 
       this.log('info', 'Browser page created', { companyName })
 
@@ -193,7 +199,7 @@ export class CaliforniaScraper extends BaseScraper {
 
       const isWafBlocked = async (): Promise<boolean> => {
         try {
-          return await page.evaluate(() => {
+          return await activePage.evaluate(() => {
             const bodyText = document.body.innerText.toLowerCase()
             return (
               bodyText.includes('incapsula') ||
@@ -294,12 +300,12 @@ export class CaliforniaScraper extends BaseScraper {
       }
 
       const fillSearchForm = async (): Promise<boolean> => {
-        const mainFilled = await fillSearchFormInFrame(page.mainFrame())
+        const mainFilled = await fillSearchFormInFrame(activePage.mainFrame())
         if (mainFilled) {
           return true
         }
-        for (const frame of page.frames()) {
-          if (frame === page.mainFrame()) {
+        for (const frame of activePage.frames()) {
+          if (frame === activePage.mainFrame()) {
             continue
           }
           if (await fillSearchFormInFrame(frame)) {
@@ -339,12 +345,12 @@ export class CaliforniaScraper extends BaseScraper {
         hasResults: boolean
         hasNoResults: boolean
       }> => {
-        let combined = await detectPreloadedResultsInFrame(page.mainFrame())
+        let combined = await detectPreloadedResultsInFrame(activePage.mainFrame())
         if (combined.hasResults || combined.hasNoResults) {
           return combined
         }
-        for (const frame of page.frames()) {
-          if (frame === page.mainFrame()) {
+        for (const frame of activePage.frames()) {
+          if (frame === activePage.mainFrame()) {
             continue
           }
           const result = await detectPreloadedResultsInFrame(frame)
@@ -706,7 +712,7 @@ export class CaliforniaScraper extends BaseScraper {
     } finally {
       // Cleanup page in all cases
       if (page) {
-        const keepPage = this.keepPageOpenOnFailure && result && !result.success
+        const keepPage = this.keepPageOpenOnFailure && outcome.result && !outcome.result.success
         if (!keepPage) {
           await page.close().catch((err) => {
             this.log('warn', 'Error closing page', {

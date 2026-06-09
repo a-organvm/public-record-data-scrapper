@@ -30,6 +30,12 @@ export interface UserProfile {
   learningModel: PersonalizationModel
   achievements: Achievement[]
   goals: UserGoal[]
+  // Aggregate feedback stats, populated by the engine as interactions accrue
+  feedback?: UserFeedbackSummary
+}
+
+export interface UserFeedbackSummary {
+  totalInteractions: number
 }
 
 export interface UserPreferences {
@@ -38,6 +44,10 @@ export interface UserPreferences {
   preferredStates: string[]
   dealSizeRange: [number, number]
   riskTolerance: RiskTolerance
+
+  // Learned preferences, populated by the personalization engine over time
+  preferredDealSizes?: number[]
+  preferredChannels?: OutreachChannel[]
 
   // UI preferences
   dashboardLayout: DashboardLayout

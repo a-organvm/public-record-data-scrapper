@@ -173,7 +173,7 @@ export async function createContact(
 ): Promise<Contact> {
   return apiRequest<Contact>('/contacts', {
     method: 'POST',
-    body: params as unknown as Record<string, unknown>,
+    body: params,
     signal
   })
 }
@@ -188,7 +188,7 @@ export async function updateContact(
     `/contacts/${encodeURIComponent(id)}?org_id=${encodeURIComponent(orgId)}`,
     {
       method: 'PUT',
-      body: params as unknown as Record<string, unknown>,
+      body: params,
       signal
     }
   )
@@ -204,7 +204,7 @@ export async function linkContactToProspect(
     `/contacts/${encodeURIComponent(contactId)}/link/${encodeURIComponent(prospectId)}`,
     {
       method: 'POST',
-      body: params as unknown as Record<string, unknown>,
+      body: params,
       signal
     }
   )
@@ -231,7 +231,7 @@ export async function logContactActivity(
 ): Promise<ContactActivity> {
   return apiRequest<ContactActivity>(`/contacts/${encodeURIComponent(contactId)}/activities`, {
     method: 'POST',
-    body: params as unknown as Record<string, unknown>,
+    body: params,
     signal
   })
 }
