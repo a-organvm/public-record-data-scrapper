@@ -155,6 +155,10 @@ git tag v1.0.0 && git push origin v1.0.0
 The web dashboard auto-deploys to GitHub Pages on every push to `main` via the
 [`pages` workflow](.github/workflows/pages.yml).
 
+> **Deploying to production?** See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for
+> the required secrets (the server fails closed on boot without them), migration
+> ordering, branch-protection guardrails, and the smoke-test flow.
+
 ---
 
 ## Architecture
