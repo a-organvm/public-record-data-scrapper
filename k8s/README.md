@@ -42,7 +42,14 @@ This directory contains Kubernetes manifests for deploying the UCC-MCA Intellige
      --namespace ucc-mca \
      --from-literal=DATABASE_URL='postgresql://...' \
      --from-literal=REDIS_URL='rediss://...' \
-     --from-literal=JWT_SECRET='your-secure-secret'
+     --from-literal=JWT_SECRET='your-secure-secret' \
+     --from-literal=AUTH0_CLIENT_SECRET='...' \
+     --from-literal=STRIPE_SECRET_KEY='...' \
+     --from-literal=STRIPE_WEBHOOK_SECRET='...' \
+     --from-literal=TWILIO_AUTH_TOKEN='...' \
+     --from-literal=SENDGRID_WEBHOOK_VERIFICATION_KEY='...' \
+     --from-literal=PLAID_CLIENT_ID='...' \
+     --from-literal=PLAID_SECRET='...'
    ```
 
 3. **Deploy application:**
@@ -66,6 +73,10 @@ This directory contains Kubernetes manifests for deploying the UCC-MCA Intellige
 ### Environment Variables
 
 See `configmap.yaml` for non-sensitive config and `secrets.yaml` for sensitive values.
+Production startup validates `JWT_SECRET`, `DATABASE_URL`, `CORS_ORIGIN`, the
+Stripe/Twilio/SendGrid webhook secrets, and Plaid API credentials. Keep
+`DATABASE_URL` pointed at a non-owner Postgres role for the API/worker so RLS
+policies from migration `018` actually apply.
 
 ### Scaling
 
@@ -88,6 +99,10 @@ Adjust based on your observed usage.
 ## Production Checklist
 
 - [ ] Replace placeholder secrets with real values
+- [ ] Configure Auth0 to issue an `org_id` claim, or a namespaced claim ending in `/org_id`
+- [ ] Run migrations `014`-`019` before sending production traffic to hardened routes
+- [ ] Use a non-owner, non-`BYPASSRLS` Postgres role for API/worker `DATABASE_URL`
+- [ ] Confirm `organizations.subscription_tier` values match entitlement intent
 - [ ] Configure TLS certificate (cert-manager or manual)
 - [ ] Update ingress hostname
 - [ ] Set up external PostgreSQL and Redis

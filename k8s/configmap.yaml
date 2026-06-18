@@ -10,6 +10,9 @@ data:
   NODE_ENV: "production"
   PORT: "3000"
   LOG_LEVEL: "info"
+  CORS_ORIGIN: "https://your-domain.com"
+  PUBLIC_URL: "https://your-domain.com"
+  TRUST_PROXY: "1"
 
   # Rate limiting
   RATE_LIMIT_WINDOW_MS: "900000"
@@ -22,3 +25,14 @@ data:
   # JWT configuration
   JWT_EXPIRES_IN: "1h"
   JWT_REFRESH_EXPIRES_IN: "7d"
+  JWT_ORG_CLAIM: "org_id"
+  JWT_TIER_CLAIM: "tier"
+
+  # Auth0 / OIDC configuration. Auth0 must issue an org_id claim (or a
+  # namespaced claim ending in /org_id or /orgId) on access tokens.
+  AUTH0_DOMAIN: "your-auth0-domain.auth0.com"
+  AUTH0_CLIENT_ID: "your-auth0-client-id"
+  AUTH0_AUDIENCE: "https://api.ucc-intelligence.com"
+
+  # Plaid webhook verification fetches ES256 public JWKs with API credentials.
+  PLAID_ENV: "production"

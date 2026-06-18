@@ -15,6 +15,14 @@ interface Migration {
   sql: string
 }
 
+function normalizeMigrationVersion(version: unknown): string {
+  const raw = String(version).trim()
+  if (/^\d+$/.test(raw)) {
+    return raw.padStart(3, '0')
+  }
+  return raw
+}
+
 class MigrationRunner {
   private client: Client
 
@@ -50,7 +58,7 @@ class MigrationRunner {
     const result = await this.client.query(
       'SELECT version FROM schema_migrations ORDER BY (version)::int'
     )
-    return result.rows.map((row) => String(row.version))
+    return result.rows.map((row) => normalizeMigrationVersion(row.version))
   }
 
   async getPendingMigrations(): Promise<Migration[]> {

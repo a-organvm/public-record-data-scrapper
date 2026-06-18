@@ -51,10 +51,6 @@ spec:
             - secretRef:
                 name: ucc-mca-secrets
 
-          env:
-            - name: CORS_ORIGIN
-              value: "https://your-domain.com"
-
           resources:
             requests:
               cpu: "100m"

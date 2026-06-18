@@ -8,9 +8,9 @@
  */
 
 import { readFileSync, readdirSync } from 'fs'
-import { join, dirname } from 'path'
+import { join, dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
-import { Pool } from 'pg'
+import { Pool, type PoolConfig } from 'pg'
 import { config } from 'dotenv'
 
 // ESM compatibility
@@ -20,13 +20,46 @@ const __dirname = dirname(__filename)
 // Load environment variables
 config()
 
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME || 'ucc_mca',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || ''
-})
+export function normalizeMigrationVersion(version: unknown): string {
+  const raw = String(version).trim()
+  if (/^\d+$/.test(raw)) {
+    return raw.padStart(3, '0')
+  }
+  return raw
+}
+
+function createPoolConfig(): PoolConfig {
+  if (process.env.DATABASE_URL) {
+    return { connectionString: process.env.DATABASE_URL }
+  }
+
+  return {
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    database: process.env.DB_NAME || 'ucc_mca',
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || ''
+  }
+}
+
+function describeDatabaseTarget(): { database: string; host: string; port: string } {
+  if (process.env.DATABASE_URL) {
+    const parsed = new URL(process.env.DATABASE_URL)
+    return {
+      database: parsed.pathname.replace(/^\//, '') || '(from DATABASE_URL)',
+      host: parsed.hostname || '(from DATABASE_URL)',
+      port: parsed.port || '(default)'
+    }
+  }
+
+  return {
+    database: process.env.DB_NAME || 'ucc_mca',
+    host: process.env.DB_HOST || 'localhost',
+    port: process.env.DB_PORT || '5432'
+  }
+}
+
+const pool = new Pool(createPoolConfig())
 
 interface Migration {
   version: string
@@ -38,7 +71,7 @@ interface Migration {
 async function getAppliedMigrations(): Promise<Set<string>> {
   try {
     const result = await pool.query('SELECT version FROM schema_migrations ORDER BY version')
-    return new Set(result.rows.map((row) => row.version))
+    return new Set(result.rows.map((row) => normalizeMigrationVersion(row.version)))
   } catch {
     // If table doesn't exist, no migrations have been applied
     console.log('No migrations table found. Will create on first migration.')
@@ -57,7 +90,10 @@ async function recordMigration(migration: Migration): Promise<void> {
   )
 }
 
-function getPendingMigrations(migrationsDir: string, appliedVersions: Set<string>): Migration[] {
+export function getPendingMigrations(
+  migrationsDir: string,
+  appliedVersions: Set<string>
+): Migration[] {
   const files = readdirSync(migrationsDir)
     .filter((f) => f.endsWith('.sql') && !f.includes('_down.sql'))
     .sort()
@@ -73,7 +109,7 @@ function getPendingMigrations(migrationsDir: string, appliedVersions: Set<string
 
     const [, version, name] = match
 
-    if (!appliedVersions.has(version)) {
+    if (!appliedVersions.has(normalizeMigrationVersion(version))) {
       migrations.push({
         version,
         name,
@@ -105,11 +141,13 @@ async function runMigration(migration: Migration): Promise<void> {
 }
 
 async function main() {
+  const target = describeDatabaseTarget()
+
   console.log('Database Migration Runner')
   console.log('='.repeat(60))
-  console.log(`Database: ${process.env.DB_NAME || 'ucc_mca'}`)
-  console.log(`Host: ${process.env.DB_HOST || 'localhost'}`)
-  console.log(`Port: ${process.env.DB_PORT || '5432'}`)
+  console.log(`Database: ${target.database}`)
+  console.log(`Host: ${target.host}`)
+  console.log(`Port: ${target.port}`)
   console.log('='.repeat(60))
 
   try {
@@ -156,7 +194,9 @@ async function main() {
   }
 }
 
-// Run the migration
-main()
+// Run the migration when invoked as a CLI, but keep pure helpers importable by tests.
+if (process.argv[1] && resolve(process.argv[1]) === __filename) {
+  main()
+}
 
 export { main as runMigrations }

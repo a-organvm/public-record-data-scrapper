@@ -1,5 +1,9 @@
 # Deployment Guide - UCC-MCA Intelligence Platform
 
+For the PR #234 security-hardening production gate, complete
+[`docs/DEPLOYMENT.md`](../DEPLOYMENT.md) before sending live traffic to the
+hardened API.
+
 ## Table of Contents
 
 1. [Infrastructure Requirements](#infrastructure-requirements)

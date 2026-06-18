@@ -15,10 +15,10 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
  * behind a known reverse proxy (ALB/Nginx) so X-Forwarded-* headers can be
  * trusted for req.ip / req.secure.
  */
-function parseTrustProxy(value: string | undefined): boolean | number {
+export function parseTrustProxy(value: string | undefined): boolean | number {
   if (value === undefined || value === '') return false
   const lowered = value.toLowerCase()
-  if (lowered === 'true' || lowered === '1') return true
+  if (lowered === 'true') return true
   if (lowered === 'false' || lowered === '0') return false
   const asNumber = Number.parseInt(value, 10)
   if (Number.isFinite(asNumber) && asNumber >= 0) return asNumber
@@ -202,8 +202,11 @@ export function validateConfig(): void {
     if (!process.env.TWILIO_AUTH_TOKEN) {
       errors.push('TWILIO_AUTH_TOKEN is required in production')
     }
-    if (!process.env.PLAID_WEBHOOK_SECRET) {
-      errors.push('PLAID_WEBHOOK_SECRET is required in production')
+    if (!process.env.PLAID_CLIENT_ID) {
+      errors.push('PLAID_CLIENT_ID is required in production')
+    }
+    if (!process.env.PLAID_SECRET) {
+      errors.push('PLAID_SECRET is required in production')
     }
     if (!process.env.SENDGRID_WEBHOOK_VERIFICATION_KEY) {
       errors.push('SENDGRID_WEBHOOK_VERIFICATION_KEY is required in production')
