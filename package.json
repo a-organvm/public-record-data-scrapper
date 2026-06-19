@@ -19,7 +19,7 @@
     "deploy:verify": "tsx scripts/verify-deploy-prereqs.ts",
     "build:desktop": "npm --workspace apps/desktop run build",
     "start": "node dist/server.cjs",
-    "start:worker": "node --import tsx server/worker.ts",
+    "start:worker": "node dist/worker.cjs",
     "lint": "eslint .",
     "optimize": "vite optimize --config apps/web/vite.config.ts",
     "preview": "npm --workspace apps/web run preview",
