@@ -7,6 +7,7 @@ import { ScoringService } from '../services/ScoringService'
 import { QualificationService } from '../services/QualificationService'
 import { UnderwritingService } from '../services/UnderwritingService'
 import type { UnderwritingFeatures } from '../services/UnderwritingService'
+import { LeadExportService, serializeLeadExportCsv } from '../services/LeadExportService'
 import { getResolvedDataTier, type ResolvedDataTier } from '../middleware/dataTier'
 import { tierGate } from '../middleware/tierGate'
 
@@ -32,6 +33,61 @@ const querySchema = z.object({
   sort_by: z.enum(['priority_score', 'created_at', 'company_name']).default('priority_score'),
   sort_order: z.enum(['asc', 'desc']).default('desc')
 })
+
+const exportQuerySchema = z
+  .object({
+    format: z.enum(['json', 'csv']).default('json'),
+    limit: z
+      .string()
+      .regex(/^\d+$/)
+      .transform((v) => Math.min(Math.max(Number(v), 1), 1000))
+      .default('100'),
+    offset: z
+      .string()
+      .regex(/^\d+$/)
+      .transform((v) => Math.max(Number(v), 0))
+      .default('0'),
+    state: z
+      .string()
+      .regex(/^[A-Za-z]{2}$/)
+      .transform((v) => v.toUpperCase())
+      .optional(),
+    industry: z.string().optional(),
+    status: z
+      .enum([
+        'new',
+        'claimed',
+        'contacted',
+        'qualified',
+        'dead',
+        'closed-won',
+        'closed-lost',
+        'unclaimed'
+      ])
+      .optional(),
+    min_score: z
+      .string()
+      .regex(/^\d+$/)
+      .transform(Number)
+      .default('70'),
+    max_score: z
+      .string()
+      .regex(/^\d+$/)
+      .transform(Number)
+      .optional()
+  })
+  .refine((query) => query.min_score >= 0 && query.min_score <= 100, {
+    message: 'min_score must be between 0 and 100',
+    path: ['min_score']
+  })
+  .refine((query) => query.max_score === undefined || query.max_score <= 100, {
+    message: 'max_score must be between 0 and 100',
+    path: ['max_score']
+  })
+  .refine((query) => query.max_score === undefined || query.max_score >= query.min_score, {
+    message: 'max_score must be greater than or equal to min_score',
+    path: ['max_score']
+  })
 
 const createProspectSchema = z.object({
   company_name: z.string().min(1),
@@ -125,6 +181,7 @@ const underwriteBodySchema = z.object({
 })
 
 type ProspectsQuery = z.infer<typeof querySchema>
+type LeadExportQuery = z.infer<typeof exportQuerySchema>
 
 const PROSPECT_TIER_LIMITS: Record<ResolvedDataTier, number> = {
   'free-tier': 20,
@@ -209,6 +266,34 @@ router.delete(
     await prospectsService.batchDelete(ids)
 
     res.status(204).send()
+  })
+)
+
+// GET /api/prospects/export/leads - Export scored MCA leads as a JSON batch or
+// CSV file. Registered before `/:id` so `export` is not treated as a prospect id.
+router.get(
+  '/export/leads',
+  validateRequest({ query: exportQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const query = req.query as LeadExportQuery
+    const exportService = new LeadExportService()
+    const batch = await exportService.exportLeads({
+      state: query.state,
+      industry: query.industry,
+      status: query.status,
+      minScore: query.min_score,
+      maxScore: query.max_score,
+      limit: query.limit,
+      offset: query.offset
+    })
+
+    if (query.format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="${batch.batch.id}.csv"`)
+      return res.send(serializeLeadExportCsv(batch))
+    }
+
+    res.json(batch)
   })
 )
 

@@ -113,6 +113,26 @@ The tool will:
 - Save individual results for each company
 - Generate a summary.json file
 
+#### 6. Export Scored MCA Leads
+Export the sellable lead batch from the database as JSON and CSV:
+
+```bash
+npm run scrape -- lead-export --min-score 70 --limit 100 --output-dir ./lead-export
+```
+
+Options:
+- `-o, --output-dir <dir>`: Output directory (default: `./lead-export`)
+- `--format <format>`: `json`, `csv`, or `both` (default: `both`)
+- `--min-score <score>`: Minimum MCA score (default: `70`)
+- `--max-score <score>`: Optional maximum MCA score
+- `--state <code>`: Filter by state
+- `--industry <name>`: Filter by industry
+- `--status <status>`: Filter by prospect status
+- `--limit <count>`: Batch size (default: `100`, max: `1000`)
+- `--offset <count>`: Offset for pagination
+
+See [MCA Lead Export](./LEAD_EXPORT.md) for API usage and sample files.
+
 ## Data Sources
 
 ### Free Tier (No API Key Required)

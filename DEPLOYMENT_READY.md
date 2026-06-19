@@ -1,3 +1,34 @@
+# Deployment Ready - Lead Export
+
+## Current Sellable Output: Scored MCA Lead Batches
+
+The repo now exposes the first sellable data output: scored Merchant Cash Advance lead batches
+available as both JSON and CSV.
+
+### Access Points
+
+| Surface | Command / Endpoint | Output |
+| --- | --- | --- |
+| CLI | `npm run scrape -- lead-export --min-score 70 --limit 100 --output-dir ./lead-export` | Timestamped `.json` and `.csv` files |
+| API JSON | `GET /api/prospects/export/leads?min_score=70&limit=100` | JSON batch with metadata and leads |
+| API CSV | `GET /api/prospects/export/leads?format=csv&min_score=70` | Downloadable CSV |
+
+### Included Artifacts
+
+- Implementation: `server/services/LeadExportService.ts`
+- API route: `GET /api/prospects/export/leads`
+- CLI command: `npm run scrape -- lead-export`
+- Guide: `docs/guides/LEAD_EXPORT.md`
+- Samples: `examples/lead-export-sample.json`, `examples/lead-export-sample.csv`
+- OpenAPI contract: `server/openapi.yaml`
+
+### Batch Fields
+
+Lead batches include company context, MCA score, A-F grade, recommendation, score confidence,
+estimated revenue, default timing, UCC filing counts, secured parties, and sales narrative.
+
+---
+
 # 🚀 Deployment Ready - Video & Access Points
 
 ## ✅ Complete Implementation

@@ -206,6 +206,83 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/prospects/export/leads:
+    get:
+      tags:
+        - Prospects
+      summary: Export scored MCA leads
+      description: Returns a bounded batch of scored MCA leads as JSON or CSV.
+      parameters:
+        - name: format
+          in: query
+          description: Response format.
+          schema:
+            type: string
+            enum: [json, csv]
+            default: json
+        - name: min_score
+          in: query
+          description: Minimum MCA score to include.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+            default: 70
+        - name: max_score
+          in: query
+          description: Maximum MCA score to include.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - name: state
+          in: query
+          description: Optional two-letter state filter.
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 2
+            example: CA
+        - name: industry
+          in: query
+          description: Optional industry filter.
+          schema:
+            $ref: '#/components/schemas/Industry'
+        - name: status
+          in: query
+          description: Optional prospect status filter.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Number of leads to return in this batch.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: offset
+          in: query
+          description: Zero-based offset for the next batch.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Lead export batch.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadExportBatch'
+            text/csv:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /api/prospects/{id}:
     get:
       tags:
@@ -1967,6 +2044,107 @@ components:
             $ref: '#/components/schemas/Prospect'
         pagination:
           $ref: '#/components/schemas/Pagination'
+
+    LeadExportBatch:
+      type: object
+      properties:
+        batch:
+          type: object
+          properties:
+            id:
+              type: string
+              example: lead-export-2026-06-19T00-00-00-000Z
+            generated_at:
+              type: string
+              format: date-time
+            filters:
+              type: object
+              properties:
+                state:
+                  type: string
+                industry:
+                  type: string
+                status:
+                  type: string
+                min_score:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                max_score:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+            limit:
+              type: integer
+            offset:
+              type: integer
+            count:
+              type: integer
+            total:
+              type: integer
+            next_offset:
+              type: integer
+              nullable: true
+        leads:
+          type: array
+          items:
+            $ref: '#/components/schemas/LeadExportLead'
+
+    LeadExportLead:
+      type: object
+      properties:
+        prospect_id:
+          type: string
+        company_name:
+          type: string
+        state:
+          type: string
+        industry:
+          type: string
+        status:
+          type: string
+        mca_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        score_grade:
+          type: string
+          enum: [A, B, C, D, F]
+        recommendation:
+          type: string
+          enum: [high_priority, moderate_priority, low_priority, pass]
+        score_confidence:
+          type: integer
+          minimum: 0
+          maximum: 100
+        estimated_revenue:
+          type: number
+          nullable: true
+        default_date:
+          type: string
+          format: date
+          nullable: true
+        days_since_default:
+          type: number
+          nullable: true
+        last_filing_date:
+          type: string
+          format: date
+          nullable: true
+        ucc_filing_count:
+          type: integer
+        active_ucc_count:
+          type: integer
+        terminated_ucc_count:
+          type: integer
+        lapsed_ucc_count:
+          type: integer
+        secured_parties:
+          type: array
+          items:
+            type: string
+        narrative:
+          type: string
 
     CreateProspectRequest:
       type: object

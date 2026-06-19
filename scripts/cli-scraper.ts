@@ -15,6 +15,9 @@ import { ScraperAgent } from '../apps/web/src/lib/agentic/agents/ScraperAgent'
 import { DataNormalizationAgent } from '../apps/web/src/lib/agentic/agents/DataNormalizationAgent'
 import { EnrichmentOrchestratorAgent } from '../apps/web/src/lib/agentic/agents/EnrichmentOrchestratorAgent'
 import { UCCFiling } from './scrapers/base-scraper'
+import { database } from '../server/database/connection'
+import { LeadExportService, serializeLeadExportCsv } from '../server/services/LeadExportService'
+import type { LeadExportFormat } from '../server/services/LeadExportService'
 
 const program = new Command()
 
@@ -364,6 +367,80 @@ program
     }
   })
 
+// Lead export command
+program
+  .command('lead-export')
+  .description('Export scored MCA leads as CSV and JSON batch files')
+  .option('-o, --output-dir <dir>', 'Output directory', './lead-export')
+  .option('--format <format>', 'Output format: json, csv, or both', 'both')
+  .option('--min-score <score>', 'Minimum MCA score to export', '70')
+  .option('--max-score <score>', 'Maximum MCA score to export')
+  .option('--state <code>', 'Filter by two-letter state code')
+  .option('--industry <name>', 'Filter by industry')
+  .option('--status <status>', 'Filter by prospect status')
+  .option('--limit <count>', 'Batch size', '100')
+  .option('--offset <count>', 'Batch offset for pagination', '0')
+  .action(async (options) => {
+    const spinner = ora('Connecting to database...').start()
+    let connected = false
+
+    try {
+      const format = parseLeadExportFormat(options.format)
+      const outputDir = path.resolve(options.outputDir)
+
+      await database.connect()
+      connected = true
+
+      spinner.text = 'Building scored MCA lead export...'
+      const exportService = new LeadExportService()
+      const batch = await exportService.exportLeads({
+        state: options.state ? String(options.state).toUpperCase() : undefined,
+        industry: options.industry,
+        status: options.status,
+        minScore: parseCliInteger(options.minScore, 'min-score'),
+        maxScore: options.maxScore ? parseCliInteger(options.maxScore, 'max-score') : undefined,
+        limit: parseCliInteger(options.limit, 'limit'),
+        offset: parseCliInteger(options.offset, 'offset')
+      })
+
+      await fs.mkdir(outputDir, { recursive: true })
+
+      const writtenFiles: string[] = []
+      if (format === 'json' || format === 'both') {
+        const jsonPath = path.join(outputDir, `${batch.batch.id}.json`)
+        await fs.writeFile(jsonPath, JSON.stringify(batch, null, 2), 'utf-8')
+        writtenFiles.push(jsonPath)
+      }
+
+      if (format === 'csv' || format === 'both') {
+        const csvPath = path.join(outputDir, `${batch.batch.id}.csv`)
+        await fs.writeFile(csvPath, serializeLeadExportCsv(batch), 'utf-8')
+        writtenFiles.push(csvPath)
+      }
+
+      spinner.succeed(chalk.green('Lead export completed'))
+
+      console.log(chalk.cyan('\n=== Lead Export Batch ==='))
+      console.log(chalk.white(`Batch: ${batch.batch.id}`))
+      console.log(chalk.white(`Leads: ${batch.batch.count} of ${batch.batch.total}`))
+      console.log(chalk.white(`Min score: ${batch.batch.filters.min_score}`))
+      if (batch.batch.next_offset !== null) {
+        console.log(chalk.yellow(`Next offset: ${batch.batch.next_offset}`))
+      }
+      for (const file of writtenFiles) {
+        console.log(chalk.green(`✓ ${file}`))
+      }
+    } catch (error) {
+      spinner.fail(chalk.red('Lead export failed'))
+      console.error(chalk.red('Error:'), error instanceof Error ? error.message : error)
+      process.exitCode = 1
+    } finally {
+      if (connected) {
+        await database.disconnect()
+      }
+    }
+  })
+
 // Helper function to convert data to CSV
 function convertToCSV(data: { filings?: UCCFiling[] }): string {
   if (!data.filings || data.filings.length === 0) {
@@ -395,6 +472,22 @@ function convertToCSV(data: { filings?: UCCFiling[] }): string {
   ].join('\n')
 
   return csvContent
+}
+
+function parseLeadExportFormat(value: string): LeadExportFormat {
+  const format = value.toLowerCase()
+  if (format === 'json' || format === 'csv' || format === 'both') {
+    return format
+  }
+  throw new Error('format must be one of: json, csv, both')
+}
+
+function parseCliInteger(value: string, label: string): number {
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${label} must be an integer`)
+  }
+  return parsed
 }
 
 function convertEnrichmentToCSV(data: Record<string, unknown>): string {
