@@ -17,13 +17,15 @@ const resolvePackages = {
   },
 }
 
-await build({
-  entryPoints: [resolve(root, 'server/index.ts')],
+// Shared esbuild config. Both the API server (server/index.ts) and the BullMQ
+// worker (server/worker.ts) bundle the same way and ship in the same image, so
+// the production worker can run via `node dist/worker.cjs` (see Dockerfile /
+// docker-compose.prod.yml) without dragging the TS toolchain into the runtime.
+const sharedConfig = {
   bundle: true,
   platform: 'node',
   target: 'node20',
   format: 'cjs',
-  outfile: resolve(root, 'dist/server.cjs'),
   plugins: [resolvePackages],
   external: [
     // Node built-ins
@@ -53,6 +55,20 @@ await build({
       'const __filename_esm = __filename;',
     ].join('\n'),
   },
-})
+}
 
+// API server (default container entrypoint).
+await build({
+  ...sharedConfig,
+  entryPoints: [resolve(root, 'server/index.ts')],
+  outfile: resolve(root, 'dist/server.cjs'),
+})
 console.log('✓ Server bundled to dist/server.cjs')
+
+// BullMQ worker process (runs as a separate service from the same image).
+await build({
+  ...sharedConfig,
+  entryPoints: [resolve(root, 'server/worker.ts')],
+  outfile: resolve(root, 'dist/worker.cjs'),
+})
+console.log('✓ Worker bundled to dist/worker.cjs')

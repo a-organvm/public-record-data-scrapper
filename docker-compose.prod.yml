@@ -1,0 +1,142 @@
+# Production Docker Compose stack for the UCC-MCA Intelligence Platform API.
+#
+# This is the target of the one-command deploy (`npm run deploy` →
+# scripts/deploy.sh). Unlike docker-compose.yml (local dev, source-mounted),
+# this file runs the BUILT image with NODE_ENV=production, no source mounts,
+# real healthchecks, and a one-shot migration step that must succeed before the
+# API or worker start.
+#
+# Required secrets are read from .env (see .env.example). The compose file fails
+# loudly if a secret is missing rather than falling back to an insecure default.
+#
+#   API server :  http://localhost:${PORT:-3000}
+#   Health     :  http://localhost:${PORT:-3000}/api/health
+#
+# NOTE: the React frontend (apps/web) deploys separately to a static/CDN host
+# (Vercel / Cloudflare Pages — see docs/DEPLOYMENT.md). This stack serves the
+# Express API + BullMQ worker + their datastores.
+
+x-app-image: &app-image
+  image: ${APP_IMAGE:-ucc-mca-intelligence:latest}
+  build:
+    context: .
+    dockerfile: Dockerfile
+
+x-db-env: &db-env
+  # migrate.ts (scripts/migrate.ts) connects via discrete DB_* vars.
+  DB_HOST: db
+  DB_PORT: "5432"
+  DB_NAME: ${POSTGRES_DB:-ucc_mca}
+  DB_USER: ${POSTGRES_USER:-postgres}
+  DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+
+services:
+  # --- One-shot schema migration -------------------------------------------
+  # Runs pending migrations against the database, then exits 0. The API and
+  # worker wait for this to complete successfully (service_completed_successfully)
+  # so application code never boots against an unmigrated schema.
+  migrate:
+    <<: *app-image
+    command: ["npm", "run", "db:migrate"]
+    environment:
+      <<: *db-env
+      NODE_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - ucc-network
+    restart: "no"
+
+  # --- Express API server (default image entrypoint) ------------------------
+  app:
+    <<: *app-image
+    command: ["node", "dist/server.cjs"]
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@db:5432/${POSTGRES_DB:-ucc_mca}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+    networks:
+      - ucc-network
+    restart: unless-stopped
+
+  # --- BullMQ worker (same image, separate process) -------------------------
+  worker:
+    <<: *app-image
+    command: ["node", "dist/worker.cjs"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@db:5432/${POSTGRES_DB:-ucc_mca}
+      REDIS_URL: redis://redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ucc-network
+    restart: unless-stopped
+
+  # --- PostgreSQL -----------------------------------------------------------
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-ucc_mca}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ucc_mca}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ucc-network
+    restart: unless-stopped
+
+  # --- Redis ----------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ucc-network
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  ucc-network:
+    driver: bridge

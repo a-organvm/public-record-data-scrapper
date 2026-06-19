@@ -1,0 +1,84 @@
+# Render Blueprint — one-click cloud deploy of the UCC-MCA Intelligence API.
+# https://render.com/docs/blueprint-spec
+#
+# Deploy: push this repo to GitHub, then in the Render dashboard choose
+# "New +" → "Blueprint" and point it at the repo. Render reads this file and
+# provisions the API server, the BullMQ worker, a managed PostgreSQL database,
+# and a Redis (Key Value) instance — wiring DATABASE_URL / REDIS_URL / JWT_SECRET
+# automatically. Migrations run via the web service's preDeployCommand before
+# each release goes live.
+#
+# Both services build the repository Dockerfile, so the runtime matches the
+# self-hosted docker-compose.prod.yml stack exactly. The React frontend
+# (apps/web) deploys separately as a static site / on Vercel — see
+# docs/DEPLOYMENT.md.
+
+databases:
+  - name: ucc-mca-db
+    databaseName: ucc_mca
+    user: ucc_mca
+    plan: free # bump to a paid plan for production durability/HA
+
+services:
+  # --- Redis (BullMQ queues + rate limiting + caching) ----------------------
+  - type: redis
+    name: ucc-mca-redis
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: [] # internal-only; reachable only by services in this blueprint
+
+  # --- Express API server ---------------------------------------------------
+  - type: web
+    name: ucc-mca-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /api/health
+    # Apply pending migrations before the new release receives traffic.
+    preDeployCommand: npm run db:migrate
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: HOST
+        value: 0.0.0.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ucc-mca-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: ucc-mca-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true # Render generates a strong secret on first deploy
+      - key: CORS_ORIGIN
+        sync: false # set to your frontend origin in the Render dashboard
+      - key: LOG_LEVEL
+        value: info
+
+  # --- BullMQ worker (background jobs: ingestion, enrichment, health) -------
+  - type: worker
+    name: ucc-mca-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: node dist/worker.cjs
+    plan: starter
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ucc-mca-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: ucc-mca-redis
+          property: connectionString
+      - key: LOG_LEVEL
+        value: info

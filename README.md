@@ -206,6 +206,24 @@ docker-compose --profile development up -d    # Full stack
 docker-compose ps                             # Verify health
 ```
 
+### Production — one-command deploy
+
+Self-host the full API stack (server + worker + PostgreSQL + Redis) with Docker:
+
+```bash
+cp .env.example .env      # set JWT_SECRET and POSTGRES_PASSWORD
+npm run deploy            # build → migrate → start → health-check
+```
+
+This runs [`scripts/deploy.sh`](scripts/deploy.sh) against
+[`docker-compose.prod.yml`](docker-compose.prod.yml), then waits for
+`http://localhost:3000/api/health`. Stop with `npm run deploy:down`.
+
+Other targets — **Render** (one-click [`render.yaml`](render.yaml) blueprint),
+the auto-published **GHCR image** ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)),
+**Kubernetes**, and **AWS via Terraform** — are documented in
+**[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+
 ### Production (AWS via Terraform)
 
 ```bash
@@ -252,7 +270,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide. Report security issue
 | Testing        | Vitest, Testing Library, Playwright                    |
 | Infrastructure | Terraform (AWS), Docker Compose, Kubernetes            |
 | CI/CD          | GitHub Actions                                         |
-| Deployment     | Vercel (frontend), AWS (backend)                       |
+| Deployment     | `npm run deploy` (Docker), Render, GHCR image, Vercel (frontend), AWS |
 
 ---
 
