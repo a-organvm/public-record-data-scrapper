@@ -141,6 +141,27 @@ SMTP_PASSWORD=your-app-password
 ALERT_EMAIL=alerts@yourdomain.com
 ```
 
+### 5. Security Hardening Deploy Gate
+
+Before promoting the PR #234 hardening changes, complete the focused gate in
+[`../DEPLOYMENT.md`](../DEPLOYMENT.md):
+
+```bash
+# Run schema changes with a migration/owner role.
+DATABASE_URL="$MIGRATION_DATABASE_URL" npm run db:migrate
+
+# Run the verifier with the non-owner app role that production will use.
+JWT_ORG_CLAIM_CONFIRMED=true \
+DATA_TIER_MAPPING_CONFIRMED=true \
+DATABASE_URL="$APP_DATABASE_URL" \
+npm run deploy:verify
+```
+
+The verifier checks required runtime secrets, Auth0 org-claim acknowledgement,
+migrations `014`-`019`, RLS helper/policies, and whether the app DB role would
+bypass RLS. Plaid webhooks use ES256/JWK verification, so production requires
+`PLAID_CLIENT_ID` and `PLAID_SECRET`; `PLAID_WEBHOOK_SECRET` is not used.
+
 ---
 
 ## Database Setup
@@ -164,10 +185,7 @@ psql -d ucc_intelligence -f database/schema.sql
 ### 3. Run Migrations
 
 ```bash
-for file in database/migrations/*.sql; do
-    echo "Running $file..."
-    psql -d ucc_intelligence -f "$file"
-done
+DATABASE_URL=postgresql://migration_owner:password@localhost:5432/ucc_intelligence npm run db:migrate
 ```
 
 ### 4. Verify Setup

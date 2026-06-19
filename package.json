@@ -16,6 +16,7 @@
     "build:server": "node scripts/build-server.mjs",
     "build:render": "npm run build && npm run build:server",
     "build:all": "npm run build && npm run build:server",
+    "deploy:verify": "tsx scripts/verify-deploy-prereqs.ts",
     "build:desktop": "npm --workspace apps/desktop run build",
     "start": "node dist/server.cjs",
     "start:worker": "node --import tsx server/worker.ts",

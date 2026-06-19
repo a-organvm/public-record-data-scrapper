@@ -15,13 +15,22 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
  * behind a known reverse proxy (ALB/Nginx) so X-Forwarded-* headers can be
  * trusted for req.ip / req.secure.
  */
-function parseTrustProxy(value: string | undefined): boolean | number {
+export function parseTrustProxy(value: string | undefined): boolean | number {
   if (value === undefined || value === '') return false
-  const lowered = value.toLowerCase()
-  if (lowered === 'true' || lowered === '1') return true
+  const trimmed = value.trim()
+  if (trimmed === '') return false
+
+  // Express treats a numeric `trust proxy` value as a hop count. Parse this
+  // before boolean-ish values so TRUST_PROXY=1 means "trust one proxy", not
+  // "trust every proxy header".
+  if (/^\d+$/.test(trimmed)) {
+    const hopCount = Number.parseInt(trimmed, 10)
+    return hopCount === 0 ? false : hopCount
+  }
+
+  const lowered = trimmed.toLowerCase()
+  if (lowered === 'true') return true
   if (lowered === 'false' || lowered === '0') return false
-  const asNumber = Number.parseInt(value, 10)
-  if (Number.isFinite(asNumber) && asNumber >= 0) return asNumber
   // Unknown value — fail safe to not trusting the proxy.
   return false
 }
@@ -128,6 +137,11 @@ export const config = {
     secretKey: process.env.STRIPE_SECRET_KEY,
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET
   },
+  plaid: {
+    clientId: process.env.PLAID_CLIENT_ID || '',
+    secret: process.env.PLAID_SECRET || '',
+    env: process.env.PLAID_ENV || 'sandbox'
+  },
   auth0: {
     domain: process.env.AUTH0_DOMAIN || '',
     clientId: process.env.AUTH0_CLIENT_ID || '',
@@ -193,17 +207,23 @@ export function validateConfig(): void {
       }
     }
 
-    // Webhook integrations are configured to FAIL CLOSED when their secret is
-    // missing. To avoid a production boot where every webhook is silently
-    // rejected, require the secrets to be present in production.
+    // Webhook integrations are configured to FAIL CLOSED when verification
+    // material is missing. To avoid a production boot where every webhook is
+    // silently rejected, require the current verification inputs to be present.
     if (!process.env.STRIPE_WEBHOOK_SECRET) {
       errors.push('STRIPE_WEBHOOK_SECRET is required in production')
     }
     if (!process.env.TWILIO_AUTH_TOKEN) {
       errors.push('TWILIO_AUTH_TOKEN is required in production')
     }
-    if (!process.env.PLAID_WEBHOOK_SECRET) {
-      errors.push('PLAID_WEBHOOK_SECRET is required in production')
+    if (!process.env.PLAID_CLIENT_ID) {
+      errors.push('PLAID_CLIENT_ID is required in production for Plaid webhook verification')
+    }
+    if (!process.env.PLAID_SECRET) {
+      errors.push('PLAID_SECRET is required in production for Plaid webhook verification')
+    }
+    if (!['sandbox', 'development', 'production'].includes(config.plaid.env)) {
+      errors.push('PLAID_ENV must be one of: sandbox, development, production')
     }
     if (!process.env.SENDGRID_WEBHOOK_VERIFICATION_KEY) {
       errors.push('SENDGRID_WEBHOOK_VERIFICATION_KEY is required in production')
