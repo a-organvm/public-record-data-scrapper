@@ -15,6 +15,15 @@ interface Migration {
   sql: string
 }
 
+export function normalizeMigrationVersion(version: unknown): string {
+  const raw = String(version).trim()
+  return /^\d+$/.test(raw) ? raw.padStart(3, '0') : raw
+}
+
+function compareMigrationVersions(a: string, b: string): number {
+  return Number.parseInt(a, 10) - Number.parseInt(b, 10)
+}
+
 class MigrationRunner {
   private client: Client
 
@@ -45,12 +54,13 @@ class MigrationRunner {
   }
 
   async getAppliedMigrations(): Promise<string[]> {
-    // Sort numerically by the version prefix so ordering is correct even though
-    // version is stored as text ('001', '002', ... '010', ...).
-    const result = await this.client.query(
-      'SELECT version FROM schema_migrations ORDER BY (version)::int'
-    )
-    return result.rows.map((row) => String(row.version))
+    // Normalize legacy integer rows (1, 2, ...) to the canonical zero-padded
+    // file prefix ('001', '002', ...) so upgrade deploys do not rerun already
+    // applied historical DDL.
+    const result = await this.client.query('SELECT version FROM schema_migrations')
+    return result.rows
+      .map((row) => normalizeMigrationVersion(row.version))
+      .sort(compareMigrationVersions)
   }
 
   async getPendingMigrations(): Promise<Migration[]> {
@@ -70,7 +80,7 @@ class MigrationRunner {
 
     const files = fs
       .readdirSync(migrationsDir)
-      .filter((f) => f.endsWith('.sql'))
+      .filter((f) => f.endsWith('.sql') && !f.endsWith('_down.sql'))
       .sort()
 
     return files.map((file) => {

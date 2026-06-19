@@ -20,13 +20,15 @@ const __dirname = dirname(__filename)
 // Load environment variables
 config()
 
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME || 'ucc_mca',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || ''
-})
+const pool = process.env.DATABASE_URL
+  ? new Pool({ connectionString: process.env.DATABASE_URL })
+  : new Pool({
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '5432', 10),
+      database: process.env.DB_NAME || 'ucc_mca',
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || ''
+    })
 
 interface Migration {
   version: string
@@ -35,10 +37,15 @@ interface Migration {
   path: string
 }
 
+export function normalizeMigrationVersion(version: unknown): string {
+  const raw = String(version).trim()
+  return /^\d+$/.test(raw) ? raw.padStart(3, '0') : raw
+}
+
 async function getAppliedMigrations(): Promise<Set<string>> {
   try {
     const result = await pool.query('SELECT version FROM schema_migrations ORDER BY version')
-    return new Set(result.rows.map((row) => row.version))
+    return new Set(result.rows.map((row) => normalizeMigrationVersion(row.version)))
   } catch {
     // If table doesn't exist, no migrations have been applied
     console.log('No migrations table found. Will create on first migration.')
@@ -107,9 +114,13 @@ async function runMigration(migration: Migration): Promise<void> {
 async function main() {
   console.log('Database Migration Runner')
   console.log('='.repeat(60))
-  console.log(`Database: ${process.env.DB_NAME || 'ucc_mca'}`)
-  console.log(`Host: ${process.env.DB_HOST || 'localhost'}`)
-  console.log(`Port: ${process.env.DB_PORT || '5432'}`)
+  if (process.env.DATABASE_URL) {
+    console.log('Database: DATABASE_URL')
+  } else {
+    console.log(`Database: ${process.env.DB_NAME || 'ucc_mca'}`)
+    console.log(`Host: ${process.env.DB_HOST || 'localhost'}`)
+    console.log(`Port: ${process.env.DB_PORT || '5432'}`)
+  }
   console.log('='.repeat(60))
 
   try {

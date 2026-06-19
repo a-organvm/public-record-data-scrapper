@@ -17,21 +17,40 @@
 
 BEGIN;
 
--- 1. Default org for legacy / tenant-less rows. Fixed UUID for determinism.
-INSERT INTO organizations (id, name, slug, subscription_tier, is_active)
-VALUES (
-    '00000000-0000-0000-0000-000000000001',
-    'Unassigned (system default)',
-    'unassigned',
-    'free',
-    true
-)
-ON CONFLICT (id) DO NOTHING;
+-- 1-2. Default org for legacy / tenant-less rows, then backfill NULL rows.
+-- Fixed UUID is preferred for determinism, but some deployed databases may
+-- already have a unique slug='unassigned' row under another UUID. Reuse that
+-- row instead of aborting on the organizations.slug unique constraint.
+DO $$
+DECLARE
+    default_org_id UUID;
+BEGIN
+    SELECT id INTO default_org_id
+    FROM organizations
+    WHERE slug = 'unassigned'
+    LIMIT 1;
 
--- 2. Backfill NULL org_id rows to the default org BEFORE applying NOT NULL.
-UPDATE prospects
-SET org_id = '00000000-0000-0000-0000-000000000001'
-WHERE org_id IS NULL;
+    IF default_org_id IS NULL THEN
+        INSERT INTO organizations (id, name, slug, subscription_tier, is_active)
+        VALUES (
+            '00000000-0000-0000-0000-000000000001',
+            'Unassigned (system default)',
+            'unassigned',
+            'free',
+            true
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            slug = EXCLUDED.slug,
+            subscription_tier = EXCLUDED.subscription_tier,
+            is_active = EXCLUDED.is_active
+        RETURNING id INTO default_org_id;
+    END IF;
+
+    UPDATE prospects
+    SET org_id = default_org_id
+    WHERE org_id IS NULL;
+END $$;
 
 -- 3. Replace the FK with an explicit ON DELETE RESTRICT so an org cannot be
 --    deleted while it still owns prospects (prevents accidental data loss and
