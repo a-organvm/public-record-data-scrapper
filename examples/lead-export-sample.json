@@ -1,0 +1,59 @@
+{
+  "batch": {
+    "id": "lead-export-2026-06-19T14-30-00-000Z",
+    "generated_at": "2026-06-19T14:30:00.000Z",
+    "filters": {
+      "state": "CA",
+      "min_score": 70
+    },
+    "limit": 100,
+    "offset": 0,
+    "count": 2,
+    "total": 2,
+    "next_offset": null
+  },
+  "leads": [
+    {
+      "prospect_id": "7e6f25e1-2cc4-4d8d-92fb-1f7e399f9f11",
+      "company_name": "Pacific Coast Bistro LLC",
+      "state": "CA",
+      "industry": "restaurant",
+      "status": "new",
+      "mca_score": 86,
+      "score_grade": "A",
+      "recommendation": "high_priority",
+      "score_confidence": 90,
+      "estimated_revenue": 1250000,
+      "default_date": "2026-02-05",
+      "days_since_default": 135,
+      "last_filing_date": "2026-04-22",
+      "ucc_filing_count": 3,
+      "active_ucc_count": 1,
+      "terminated_ucc_count": 2,
+      "lapsed_ucc_count": 0,
+      "secured_parties": ["Rapid Funding LLC", "Merchant Growth Partners"],
+      "narrative": "Pacific Coast Bistro LLC shows strong MCA potential. Recent UCC activity suggests active financing interest. Recommended for immediate outreach."
+    },
+    {
+      "prospect_id": "d6d7acdc-827a-4d7c-8ef4-21590d8e79a8",
+      "company_name": "Valley Retail Market Inc",
+      "state": "CA",
+      "industry": "retail",
+      "status": "contacted",
+      "mca_score": 74,
+      "score_grade": "B",
+      "recommendation": "moderate_priority",
+      "score_confidence": 85,
+      "estimated_revenue": 890000,
+      "default_date": "2025-12-18",
+      "days_since_default": 183,
+      "last_filing_date": "2026-01-29",
+      "ucc_filing_count": 2,
+      "active_ucc_count": 0,
+      "terminated_ucc_count": 1,
+      "lapsed_ucc_count": 1,
+      "secured_parties": ["First Capital MCA"],
+      "narrative": "Valley Retail Market Inc is a moderate MCA prospect. Favorable stack position with room for additional financing."
+    }
+  ]
+}

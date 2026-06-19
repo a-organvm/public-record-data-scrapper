@@ -43,6 +43,7 @@ enriched-data.json
 batch-results/
 *.csv
 !example-companies.csv
+!examples/lead-export-sample.csv
 !apps/web/public/ucc_enriched.csv
 
 # Distribution packages

@@ -62,7 +62,7 @@ npm run dev:full                       # Start frontend + API + worker
 
 Frontend: `http://localhost:5000` | API: `http://localhost:3000`
 
-### CLI Only (no database required)
+### CLI Tools
 
 ```bash
 # Scrape UCC filings for a company
@@ -73,6 +73,9 @@ npm run scrape -- enrich -c "Company Name" -s CA -o enriched.json
 
 # Batch process from CSV
 npm run scrape -- batch -i companies.csv -o ./results
+
+# Export scored MCA leads as JSON + CSV batches (requires database)
+npm run scrape -- lead-export --min-score 70 --limit 100 --output-dir ./lead-export
 
 # List all 50 state agents
 npm run scrape -- list-states
@@ -140,6 +143,7 @@ The Express server exposes a RESTful API documented at `/api/docs` when running.
 | Method  | Endpoint                   | Description                                  |
 | ------- | -------------------------- | -------------------------------------------- |
 | `GET`   | `/api/prospects`           | List prospects with filtering and pagination |
+| `GET`   | `/api/prospects/export/leads` | Export scored MCA leads as JSON or CSV |
 | `GET`   | `/api/prospects/:id`       | Prospect detail with enrichment data         |
 | `POST`  | `/api/prospects/:id/claim` | Claim a prospect for outreach                |
 | `POST`  | `/api/prospects/:id/score` | Trigger re-scoring                           |
