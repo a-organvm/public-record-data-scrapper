@@ -65,3 +65,5 @@ src-tauri/bindings/
 # The server/ directory is tracked in this repo. This negation shields it from
 # any broader ignore rules in contributors' global git excludes (e.g. /server/).
 !/server/
+# VSCode Local History extension
+.lh/
