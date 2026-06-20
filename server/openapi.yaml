@@ -22,6 +22,8 @@ servers:
 tags:
   - name: Health
     description: Health check endpoints for monitoring
+  - name: Auth
+    description: API key issuance and authentication bootstrap
   - name: Prospects
     description: UCC prospect management
   - name: Competitors
@@ -41,8 +43,40 @@ tags:
 
 security:
   - bearerAuth: []
+  - apiKeyAuth: []
 
 paths:
+  # ===========================================
+  # Auth Endpoints
+  # ===========================================
+  /api/auth/api-keys:
+    post:
+      tags:
+        - Auth
+      summary: Issue API key
+      description: Issues a signed customer API key. Requires the operator-only API key issuer secret.
+      security:
+        - apiKeyIssuerSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiKeyIssueRequest'
+      responses:
+        '201':
+          description: API key issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyIssueResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: API key issuance is not configured
+
   # ===========================================
   # Health Endpoints
   # ===========================================
@@ -1737,7 +1771,19 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: JWT token for API authentication
+      description: Issued API key as a JWT bearer token
+
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Issued API key header alternative to bearer auth
+
+    apiKeyIssuerSecret:
+      type: apiKey
+      in: header
+      name: X-API-Key-Issuer-Secret
+      description: Operator-only secret used to issue customer API keys
 
     twilioSignature:
       type: apiKey
@@ -1826,6 +1872,83 @@ components:
               type: string
             statusCode:
               type: integer
+
+    ApiKeyIssueRequest:
+      type: object
+      required:
+        - userId
+        - orgId
+      properties:
+        userId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: user_123
+        orgId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: org_456
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        role:
+          type: string
+          enum: [admin, user, viewer]
+          default: user
+        tier:
+          type: string
+          example: starter-tier
+        expiresIn:
+          type: string
+          pattern: '^\d+[smhd]$'
+          default: 30d
+          example: 30d
+
+    ApiKeyIssueResponse:
+      type: object
+      required:
+        - apiKey
+        - keyId
+        - tokenType
+        - expiresIn
+        - user
+      properties:
+        apiKey:
+          type: string
+          description: Signed API key. Store securely and present as bearer auth or X-API-Key.
+        keyId:
+          type: string
+          format: uuid
+        tokenType:
+          type: string
+          enum: [Bearer]
+        expiresIn:
+          type: string
+          example: 30d
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        user:
+          type: object
+          required:
+            - id
+            - role
+            - orgId
+          properties:
+            id:
+              type: string
+            email:
+              type: string
+              format: email
+            role:
+              type: string
+            orgId:
+              type: string
+            tier:
+              type: string
 
     Pagination:
       type: object

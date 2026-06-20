@@ -52,7 +52,8 @@ describe('server config', () => {
       SENDGRID_WEBHOOK_VERIFICATION_KEY: 'sendgrid-verification-key',
       PLAID_CLIENT_ID: 'plaid-client-id',
       PLAID_SECRET: 'plaid-secret',
-      PLAID_ENV: 'production'
+      PLAID_ENV: 'production',
+      API_KEY_ISSUER_SECRET: 'issuer-secret'
     }
 
     it('accepts the current Plaid ES256/JWK prerequisite without PLAID_WEBHOOK_SECRET', async () => {
@@ -79,6 +80,24 @@ describe('server config', () => {
       })
 
       expect(() => validateConfig()).toThrow(/PLAID_ENV must be one of/)
+    })
+
+    it('requires API key issuer secret in production', async () => {
+      const { validateConfig } = await loadConfig({
+        ...productionEnv,
+        API_KEY_ISSUER_SECRET: ''
+      })
+
+      expect(() => validateConfig()).toThrow(/API_KEY_ISSUER_SECRET is required/)
+    })
+
+    it('rejects invalid API key expiration durations', async () => {
+      const { validateConfig } = await loadConfig({
+        ...productionEnv,
+        API_KEY_EXPIRES_IN: 'forever'
+      })
+
+      expect(() => validateConfig()).toThrow(/API_KEY_EXPIRES_IN must use a duration/)
     })
   })
 })

@@ -8,12 +8,13 @@ This document describes all environment variables used by the UCC-MCA Intelligen
 
 These variables MUST be set in production environments:
 
-| Variable       | Description                                                   | Example                                             |
-| -------------- | ------------------------------------------------------------- | --------------------------------------------------- |
-| `JWT_SECRET`   | Secret key for JWT signing. Must be cryptographically secure. | `a-very-long-random-string-here`                    |
-| `DATABASE_URL` | PostgreSQL connection URL                                     | `postgresql://user:pass@host:5432/dbname`           |
-| `CORS_ORIGIN`  | Comma-separated list of allowed origins                       | `https://app.example.com,https://admin.example.com` |
-| `REDIS_URL`    | Redis connection URL                                          | `redis://:password@host:6379`                       |
+| Variable                | Description                                                   | Example                                             |
+| ----------------------- | ------------------------------------------------------------- | --------------------------------------------------- |
+| `JWT_SECRET`            | Secret key for JWT signing. Must be cryptographically secure. | `a-very-long-random-string-here`                    |
+| `API_KEY_ISSUER_SECRET` | Operator secret for issuing customer API keys                 | `another-very-long-random-string-here`              |
+| `DATABASE_URL`          | PostgreSQL connection URL                                     | `postgresql://user:pass@host:5432/dbname`           |
+| `CORS_ORIGIN`           | Comma-separated list of allowed origins                       | `https://app.example.com,https://admin.example.com` |
+| `REDIS_URL`             | Redis connection URL                                          | `redis://:password@host:6379`                       |
 
 ## Server Configuration
 
@@ -58,13 +59,19 @@ rediss://[:password@]host[:port]  # TLS connection
 
 ## Authentication
 
-| Variable              | Description                   | Default | Required   |
-| --------------------- | ----------------------------- | ------- | ---------- |
-| `JWT_SECRET`          | Secret key for signing JWTs   | N/A     | Yes (prod) |
-| `AUTH0_DOMAIN`        | Auth0 domain (if using Auth0) | -       | No         |
-| `AUTH0_CLIENT_ID`     | Auth0 client ID               | -       | No         |
-| `AUTH0_CLIENT_SECRET` | Auth0 client secret           | -       | No         |
-| `AUTH0_AUDIENCE`      | Auth0 API audience            | -       | No         |
+| Variable                | Description                                      | Default | Required   |
+| ----------------------- | ------------------------------------------------ | ------- | ---------- |
+| `JWT_SECRET`            | Secret key for signing and verifying API keys    | N/A     | Yes (prod) |
+| `API_KEY_ISSUER_SECRET` | Operator secret for `POST /api/auth/api-keys`    | N/A     | Yes (prod) |
+| `API_KEY_EXPIRES_IN`    | Default issued API-key lifetime (`1h`, `7d`)     | `30d`   | No         |
+| `JWT_ISSUER`            | Optional issuer claim enforced during validation | -       | No         |
+| `JWT_AUDIENCE`          | Optional audience claim enforced during validation | -       | No         |
+| `JWT_ORG_CLAIM`         | Organization claim name                          | `org_id` | No        |
+| `JWT_TIER_CLAIM`        | Tier claim name                                  | `tier`  | No         |
+| `AUTH0_DOMAIN`          | Auth0 domain (if using Auth0)                    | -       | No         |
+| `AUTH0_CLIENT_ID`       | Auth0 client ID                                  | -       | No         |
+| `AUTH0_CLIENT_SECRET`   | Auth0 client secret                              | -       | No         |
+| `AUTH0_AUDIENCE`        | Auth0 API audience                               | -       | No         |
 
 ## CORS Configuration
 
@@ -127,6 +134,7 @@ PORT=3000
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ucc_dev
 REDIS_URL=redis://localhost:6379
 JWT_SECRET=dev-secret-not-for-production
+API_KEY_ISSUER_SECRET=dev-issuer-secret-not-for-production
 ```
 
 ### Production (.env.production)
@@ -137,6 +145,7 @@ PORT=3000
 DATABASE_URL=postgresql://user:password@db.example.com:5432/ucc_prod?sslmode=require
 REDIS_URL=rediss://:password@redis.example.com:6379
 JWT_SECRET=<generated-secure-random-string>
+API_KEY_ISSUER_SECRET=<generated-secure-random-string>
 CORS_ORIGIN=https://app.example.com
 ```
 
@@ -147,6 +156,7 @@ NODE_ENV=test
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ucc_test
 REDIS_URL=redis://localhost:6379
 JWT_SECRET=test-secret
+API_KEY_ISSUER_SECRET=test-issuer-secret
 ```
 
 ## Validation
@@ -157,5 +167,5 @@ To test configuration validation:
 
 ```bash
 NODE_ENV=production npm run dev
-# Will fail if JWT_SECRET, DATABASE_URL, or CORS_ORIGIN are not set
+# Will fail if JWT_SECRET, API_KEY_ISSUER_SECRET, DATABASE_URL, or CORS_ORIGIN are not set
 ```

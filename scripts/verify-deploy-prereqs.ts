@@ -8,6 +8,7 @@ loadDotenv()
 
 const REQUIRED_ENV = [
   'JWT_SECRET',
+  'API_KEY_ISSUER_SECRET',
   'DATABASE_URL',
   'CORS_ORIGIN',
   'STRIPE_WEBHOOK_SECRET',
@@ -74,6 +75,12 @@ function checkRequiredEnv(state: CheckState): void {
 
   if ((process.env.JWT_SECRET ?? '').trim().length > 0 && process.env.JWT_SECRET!.length < 32) {
     addError(state, 'JWT_SECRET must be at least 32 characters')
+  }
+  if (
+    (process.env.API_KEY_ISSUER_SECRET ?? '').trim().length > 0 &&
+    process.env.API_KEY_ISSUER_SECRET!.length < 32
+  ) {
+    addError(state, 'API_KEY_ISSUER_SECRET must be at least 32 characters')
   }
 
   const plaidEnv = process.env.PLAID_ENV || 'sandbox'

@@ -402,10 +402,10 @@ fail-closed to live.
 
 Production-only guard: when `NODE_ENV=production`, `validateConfig` (`server/config/index.ts`) hard-fails
 startup unless `STRIPE_WEBHOOK_SECRET`, `TWILIO_AUTH_TOKEN`, `SENDGRID_WEBHOOK_VERIFICATION_KEY`,
-`PLAID_CLIENT_ID`, and `PLAID_SECRET` are present. The local demo runs as `development`, so these are
-optional — their absence simply keeps the corresponding sends/webhooks fail-closed. `PLAID_WEBHOOK_SECRET`
-is no longer used; Plaid webhooks are verified with ES256 signatures and JWKs fetched through the Plaid
-client credentials.
+`PLAID_CLIENT_ID`, `PLAID_SECRET`, and `API_KEY_ISSUER_SECRET` are present. The local demo runs as
+`development`, so these are optional — their absence simply keeps the corresponding sends/webhooks or API
+key issuance fail-closed. `PLAID_WEBHOOK_SECRET` is no longer used; Plaid webhooks are verified with ES256
+signatures and JWKs fetched through the Plaid client credentials.
 
 ---
 
@@ -417,7 +417,7 @@ platform refusing to fabricate. If you see one not on this list, stop and invest
 | Symptom / error                                                                                                     | Meaning                                                                                                                                    | Action                                                                                                                           |
 | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
 | Server exits at boot: `JWT_SECRET is required (set it in every environment)`                                        | `JWT_SECRET` is unset — there is no dev fallback by design.                                                                                | Export `JWT_SECRET` (§1.3) and restart. Use the **same** value you minted the token with.                                        |
-| `401 Unauthorized` / `No authorization header provided` on every `/api/*` call                                      | The `$AUTH` header is missing, or the token was signed with a different secret.                                                            | Re-run §1.6 with the current `JWT_SECRET`; confirm `echo "$AUTH"` shows a Bearer token.                                          |
+| `401 Unauthorized` / `No authorization header or X-API-Key provided` on every `/api/*` call                         | The `$AUTH` header or `X-API-Key` header is missing, or the token was signed with a different secret.                                      | Re-run §1.6 with the current `JWT_SECRET`; confirm `echo "$AUTH"` shows a Bearer token.                                          |
 | `401 Unauthorized` from the **dashboard** while `curl` works                                                        | Expected. The UI has no login and does not send the token in this phase (§2.4).                                                            | Drive the lifecycle over `curl`; use the UI for narration. Do not "fix" by enabling mock data.                                   |
 | `403 FORBIDDEN` / `No organization associated with this account` on discovery/compliance                            | The token has no `org_id` claim.                                                                                                           | Re-mint the token with `org_id` set to your `$ORG_ID` (§1.6).                                                                    |
 | `403` / `org_id does not match authenticated organization`                                                          | A request body/query `org_id` differs from the token's org.                                                                                | Drop the explicit `org_id` from the request — the org always comes from the token.                                               |

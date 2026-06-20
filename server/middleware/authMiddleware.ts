@@ -24,6 +24,32 @@ interface JwtPayload {
   [claim: string]: unknown
 }
 
+function firstHeaderValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value
+}
+
+function extractBearerToken(authHeader: string | undefined): { token?: string; error?: string } {
+  if (!authHeader) return {}
+
+  const parts = authHeader.split(' ')
+  if (parts.length !== 2 || parts[0] !== 'Bearer' || !parts[1]) {
+    return { error: 'Invalid authorization header format. Expected: Bearer <token>' }
+  }
+
+  return { token: parts[1] }
+}
+
+function extractAuthToken(req: Request): { token?: string; error?: string } {
+  const authHeader = firstHeaderValue(req.headers.authorization)
+  const bearer = extractBearerToken(authHeader)
+  if (bearer.token || bearer.error) return bearer
+
+  const apiKey = firstHeaderValue(req.headers['x-api-key'])?.trim()
+  if (apiKey) return { token: apiKey }
+
+  return {}
+}
+
 /**
  * Coerce an arbitrary claim value to a non-empty string, or undefined.
  * Guards against object/array/number claim shapes that some IdPs emit.
@@ -120,27 +146,24 @@ function getVerifyOptions(): jwt.VerifyOptions {
  * Adds user info to request object if valid.
  */
 export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization
+  const auth = extractAuthToken(req)
 
-  if (!authHeader) {
+  if (auth.error) {
     return res.status(401).json({
       error: 'Unauthorized',
-      message: 'No authorization header provided'
+      message: auth.error
     })
   }
 
-  const parts = authHeader.split(' ')
-  if (parts.length !== 2 || parts[0] !== 'Bearer') {
+  if (!auth.token) {
     return res.status(401).json({
       error: 'Unauthorized',
-      message: 'Invalid authorization header format. Expected: Bearer <token>'
+      message: 'No authorization header or X-API-Key provided'
     })
   }
-
-  const token = parts[1]
 
   try {
-    const decoded = jwt.verify(token, config.jwt.secret, getVerifyOptions()) as JwtPayload
+    const decoded = jwt.verify(auth.token, config.jwt.secret, getVerifyOptions()) as JwtPayload
 
     req.user = buildUser(decoded)
 
@@ -176,21 +199,13 @@ export const optionalAuthMiddleware = (
   res: Response,
   next: NextFunction
 ) => {
-  const authHeader = req.headers.authorization
-
-  if (!authHeader) {
+  const auth = extractAuthToken(req)
+  if (!auth.token || auth.error) {
     return next()
   }
-
-  const parts = authHeader.split(' ')
-  if (parts.length !== 2 || parts[0] !== 'Bearer') {
-    return next()
-  }
-
-  const token = parts[1]
 
   try {
-    const decoded = jwt.verify(token, config.jwt.secret, getVerifyOptions()) as JwtPayload
+    const decoded = jwt.verify(auth.token, config.jwt.secret, getVerifyOptions()) as JwtPayload
 
     req.user = buildUser(decoded)
   } catch {

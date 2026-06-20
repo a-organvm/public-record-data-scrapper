@@ -11,13 +11,54 @@ Production:  https://your-domain.com/api
 
 ## Authentication
 
-All endpoints (except health checks) require JWT authentication via Bearer token:
+All endpoints except health checks, docs, status, webhooks, and the auth bootstrap route require an issued API key. The key is a signed JWT bearer token:
 
 ```
 Authorization: Bearer <token>
 ```
 
-See [AUTHENTICATION.md](./AUTHENTICATION.md) for details on obtaining tokens.
+Customer clients may also use:
+
+```
+X-API-Key: <token>
+```
+
+Issue keys with `POST /api/auth/api-keys` using the operator-only `X-API-Key-Issuer-Secret` header. See [AUTHENTICATION.md](./AUTHENTICATION.md) for configuration and issuance details.
+
+---
+
+## Auth
+
+### Issue API Key
+
+```http
+POST /api/auth/api-keys
+```
+
+Requires `X-API-Key-Issuer-Secret: <API_KEY_ISSUER_SECRET>`.
+
+**Request Body:**
+
+| Field       | Type   | Required | Description                         |
+| ----------- | ------ | -------- | ----------------------------------- |
+| `userId`    | string | Yes      | User identifier for the `sub` claim |
+| `orgId`     | string | Yes      | Organization id for tenant binding  |
+| `email`     | string | No       | User email                          |
+| `role`      | string | No       | `admin`, `user`, or `viewer`        |
+| `tier`      | string | No       | Subscription/data tier              |
+| `expiresIn` | string | No       | Duration such as `1h`, `7d`, `30d`  |
+
+**Response:**
+
+```json
+{
+  "apiKey": "<signed-api-key>",
+  "keyId": "<key-id>",
+  "tokenType": "Bearer",
+  "expiresIn": "30d",
+  "expiresAt": "<iso-expiration>"
+}
+```
 
 ---
 

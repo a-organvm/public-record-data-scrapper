@@ -2,6 +2,10 @@ function parseBooleanFlag(value: string | undefined): boolean {
   return value === '1' || value?.toLowerCase() === 'true'
 }
 
+function isJwtDuration(value: string): boolean {
+  return /^\d+[smhd]$/.test(value)
+}
+
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(value ?? '', 10)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
@@ -123,6 +127,7 @@ export const config = {
     issuer: process.env.JWT_ISSUER || undefined,
     audience: process.env.JWT_AUDIENCE || undefined,
     expiresIn: '1h',
+    apiKeyExpiresIn: process.env.API_KEY_EXPIRES_IN || '30d',
     refreshExpiresIn: '7d',
     // Name of the custom claim carrying the organization id. Auth0 namespaces
     // custom claims (e.g. https://<app>/org_id); the resolver also accepts any
@@ -132,6 +137,9 @@ export const config = {
     // Namespaced variants ending in /tier or /plan are also accepted. When
     // present it is authoritative and avoids a DB lookup. Default 'tier'.
     tierClaim: process.env.JWT_TIER_CLAIM || 'tier'
+  },
+  auth: {
+    apiKeyIssuerSecret: process.env.API_KEY_ISSUER_SECRET || ''
   },
   stripe: {
     secretKey: process.env.STRIPE_SECRET_KEY,
@@ -192,6 +200,10 @@ export function validateConfig(): void {
       )
     }
   }
+  if (process.env.API_KEY_EXPIRES_IN && !isJwtDuration(process.env.API_KEY_EXPIRES_IN)) {
+    const value = process.env.API_KEY_EXPIRES_IN
+    errors.push(`API_KEY_EXPIRES_IN must use a duration like 1h, 7d, or 30d (got "${value}")`)
+  }
 
   if (isProduction) {
     if (!process.env.DATABASE_URL) {
@@ -221,6 +233,9 @@ export function validateConfig(): void {
     }
     if (!process.env.PLAID_SECRET) {
       errors.push('PLAID_SECRET is required in production for Plaid webhook verification')
+    }
+    if (!config.auth.apiKeyIssuerSecret) {
+      errors.push('API_KEY_ISSUER_SECRET is required in production for API key issuance')
     }
     if (!['sandbox', 'development', 'production'].includes(config.plaid.env)) {
       errors.push('PLAID_ENV must be one of: sandbox, development, production')

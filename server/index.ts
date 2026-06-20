@@ -38,6 +38,7 @@ import complianceRouter from './routes/compliance'
 import discoveryRouter from './routes/discovery'
 import metricsRouter from './routes/metrics'
 import agenticRouter from './routes/agentic'
+import authRouter from './routes/auth'
 
 // Import queue infrastructure
 import {
@@ -136,6 +137,9 @@ export class Server {
     // Public routes (no authentication required)
     this.app.use('/api/health', healthRouter)
 
+    // Auth bootstrap routes. API key issuance is guarded by API_KEY_ISSUER_SECRET.
+    this.app.use('/api/auth', authRouter)
+
     // Webhook routes (signature verification, no JWT auth)
     this.app.use('/api/webhooks', webhooksRouter)
 
@@ -187,6 +191,7 @@ export class Server {
           compliance: '/api/compliance',
           discovery: '/api/discovery',
           metrics: '/api/metrics',
+          auth: '/api/auth',
           webhooks: '/api/webhooks'
         }
       })

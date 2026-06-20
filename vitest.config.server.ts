@@ -14,6 +14,7 @@ export default defineConfig({
     // works under vitest without depending on a loaded .env file.
     env: {
       JWT_SECRET: process.env.JWT_SECRET || 'test-secret',
+      API_KEY_ISSUER_SECRET: process.env.API_KEY_ISSUER_SECRET || 'test-issuer-secret',
       NODE_ENV: process.env.NODE_ENV || 'test'
     },
     setupFiles: ['./server/__tests__/setup.ts'],

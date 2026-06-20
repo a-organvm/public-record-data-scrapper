@@ -53,6 +53,10 @@ server/
 - `GET /api/health/ready` - Kubernetes readiness probe
 - `GET /api/health/live` - Kubernetes liveness probe
 
+### Auth
+
+- `POST /api/auth/api-keys` - Issue signed customer API keys using `X-API-Key-Issuer-Secret`
+
 ### Prospects
 
 - `GET /api/prospects` - List prospects (paginated, filtered, sorted)
@@ -100,8 +104,15 @@ See `.env.example` in the project root for all available environment variables.
 Required variables:
 
 - `DATABASE_URL` - PostgreSQL connection string
+- `JWT_SECRET` - Signs and verifies JWT/API-key credentials
+- `API_KEY_ISSUER_SECRET` - Operator secret required to issue customer API keys
 - `PORT` - Server port (default: 3000)
 - `NODE_ENV` - Environment (development/production)
+
+Optional auth variables:
+
+- `API_KEY_EXPIRES_IN` - Default issued API-key lifetime (default: `30d`)
+- `JWT_ISSUER`, `JWT_AUDIENCE` - Optional claims enforced during credential verification
 
 Optional tiered integration variables (used when routing by `x-data-tier`):
 

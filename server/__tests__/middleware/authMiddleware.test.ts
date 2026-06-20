@@ -48,7 +48,7 @@ describe('authMiddleware', () => {
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
           error: 'Unauthorized',
-          message: 'No authorization header provided'
+          message: 'No authorization header or X-API-Key provided'
         })
       )
       expect(mockNext).not.toHaveBeenCalled()
@@ -117,6 +117,27 @@ describe('authMiddleware', () => {
         id: 'user123',
         email: 'user@example.com',
         role: 'admin'
+      })
+    })
+
+    it('authenticates a valid API key from X-API-Key', () => {
+      const validToken = createToken({
+        sub: 'user123',
+        email: 'user@example.com',
+        role: 'user',
+        org_id: 'org-1',
+        token_use: 'api_key'
+      })
+      mockReq.headers = { 'x-api-key': validToken }
+
+      authMiddleware(mockReq as AuthenticatedRequest, mockRes as Response, mockNext)
+
+      expect(mockNext).toHaveBeenCalled()
+      expect(mockReq.user).toEqual({
+        id: 'user123',
+        email: 'user@example.com',
+        role: 'user',
+        orgId: 'org-1'
       })
     })
 
@@ -266,6 +287,20 @@ describe('optionalAuthMiddleware', () => {
   it('adds user when valid token provided', () => {
     const token = createToken({ sub: 'user789', email: 'test@test.com' })
     mockReq.headers = { authorization: `Bearer ${token}` }
+
+    optionalAuthMiddleware(mockReq as AuthenticatedRequest, mockRes as Response, mockNext)
+
+    expect(mockNext).toHaveBeenCalled()
+    expect(mockReq.user).toEqual({
+      id: 'user789',
+      email: 'test@test.com',
+      role: undefined
+    })
+  })
+
+  it('adds user when valid API key is provided via X-API-Key', () => {
+    const token = createToken({ sub: 'user789', email: 'test@test.com', token_use: 'api_key' })
+    mockReq.headers = { 'x-api-key': token }
 
     optionalAuthMiddleware(mockReq as AuthenticatedRequest, mockRes as Response, mockNext)
 

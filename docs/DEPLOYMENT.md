@@ -7,6 +7,7 @@ Run it before promoting a production deploy.
 
 1. Provision production secrets in the deployment secret store:
    - `JWT_SECRET`
+   - `API_KEY_ISSUER_SECRET`
    - `DATABASE_URL`
    - `CORS_ORIGIN`
    - `STRIPE_WEBHOOK_SECRET`
