@@ -13,6 +13,7 @@ import { Header, LoadingAndErrorState, TabNavigation, MobileBottomNav } from '@/
 // Feature tabs
 import { ProspectsTab } from '@/features/prospects'
 import { PortfolioTab } from '@/features/portfolio'
+import { StatusTab } from '@/features/status'
 import { IntelligenceTab } from '@/features/intelligence'
 import { AnalyticsTab } from '@/features/analytics'
 import { RequalificationTab } from '@/features/requalification'
@@ -197,8 +198,23 @@ function App() {
             <StaleDataWarning lastUpdated={data.lastDataRefresh} onRefresh={handleRefreshData} />
           )}
 
-          <Tabs defaultValue="prospects" className="w-full">
+          <Tabs defaultValue="status" className="w-full">
             <TabNavigation />
+
+            <TabsContent value="status" className="space-y-4 sm:space-y-6">
+              <StatusTab
+                prospects={data.prospects}
+                portfolio={data.portfolio}
+                competitors={data.competitors}
+                userActions={data.userActions}
+                isLoading={data.isLoading}
+                loadError={data.loadError}
+                lastDataRefresh={data.lastDataRefresh}
+                usePreviewData={useDemoData}
+                dataTier={dataTier}
+                onRefresh={handleRefreshData}
+              />
+            </TabsContent>
 
             <TabsContent value="prospects" className="space-y-4 sm:space-y-6">
               <ProspectsTab
