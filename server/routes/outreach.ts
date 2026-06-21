@@ -1,13 +1,28 @@
 import { Router } from 'express'
+import { z } from 'zod'
+import { validateRequest } from '../middleware/validateRequest'
 import { PreCallBriefingService } from '../services/PreCallBriefingService'
 import { OutreachSequenceService } from '../services/OutreachSequenceService'
 import { narrativeService } from '../services/NarrativeService'
 import { database } from '../database/connection'
 
+const prospectIdParamSchema = z.object({
+  prospectId: z.string().min(1)
+})
+
+const triggerBodySchema = z.object({
+  triggerType: z.string().optional().default('termination'),
+  capacityScore: z.number().min(0).max(100).optional()
+})
+
+const sequenceIdParamSchema = z.object({
+  id: z.string().min(1)
+})
+
 const router = Router()
 
 // GET /api/outreach/briefing/:prospectId — Generate/return pre-call briefing
-router.get('/briefing/:prospectId', async (req, res) => {
+router.get('/briefing/:prospectId', validateRequest({ params: prospectIdParamSchema }), async (req, res) => {
   try {
     const service = new PreCallBriefingService(database)
     // Try cache first
@@ -25,7 +40,7 @@ router.get('/briefing/:prospectId', async (req, res) => {
 })
 
 // GET /api/outreach/narrative/:prospectId — Generate sales narrative
-router.get('/narrative/:prospectId', async (req, res) => {
+router.get('/narrative/:prospectId', validateRequest({ params: prospectIdParamSchema }), async (req, res) => {
   try {
     const narrative = await narrativeService.generateNarrative(req.params.prospectId)
     res.json(narrative)
@@ -39,7 +54,10 @@ router.get('/narrative/:prospectId', async (req, res) => {
 })
 
 // POST /api/outreach/trigger/:prospectId — Manually trigger outreach
-router.post('/trigger/:prospectId', async (req, res) => {
+router.post(
+  '/trigger/:prospectId',
+  validateRequest({ params: prospectIdParamSchema, body: triggerBodySchema }),
+  async (req, res) => {
   try {
     const { triggerType = 'termination', capacityScore } = req.body || {}
     const sequenceService = new OutreachSequenceService(database)
@@ -67,7 +85,7 @@ router.post('/trigger/:prospectId', async (req, res) => {
 })
 
 // GET /api/outreach/sequences/:prospectId — List active sequences
-router.get('/sequences/:prospectId', async (req, res) => {
+router.get('/sequences/:prospectId', validateRequest({ params: prospectIdParamSchema }), async (req, res) => {
   try {
     const service = new OutreachSequenceService(database)
     const sequences = await service.getActiveSequences(req.params.prospectId)
@@ -79,7 +97,7 @@ router.get('/sequences/:prospectId', async (req, res) => {
 })
 
 // POST /api/outreach/sequences/:id/cancel — Cancel a sequence
-router.post('/sequences/:id/cancel', async (req, res) => {
+router.post('/sequences/:id/cancel', validateRequest({ params: sequenceIdParamSchema }), async (req, res) => {
   try {
     const service = new OutreachSequenceService(database)
     await service.cancelSequence(req.params.id)

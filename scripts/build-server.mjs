@@ -37,7 +37,7 @@ const sharedOptions = {
     'puppeteer', 'sharp',
     'jsonwebtoken', 'express', 'compression', 'cors', 'helmet',
     'swagger-ui-express', 'yamljs', 'zod', 'dotenv', 'uuid',
-    'dompurify', 'marked',
+    'dompurify', 'marked', 'fsevents',
   ],
   sourcemap: true,
   minify: false,

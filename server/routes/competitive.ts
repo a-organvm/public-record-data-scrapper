@@ -1,18 +1,44 @@
 import { Router } from 'express'
+import { z } from 'zod'
+import { validateRequest } from '../middleware/validateRequest'
 import { CompetitiveHeatMapService } from '../services/CompetitiveHeatMapService'
 import { FilingVelocityService } from '../services/FilingVelocityService'
 import { FreshCapacityService } from '../services/FreshCapacityService'
 import { database } from '../database/connection'
 
+const stateParamSchema = z.object({
+  state: z.string().length(2, 'State must be a 2-letter abbreviation')
+})
+
+const industryQuerySchema = z.object({
+  industry: z.string().optional()
+})
+
+const funderParamSchema = z.object({
+  name: z.string().min(1)
+})
+
+const hoursQuerySchema = z.object({
+  hours: z.string().regex(/^\d+$/, 'Hours must be a positive integer').optional()
+})
+
+const prospectIdParamSchema = z.object({
+  prospectId: z.string().min(1)
+})
+
+const stateQuerySchema = z.object({
+  state: z.string().length(2).optional()
+})
+
 const router = Router()
 
 // GET /api/competitive/saturation/:state — market saturation + HHI for a state
-router.get('/saturation/:state', async (req, res) => {
-  try {
-    const { state } = req.params
-    if (!state || state.length !== 2) {
-      return res.status(400).json({ error: 'Invalid state code' })
-    }
+router.get(
+  '/saturation/:state',
+  validateRequest({ params: stateParamSchema, query: industryQuerySchema }),
+  async (req, res) => {
+    try {
+      const { state } = req.params
 
     const service = new CompetitiveHeatMapService(database)
     const saturation = await service.getCompetitiveSaturation(
@@ -27,7 +53,7 @@ router.get('/saturation/:state', async (req, res) => {
 })
 
 // GET /api/competitive/funder/:name — geographic heat map for a funder
-router.get('/funder/:name', async (req, res) => {
+router.get('/funder/:name', validateRequest({ params: funderParamSchema }), async (req, res) => {
   try {
     const { name } = req.params
     const service = new CompetitiveHeatMapService(database)
@@ -40,7 +66,7 @@ router.get('/funder/:name', async (req, res) => {
 })
 
 // GET /api/competitive/events/recent — recent filing events
-router.get('/events/recent', async (req, res) => {
+router.get('/events/recent', validateRequest({ query: hoursQuerySchema }), async (req, res) => {
   try {
     // Parse with explicit radix, guard NaN/non-positive, and clamp to a sane
     // upper bound (90 days) so a caller cannot request an unbounded window.
@@ -65,7 +91,7 @@ router.get('/events/recent', async (req, res) => {
 })
 
 // GET /api/competitive/velocity/:prospectId — velocity metrics for a prospect
-router.get('/velocity/:prospectId', async (req, res) => {
+router.get('/velocity/:prospectId', validateRequest({ params: prospectIdParamSchema }), async (req, res) => {
   try {
     const { prospectId } = req.params
     const velocityService = new FilingVelocityService(database)
@@ -78,7 +104,7 @@ router.get('/velocity/:prospectId', async (req, res) => {
 })
 
 // GET /api/competitive/capacity/:prospectId — fresh capacity score
-router.get('/capacity/:prospectId', async (req, res) => {
+router.get('/capacity/:prospectId', validateRequest({ params: prospectIdParamSchema }), async (req, res) => {
   try {
     const { prospectId } = req.params
     const capacityService = new FreshCapacityService(database)
@@ -91,7 +117,7 @@ router.get('/capacity/:prospectId', async (req, res) => {
 })
 
 // GET /api/competitive/accelerating — prospects with accelerating filing velocity
-router.get('/accelerating', async (req, res) => {
+router.get('/accelerating', validateRequest({ query: stateQuerySchema }), async (req, res) => {
   try {
     const state = req.query.state as string | undefined
     const velocityService = new FilingVelocityService(database)
