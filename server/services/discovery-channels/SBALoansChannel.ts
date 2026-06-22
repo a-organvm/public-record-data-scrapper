@@ -33,6 +33,7 @@ import {
   DiscoveryParams,
   DiscoveryChannelError
 } from './types'
+import { clampLimit, normalizeState, errorMessage, fetchWithTimeout, fetchJson } from './utils'
 
 const CHANNEL = 'sba-7a-loans'
 const CKAN_PACKAGE_ID = '0ff8e8e9-b967-4f4e-987c-6ac78c575087'
@@ -41,7 +42,6 @@ const CKAN_PACKAGE_SHOW = `https://data.sba.gov/api/3/action/package_show?id=${C
 const RECENT_7A_RESOURCE_STEM = 'foia-7a-fy2020-present'
 const RATE_BUCKET = 'sba'
 const REQUEST_TIMEOUT_MS = 20000
-const DEFAULT_LIMIT = 25
 const REQUIRED_COLUMNS = ['borrname', 'borrstate', 'approvaldate'] as const
 
 interface CkanResource {
@@ -71,33 +71,13 @@ export class SBALoansChannel implements DiscoveryChannel {
 
   /** Resolve the rotating recent-7(a) CSV resource URL via CKAN. */
   private async resolveRecentCsvUrl(): Promise<string> {
-    let response: Response
-    try {
-      response = await fetchWithTimeout(CKAN_PACKAGE_SHOW, {
-        headers: { Accept: 'application/json' }
-      })
-    } catch (err) {
-      throw new DiscoveryChannelError(
-        CHANNEL,
-        `SBA CKAN unreachable: ${err instanceof Error ? err.message : String(err)}`
-      )
-    }
-    if (!response.ok) {
-      throw new DiscoveryChannelError(
-        CHANNEL,
-        `SBA CKAN returned HTTP ${response.status} ${response.statusText}`
-      )
-    }
-
-    let body: unknown
-    try {
-      body = await response.json()
-    } catch (err) {
-      throw new DiscoveryChannelError(
-        CHANNEL,
-        `SBA CKAN response was not valid JSON: ${err instanceof Error ? err.message : String(err)}`
-      )
-    }
+    const body = await fetchJson(
+      CHANNEL,
+      CKAN_PACKAGE_SHOW,
+      { headers: { Accept: 'application/json' } },
+      'SBA CKAN',
+      REQUEST_TIMEOUT_MS
+    )
 
     const resources = (body as { result?: { resources?: unknown } })?.result?.resources
     if (!Array.isArray(resources)) {
@@ -141,12 +121,13 @@ export class SBALoansChannel implements DiscoveryChannel {
     const abort = new AbortController()
     let response: Response
     try {
-      response = await fetchWithTimeout(url, { headers: { Accept: 'text/csv' } }, abort.signal)
-    } catch (err) {
-      throw new DiscoveryChannelError(
-        CHANNEL,
-        `SBA CSV unreachable: ${err instanceof Error ? err.message : String(err)}`
+      response = await fetchWithTimeout(
+        url,
+        { headers: { Accept: 'text/csv' } },
+        { timeoutMs: REQUEST_TIMEOUT_MS, externalSignal: abort.signal }
       )
+    } catch (err) {
+      throw new DiscoveryChannelError(CHANNEL, `SBA CSV unreachable: ${errorMessage(err)}`)
     }
     if (!response.ok) {
       throw new DiscoveryChannelError(
@@ -212,10 +193,7 @@ export class SBALoansChannel implements DiscoveryChannel {
       // DiscoveryChannelError — propagate it unchanged. Only genuine stream/IO
       // faults get the generic wrapper.
       if (err instanceof DiscoveryChannelError) throw err
-      throw new DiscoveryChannelError(
-        CHANNEL,
-        `SBA CSV stream failed: ${err instanceof Error ? err.message : String(err)}`
-      )
+      throw new DiscoveryChannelError(CHANNEL, `SBA CSV stream failed: ${errorMessage(err)}`)
     } finally {
       // Stop the download and free the reader. cancel() rejects the underlying
       // stream so the remaining (potentially hundreds of MB) bytes are never
@@ -339,37 +317,4 @@ function parseCsvLine(line: string): string[] {
   }
   fields.push(current)
   return fields
-}
-
-function normalizeState(state?: string): string | null {
-  if (!state) return null
-  const trimmed = state.trim().toUpperCase()
-  return trimmed.length === 2 ? trimmed : null
-}
-
-function clampLimit(limit?: number): number {
-  if (typeof limit !== 'number' || !Number.isFinite(limit) || limit <= 0) return DEFAULT_LIMIT
-  return Math.min(Math.floor(limit), 200)
-}
-
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
-  externalSignal?: AbortSignal
-): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-  // Forward an external abort (e.g. "limit reached" on a stream) into the
-  // timeout controller so a single signal tears the fetch down either way.
-  const onExternalAbort = () => controller.abort()
-  if (externalSignal) {
-    if (externalSignal.aborted) controller.abort()
-    else externalSignal.addEventListener('abort', onExternalAbort, { once: true })
-  }
-  try {
-    return await fetch(url, { ...init, signal: controller.signal })
-  } finally {
-    clearTimeout(timer)
-    if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort)
-  }
 }

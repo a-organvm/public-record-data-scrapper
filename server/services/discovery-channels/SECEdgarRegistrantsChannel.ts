@@ -42,6 +42,7 @@ import {
   DiscoveryParams,
   DiscoveryChannelError
 } from './types'
+import { clampLimit, normalizeState, fetchJson } from './utils'
 
 const CHANNEL = 'sec-edgar-registrants'
 const ENDPOINT = 'https://efts.sec.gov/LATEST/search-index'
@@ -49,7 +50,6 @@ const ENDPOINT = 'https://efts.sec.gov/LATEST/search-index'
 const FORMS = ['S-1', '8-K']
 const USER_AGENT = 'UCC-MCA-Intelligence lead-discovery contact@example.com'
 const REQUEST_TIMEOUT_MS = 12000
-const DEFAULT_LIMIT = 25
 
 interface EdgarHitSource {
   display_names?: unknown
@@ -85,34 +85,13 @@ export class SECEdgarRegistrantsChannel implements DiscoveryChannel {
     })
     const url = `${ENDPOINT}?${qs.toString()}`
 
-    let response: Response
-    try {
-      response = await fetchWithTimeout(url, {
-        headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' }
-      })
-    } catch (err) {
-      throw new DiscoveryChannelError(
-        CHANNEL,
-        `SEC EDGAR unreachable: ${err instanceof Error ? err.message : String(err)}`
-      )
-    }
-
-    if (!response.ok) {
-      throw new DiscoveryChannelError(
-        CHANNEL,
-        `SEC EDGAR returned HTTP ${response.status} ${response.statusText}`
-      )
-    }
-
-    let body: unknown
-    try {
-      body = await response.json()
-    } catch (err) {
-      throw new DiscoveryChannelError(
-        CHANNEL,
-        `SEC EDGAR response was not valid JSON: ${err instanceof Error ? err.message : String(err)}`
-      )
-    }
+    const body = await fetchJson(
+      CHANNEL,
+      url,
+      { headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' } },
+      'SEC EDGAR',
+      REQUEST_TIMEOUT_MS
+    )
 
     // Fail closed: the documented envelope is { hits: { hits: [...] } }.
     const hits = (body as { hits?: { hits?: unknown } })?.hits?.hits
@@ -192,27 +171,6 @@ function stringOr(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback
 }
 
-function normalizeState(state?: string): string | null {
-  if (!state) return null
-  const trimmed = state.trim().toUpperCase()
-  return trimmed.length === 2 ? trimmed : null
-}
-
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10)
-}
-
-function clampLimit(limit?: number): number {
-  if (typeof limit !== 'number' || !Number.isFinite(limit) || limit <= 0) return DEFAULT_LIMIT
-  return Math.min(Math.floor(limit), 200)
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-  try {
-    return await fetch(url, { ...init, signal: controller.signal })
-  } finally {
-    clearTimeout(timer)
-  }
 }

@@ -35,10 +35,10 @@ import {
   DiscoveryParams,
   DiscoveryChannelError
 } from './types'
+import { clampLimit, fetchJson } from './utils'
 
 const CHANNEL = 'socrata-building-permits'
 const REQUEST_TIMEOUT_MS = 12000
-const DEFAULT_LIMIT = 25
 const RATE_BUCKET = 'socrata'
 
 interface SocrataSource {
@@ -125,32 +125,13 @@ export class SocrataBuildingPermitsChannel implements DiscoveryChannel {
     })
     const url = `${source.url}?${qs.toString()}`
 
-    let response: Response
-    try {
-      response = await fetchWithTimeout(url, { headers: { Accept: 'application/json' } })
-    } catch (err) {
-      throw new DiscoveryChannelError(
-        CHANNEL,
-        `Socrata (${source.state}) unreachable: ${err instanceof Error ? err.message : String(err)}`
-      )
-    }
-
-    if (!response.ok) {
-      throw new DiscoveryChannelError(
-        CHANNEL,
-        `Socrata (${source.state}) returned HTTP ${response.status} ${response.statusText}`
-      )
-    }
-
-    let body: unknown
-    try {
-      body = await response.json()
-    } catch (err) {
-      throw new DiscoveryChannelError(
-        CHANNEL,
-        `Socrata (${source.state}) response was not valid JSON: ${err instanceof Error ? err.message : String(err)}`
-      )
-    }
+    const body = await fetchJson(
+      CHANNEL,
+      url,
+      { headers: { Accept: 'application/json' } },
+      `Socrata (${source.state})`,
+      REQUEST_TIMEOUT_MS
+    )
 
     if (!Array.isArray(body)) {
       throw new DiscoveryChannelError(
@@ -201,20 +182,5 @@ export class SocrataBuildingPermitsChannel implements DiscoveryChannel {
     }
 
     return out
-  }
-}
-
-function clampLimit(limit?: number): number {
-  if (typeof limit !== 'number' || !Number.isFinite(limit) || limit <= 0) return DEFAULT_LIMIT
-  return Math.min(Math.floor(limit), 200)
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-  try {
-    return await fetch(url, { ...init, signal: controller.signal })
-  } finally {
-    clearTimeout(timer)
   }
 }
