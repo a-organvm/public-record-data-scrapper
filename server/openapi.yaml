@@ -38,9 +38,14 @@ tags:
     description: Deal pipeline management
   - name: Webhooks
     description: External service webhooks
+  - name: Scrape
+    description: On-demand UCC filing search (data-as-a-service)
+  - name: API Keys
+    description: Programmatic API key management (admin only)
 
 security:
   - bearerAuth: []
+  - apiKeyAuth: []
 
 paths:
   # ===========================================
@@ -1731,6 +1736,189 @@ paths:
         '401':
           description: Invalid signature
 
+  # ===========================================
+  # Scrape Endpoints (data-as-a-service)
+  # ===========================================
+  /api/scrape/ucc:
+    post:
+      tags:
+        - Scrape
+      summary: Search UCC filings on demand
+      description: >
+        Search UCC filings by company name and state. The primary
+        data-as-a-service endpoint. Authenticate with an API key
+        (`X-API-Key: prk_…`) or a JWT.
+      security:
+        - apiKeyAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - company_name
+                - state
+              properties:
+                company_name:
+                  type: string
+                  minLength: 2
+                  maxLength: 200
+                  example: Acme Logistics LLC
+                state:
+                  type: string
+                  minLength: 2
+                  maxLength: 2
+                  description: Two-letter US state code (case-insensitive)
+                  example: CA
+                limit:
+                  type: integer
+                  minimum: 1
+                  maximum: 1000
+                  default: 100
+      responses:
+        '200':
+          description: UCC filings matching the search
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      filings:
+                        type: array
+                        items:
+                          type: object
+                      total:
+                        type: integer
+                      state:
+                        type: string
+                      companyName:
+                        type: string
+                      timestamp:
+                        type: string
+                        format: date-time
+                  meta:
+                    type: object
+                    properties:
+                      requestedAt:
+                        type: string
+                        format: date-time
+        '400':
+          description: Validation failed or unsupported state
+        '401':
+          description: Missing or invalid credentials
+
+  # ===========================================
+  # API Key Management (admin only)
+  # ===========================================
+  /api/keys:
+    post:
+      tags:
+        - API Keys
+      summary: Create an API key
+      description: >
+        Mint a new org-scoped API key. The plaintext key is returned ONCE in the
+        response and cannot be retrieved again. Admin (JWT) only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                  example: acme-production
+                role:
+                  type: string
+                  enum: [user, admin]
+                  default: user
+                expires_at:
+                  type: string
+                  format: date-time
+                  description: Optional ISO-8601 expiry; omit for a non-expiring key
+      responses:
+        '201':
+          description: Key created; plaintext key returned once
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      key:
+                        type: string
+                        description: Plaintext key, shown only once
+                        example: prk_AbC123...
+                      keyPrefix:
+                        type: string
+                      role:
+                        type: string
+                      expiresAt:
+                        type: string
+                        nullable: true
+                  meta:
+                    type: object
+        '400':
+          description: Validation failed or no org context
+        '403':
+          description: Caller is not an admin
+    get:
+      tags:
+        - API Keys
+      summary: List API keys
+      description: List the org's API keys (metadata only; never returns secrets). Admin (JWT) only.
+      responses:
+        '200':
+          description: The org's API keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: object
+        '403':
+          description: Caller is not an admin
+
+  /api/keys/{id}:
+    delete:
+      tags:
+        - API Keys
+      summary: Revoke an API key
+      description: Revoke an API key by id within the caller's org. Admin (JWT) only.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Key revoked
+        '403':
+          description: Caller is not an admin
+        '404':
+          description: Key not found
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1738,6 +1926,15 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: JWT token for API authentication
+
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: >
+        Org-scoped API key (prefixed `prk_`) for programmatic access to the
+        on-demand scrape endpoints. May also be sent as `Authorization: Bearer
+        prk_…`. Mint and revoke keys via the `/api/keys` endpoints (admin only).
 
     twilioSignature:
       type: apiKey
