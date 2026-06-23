@@ -36,10 +36,10 @@ tags:
     description: Contact relationship management
   - name: Deals
     description: Deal pipeline management
+  - name: Scrape
+    description: On-demand UCC filing search and data scraping (data-as-a-service)
   - name: Webhooks
     description: External service webhooks
-  - name: Scrape
-    description: On-demand UCC filing search (data-as-a-service)
   - name: API Keys
     description: Programmatic API key management (admin only)
 
@@ -1743,11 +1743,18 @@ paths:
     post:
       tags:
         - Scrape
-      summary: Search UCC filings on demand
-      description: >
-        Search UCC filings by company name and state. The primary
-        data-as-a-service endpoint. Authenticate with an API key
-        (`X-API-Key: prk_…`) or a JWT.
+      summary: Search UCC filings by company name
+      description: |
+        On-demand search for UCC filings in a specific state by company name.
+        This is the primary revenue endpoint for data-as-a-service: customers can
+        search for active UCC filings without creating internal prospects.
+        Authenticate with an API key (`X-API-Key: prk_…`) or a JWT.
+
+        First-paying-customer use case: one-off scrape requests for lead discovery.
+
+        Returns matching UCC filings with filing details, debtor information, and
+        secured party details. Results are limited to the specified state.
+      operationId: searchUCCFilings
       security:
         - apiKeyAuth: []
         - bearerAuth: []
@@ -1766,10 +1773,12 @@ paths:
                   minLength: 2
                   maxLength: 200
                   example: Acme Logistics LLC
+                  description: Company name to search for (partial matches supported)
                 state:
                   type: string
                   minLength: 2
                   maxLength: 2
+                  pattern: '^[A-Z]{2}$'
                   description: Two-letter US state code (case-insensitive)
                   example: CA
                 limit:
@@ -1777,43 +1786,65 @@ paths:
                   minimum: 1
                   maximum: 1000
                   default: 100
+                  example: 50
+                  description: Maximum number of filings to return
       responses:
         '200':
-          description: UCC filings matching the search
+          description: Successful UCC filing search
           content:
             application/json:
               schema:
                 type: object
+                required:
+                  - success
+                  - data
+                  - meta
                 properties:
                   success:
                     type: boolean
                     example: true
                   data:
-                    type: object
-                    properties:
-                      filings:
-                        type: array
-                        items:
-                          type: object
-                      total:
-                        type: integer
-                      state:
-                        type: string
-                      companyName:
-                        type: string
-                      timestamp:
-                        type: string
-                        format: date-time
+                    $ref: '#/components/schemas/UCCSearchResponse'
                   meta:
                     type: object
+                    required:
+                      - requestedAt
                     properties:
                       requestedAt:
                         type: string
                         format: date-time
+                        description: ISO 8601 timestamp of the request
         '400':
-          description: Validation failed or unsupported state
+          description: Invalid request parameters or state not supported
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - error
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: object
+                    required:
+                      - message
+                      - code
+                      - statusCode
+                    properties:
+                      message:
+                        type: string
+                        example: "No UCC data available for state: XX"
+                      code:
+                        type: string
+                        example: "UCC_SEARCH_FAILED"
+                      statusCode:
+                        type: integer
+                        example: 400
         '401':
-          description: Missing or invalid credentials
+          $ref: '#/components/responses/Unauthorized'
 
   /api/scrape/readiness/{stateCode}:
     get:
@@ -1857,7 +1888,7 @@ paths:
                         example: true
                       reason:
                         type: string
-                        example: Collector ready for state: CA
+                        example: "Collector ready for state: CA"
                   meta:
                     type: object
                     properties:
@@ -2293,6 +2324,78 @@ components:
             $ref: '#/components/schemas/Prospect'
         pagination:
           $ref: '#/components/schemas/Pagination'
+
+    UCCFiling:
+      type: object
+      required:
+        - id
+        - filingDate
+        - debtorName
+        - securedParty
+        - state
+        - status
+        - filingType
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique filing identifier
+        filingDate:
+          type: string
+          format: date-time
+          description: Date the UCC filing was made
+        debtorName:
+          type: string
+          description: Name of the debtor (company owing the debt)
+        securedParty:
+          type: string
+          description: Name of the secured party (lender/creditor)
+        state:
+          type: string
+          pattern: '^[A-Z]{2}$'
+          description: Two-letter state code where filing was made
+        lienAmount:
+          type: number
+          nullable: true
+          description: Lien amount in dollars (if available)
+        status:
+          type: string
+          enum: [active, terminated, lapsed]
+          description: Current status of the UCC filing
+        filingType:
+          type: string
+          enum: [UCC-1, UCC-3]
+          description: Type of UCC filing (UCC-1 is initial, UCC-3 is amendment/continuation)
+
+    UCCSearchResponse:
+      type: object
+      required:
+        - filings
+        - total
+        - state
+        - companyName
+        - timestamp
+      properties:
+        filings:
+          type: array
+          items:
+            $ref: '#/components/schemas/UCCFiling'
+          description: Array of matching UCC filings (limited by request limit)
+        total:
+          type: integer
+          minimum: 0
+          description: Total number of filings found for the company in the state
+        state:
+          type: string
+          pattern: '^[A-Z]{2}$'
+          description: State code that was searched
+        companyName:
+          type: string
+          description: Company name that was searched
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp of when the search was performed
 
     LeadExportBatch:
       type: object
