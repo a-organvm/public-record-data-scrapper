@@ -13,12 +13,12 @@
     "typecheck": "tsc --noEmit -p workers/api/tsconfig.json"
   },
   "dependencies": {
-    "hono": "^4.6.14",
+    "hono": "^4.12.25",
     "jose": "^5.9.6"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241218.0",
     "typescript": "^5.7.2",
-    "wrangler": "^3.95.0"
+    "wrangler": "^4.100.0"
   }
 }

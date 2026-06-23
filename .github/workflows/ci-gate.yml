@@ -1,0 +1,68 @@
+# ============================================================================
+# CI Gate — required, hard-failing checks for pull requests
+# ----------------------------------------------------------------------------
+# Release-discipline P0 for issue #239: the existing ci.yml is informational
+# (every step is continue-on-error / `|| true`), so a red build can still be
+# merged. This workflow is the enforceable gate — it FAILS the run on a broken
+# build or a failing server test, so it can be marked a required status check
+# in branch protection on `main` (the one step that needs repo-admin).
+#
+# Verified green at introduction: `npm run build:render` + the server test
+# suite (1294 tests pass with no external services).
+#
+# Coverage thresholds are deliberately NOT enforced here: the repo currently
+# sits at ~67% lines vs its declared 80% target, and backend-tests.yml already
+# treats coverage as an informational warning. Raising coverage to 80% is
+# tracked debt, not a per-PR blocker — so this gate runs tests with
+# `--coverage.enabled=false` and enforces only test correctness + a clean build.
+# (vitest.config.server.ts enforces the 80% thresholds whenever CI=true, which
+# is why coverage must be explicitly disabled for this correctness-only gate.)
+#
+# Typecheck is run as a non-blocking signal for now: the build intentionally
+# uses `tsc -b --noCheck` and frontend TS debt is tracked in #236. Flip
+# `continue-on-error` to false once that debt is cleared.
+# ============================================================================
+name: CI Gate
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        # actions/checkout v4.3.0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Setup Node.js
+        # actions/setup-node v4.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 20.x
+          cache: npm
+
+      - name: Install dependencies
+        # --ignore-scripts: don't run untrusted PR lifecycle scripts on the runner.
+        run: npm ci --ignore-scripts
+
+      - name: Type check (non-blocking — see #236)
+        continue-on-error: true
+        run: npx tsc --noEmit || echo "::warning::TypeScript reported errors (non-blocking; tracked in #236)"
+
+      - name: Server tests (correctness only — coverage gate stays informational)
+        run: npx vitest run --config vitest.config.server.ts --coverage.enabled=false
+
+      - name: Production build (frontend + server + worker bundle)
+        run: npm run build:render

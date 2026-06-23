@@ -46,29 +46,23 @@ Global policy: /Users/4jp/AGENTS.md applies and cannot be overridden.
 - Prefer environment variables and secrets managers for production credentials.
 
 <!-- ORGANVM:AUTO:START -->
-
 ## Agent Context (auto-generated — do not edit)
 
 This repo participates in the **ORGAN-III (Commerce)** swarm.
 
 ### Active Subscriptions
-
 - Event: `governance.updated` → Action: Check compliance with updated governance rules
 - Event: `health-audit.completed` → Action: Review audit findings for this repo
 
 ### Production Responsibilities
-
 - **Produce** `dependency` for organvm-v-logos/public-process
 
 ### External Dependencies
-
-- _No external dependencies_
+- *No external dependencies*
 
 ### Governance Constraints
-
 - Adhere to unidirectional flow: I→II→III
 - Never commit secrets or credentials
 
-_Last synced: 2026-04-14T21:31:55Z_
-
+*Last synced: 2026-06-06T01:01:09Z*
 <!-- ORGANVM:AUTO:END -->

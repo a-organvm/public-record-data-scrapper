@@ -17,13 +17,11 @@ const resolvePackages = {
   },
 }
 
-await build({
-  entryPoints: [resolve(root, 'server/index.ts')],
+const sharedOptions = {
   bundle: true,
   platform: 'node',
   target: 'node20',
   format: 'cjs',
-  outfile: resolve(root, 'dist/server.cjs'),
   plugins: [resolvePackages],
   external: [
     // Node built-ins
@@ -36,10 +34,13 @@ await build({
     'assert', 'console',
     // npm packages — keep external (installed via npm install)
     'pg-native', 'bullmq', 'ioredis', 'pg',
-    'puppeteer', 'sharp',
+    'puppeteer', 'sharp', 'fsevents',
     'jsonwebtoken', 'express', 'compression', 'cors', 'helmet',
     'swagger-ui-express', 'yamljs', 'zod', 'dotenv', 'uuid',
     'dompurify', 'marked',
+    // Optional native macOS watcher dependency pulled through transitive tooling.
+    // Bundling it makes esbuild try to load fsevents.node; keep it runtime-resolved.
+    'fsevents',
   ],
   sourcemap: true,
   minify: false,
@@ -53,6 +54,21 @@ await build({
       'const __filename_esm = __filename;',
     ].join('\n'),
   },
-})
+}
 
-console.log('✓ Server bundled to dist/server.cjs')
+// Bundle both production entrypoints so the worker runs on plain `node`
+// (parity with the API server) instead of `tsx`, which can spike memory
+// during initialization on constrained hosts like Render. See issue #230.
+const targets = [
+  { entry: 'server/index.ts', out: 'dist/server.cjs', label: 'Server' },
+  { entry: 'server/worker.ts', out: 'dist/worker.cjs', label: 'Worker' },
+]
+
+for (const { entry, out, label } of targets) {
+  await build({
+    ...sharedOptions,
+    entryPoints: [resolve(root, entry)],
+    outfile: resolve(root, out),
+  })
+  console.log(`✓ ${label} bundled to ${out}`)
+}

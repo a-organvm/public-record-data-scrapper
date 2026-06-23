@@ -16,19 +16,22 @@
     "build:server": "node scripts/build-server.mjs",
     "build:render": "npm run build && npm run build:server",
     "build:all": "npm run build && npm run build:server",
+    "deploy:verify": "tsx scripts/verify-deploy-prereqs.ts",
     "build:desktop": "npm --workspace apps/desktop run build",
     "start": "node dist/server.cjs",
-    "start:worker": "node --import tsx server/worker.ts",
+    "start:worker": "node dist/worker.cjs",
     "lint": "eslint .",
     "optimize": "vite optimize --config apps/web/vite.config.ts",
     "preview": "npm --workspace apps/web run preview",
-    "test": "npm --workspace apps/web run test",
+    "test": "npm --workspace apps/web run test -- --run && npm run test:scrapers:unit",
     "test:watch": "npm --workspace apps/web run test:watch",
     "test:ui": "npm --workspace apps/web run test:ui",
     "test:coverage": "npm --workspace apps/web run test:coverage",
     "test:server": "vitest --config vitest.config.server.ts",
     "test:server:strict": "ENFORCE_COVERAGE=true vitest --config vitest.config.server.ts",
     "test:server:coverage": "vitest --config vitest.config.server.ts --coverage",
+    "test:scrapers:unit": "vitest run --config vitest.config.scripts.ts",
+    "test:scrapers:unit:coverage": "vitest run --config vitest.config.scripts.ts --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
@@ -40,6 +43,7 @@
     "test:scrapers:ny": "tsx scripts/scrapers/test-scrapers.ts NY",
     "test:scrapers:headed": "tsx scripts/scrapers/test-scrapers.ts --headed",
     "postinstall": "node ./scripts/ensure-main-branch.mjs",
+    "train:ml-model": "tsx scripts/trainMLModel.ts",
     "scrape": "tsx scripts/cli-scraper.ts",
     "scrape:scheduled": "tsx scripts/scheduled-run.ts",
     "migrate": "npm run db:migrate",
@@ -102,7 +106,7 @@
     "cors": "^2.8.6",
     "d3": "^7.9.0",
     "date-fns": "^4.1.0",
-    "dompurify": "^3.4.1",
+    "dompurify": "^3.4.11",
     "dotenv": "^17.2.3",
     "embla-carousel-react": "^8.5.2",
     "express": "^5.2.1",
@@ -161,9 +165,9 @@
     "@vitejs/plugin-react-swc": "^4.2.1",
     "@vitest/coverage-v8": "^4.0.8",
     "@vitest/ui": "^4.0.8",
-    "axios": "^1.15.2",
+    "axios": "^1.16.0",
     "cheerio": "^1.1.2",
-    "concurrently": "^9.2.1",
+    "concurrently": "^10.0.3",
     "eslint": "^9.28.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.0.1",
@@ -178,7 +182,7 @@
     "tailwindcss": "^4.1.18",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.49.0",
-    "vite": "^7.3.2",
+    "vite": "^7.3.5",
     "vitest": "^4.0.16"
   },
   "workspaces": {
@@ -199,6 +203,7 @@
   "overrides": {
     "localtunnel": {
       "axios": "^1.7.4"
-    }
+    },
+    "esbuild": "0.28.1"
   }
 }
