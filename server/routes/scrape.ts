@@ -6,6 +6,11 @@
  *
  *   POST /api/scrape/ucc  search for UCC filings by company name + state
  *
+ * Auth: mounted behind apiKeyOrJwtAuth (server/index.ts), so a paying customer
+ * can authenticate with an org-scoped API key (`X-API-Key: prk_…` or
+ * `Authorization: Bearer prk_…`) or an internal JWT. requireRole gates on the
+ * role carried by whichever credential authenticated the request.
+ *
  * @module server/routes/scrape
  */
 
