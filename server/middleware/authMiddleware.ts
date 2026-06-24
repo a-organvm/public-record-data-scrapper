@@ -10,12 +10,6 @@ export interface AuthenticatedRequest extends Request {
     orgId?: string
     tier?: string
   }
-  /**
-   * How the request was authenticated. Set by the auth middleware that ran:
-   * 'jwt' for a Bearer JWT, 'api_key' for an org-scoped API key. Useful for
-   * audit logging and for gating key-management routes to JWT sessions only.
-   */
-  authMethod?: 'jwt' | 'api_key'
 }
 
 interface JwtPayload {
@@ -149,7 +143,6 @@ export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: N
     const decoded = jwt.verify(token, config.jwt.secret, getVerifyOptions()) as JwtPayload
 
     req.user = buildUser(decoded)
-    req.authMethod = 'jwt'
 
     next()
   } catch (error) {
