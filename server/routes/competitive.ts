@@ -1,4 +1,6 @@
 import { Router } from 'express'
+import { z } from 'zod'
+import { validateRequest } from '../middleware/validateRequest'
 import { CompetitiveHeatMapService } from '../services/CompetitiveHeatMapService'
 import { FilingVelocityService } from '../services/FilingVelocityService'
 import { FreshCapacityService } from '../services/FreshCapacityService'
@@ -6,17 +8,43 @@ import { database } from '../database/connection'
 
 const router = Router()
 
-// GET /api/competitive/saturation/:state — market saturation + HHI for a state
-router.get('/saturation/:state', async (req, res) => {
-  try {
-    const { state } = req.params
-    if (!state || state.length !== 2) {
-      return res.status(400).json({ error: 'Invalid state code' })
-    }
+const stateParam = z.object({
+  state: z
+    .string()
+    .length(2)
+    .transform((s) => s.toUpperCase())
+})
 
+const funderNameParam = z.object({
+  name: z.string().min(1).max(200)
+})
+
+const prospectIdParam = z.object({
+  prospectId: z.string().min(1).max(100)
+})
+
+const recentEventsQuery = z.object({
+  hours: z
+    .string()
+    .regex(/^\d+$/)
+    .transform((v) => Math.min(Math.max(Number(v), 1), 24 * 90))
+    .default('168')
+})
+
+const acceleratingQuery = z.object({
+  state: z
+    .string()
+    .length(2)
+    .transform((s) => s.toUpperCase())
+    .optional()
+})
+
+// GET /api/competitive/saturation/:state — market saturation + HHI for a state
+router.get('/saturation/:state', validateRequest({ params: stateParam }), async (req, res) => {
+  try {
     const service = new CompetitiveHeatMapService(database)
     const saturation = await service.getCompetitiveSaturation(
-      state.toUpperCase(),
+      req.params.state,
       req.query.industry as string | undefined
     )
     res.json(saturation)
@@ -27,7 +55,7 @@ router.get('/saturation/:state', async (req, res) => {
 })
 
 // GET /api/competitive/funder/:name — geographic heat map for a funder
-router.get('/funder/:name', async (req, res) => {
+router.get('/funder/:name', validateRequest({ params: funderNameParam }), async (req, res) => {
   try {
     const { name } = req.params
     const service = new CompetitiveHeatMapService(database)
@@ -40,13 +68,9 @@ router.get('/funder/:name', async (req, res) => {
 })
 
 // GET /api/competitive/events/recent — recent filing events
-router.get('/events/recent', async (req, res) => {
+router.get('/events/recent', validateRequest({ query: recentEventsQuery }), async (req, res) => {
   try {
-    // Parse with explicit radix, guard NaN/non-positive, and clamp to a sane
-    // upper bound (90 days) so a caller cannot request an unbounded window.
-    const parsedHours = parseInt(req.query.hours as string, 10)
-    const hours =
-      Number.isFinite(parsedHours) && parsedHours > 0 ? Math.min(parsedHours, 24 * 90) : 168 // default 7 days
+    const hours = req.query.hours
     const events = await database.query(
       `SELECT id, prospect_id as "prospectId", event_type as "eventType",
               filing_id as "filingId", event_date as "eventDate",
@@ -65,35 +89,41 @@ router.get('/events/recent', async (req, res) => {
 })
 
 // GET /api/competitive/velocity/:prospectId — velocity metrics for a prospect
-router.get('/velocity/:prospectId', async (req, res) => {
-  try {
-    const { prospectId } = req.params
-    const velocityService = new FilingVelocityService(database)
-    const metrics = await velocityService.computeVelocity(prospectId)
-    res.json({ prospectId, metrics })
-  } catch (err) {
-    console.error('[competitive] Velocity error:', (err as Error).message)
-    res.status(500).json({ error: 'Failed to compute velocity' })
+router.get(
+  '/velocity/:prospectId',
+  validateRequest({ params: prospectIdParam }),
+  async (req, res) => {
+    try {
+      const velocityService = new FilingVelocityService(database)
+      const metrics = await velocityService.computeVelocity(req.params.prospectId)
+      res.json({ prospectId: req.params.prospectId, metrics })
+    } catch (err) {
+      console.error('[competitive] Velocity error:', (err as Error).message)
+      res.status(500).json({ error: 'Failed to compute velocity' })
+    }
   }
-})
+)
 
 // GET /api/competitive/capacity/:prospectId — fresh capacity score
-router.get('/capacity/:prospectId', async (req, res) => {
-  try {
-    const { prospectId } = req.params
-    const capacityService = new FreshCapacityService(database)
-    const result = await capacityService.computeForProspect(prospectId)
-    res.json({ prospectId, ...result })
-  } catch (err) {
-    console.error('[competitive] Capacity error:', (err as Error).message)
-    res.status(500).json({ error: 'Failed to compute capacity' })
+router.get(
+  '/capacity/:prospectId',
+  validateRequest({ params: prospectIdParam }),
+  async (req, res) => {
+    try {
+      const capacityService = new FreshCapacityService(database)
+      const result = await capacityService.computeForProspect(req.params.prospectId)
+      res.json({ prospectId: req.params.prospectId, ...result })
+    } catch (err) {
+      console.error('[competitive] Capacity error:', (err as Error).message)
+      res.status(500).json({ error: 'Failed to compute capacity' })
+    }
   }
-})
+)
 
 // GET /api/competitive/accelerating — prospects with accelerating filing velocity
-router.get('/accelerating', async (req, res) => {
+router.get('/accelerating', validateRequest({ query: acceleratingQuery }), async (req, res) => {
   try {
-    const state = req.query.state as string | undefined
+    const state = req.query.state
     const velocityService = new FilingVelocityService(database)
     const prospects = await velocityService.detectAccelerating(state)
     res.json({ prospects, count: prospects.length })
