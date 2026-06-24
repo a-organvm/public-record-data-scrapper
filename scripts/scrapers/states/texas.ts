@@ -8,19 +8,14 @@
  * Set TX_UCC_USERNAME and TX_UCC_PASSWORD environment variables.
  */
 
-import { BaseScraper, ScraperResult, UCCFiling } from '../base-scraper'
-import puppeteer, { Browser, Page } from 'puppeteer'
-import { existsSync, mkdirSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import type { Page } from 'puppeteer'
+import { ScraperResult, UCCFiling } from '../base-scraper'
+import { BasePuppeteerScraper } from '../base-puppeteer-scraper'
 import { getTexasCredentials, hasTexasAuth } from '../auth-config'
 import { PaginationHandler } from '../pagination-handler'
 
-export class TexasScraper extends BaseScraper {
-  private browser: Browser | null = null
+export class TexasScraper extends BasePuppeteerScraper {
   private isAuthenticated: boolean = false
-  private lastPage: Page | null = null
-  private headless: boolean
-  private keepPageOpenOnFailure: boolean
 
   constructor(options: { headless?: boolean; keepPageOpenOnFailure?: boolean } = {}) {
     super({
@@ -29,78 +24,12 @@ export class TexasScraper extends BaseScraper {
       rateLimit: 3, // 3 requests per minute (conservative for new portal)
       timeout: 45000, // Increased timeout for portal that requires login
       retryAttempts: 2
-    })
-    this.headless = options.headless ?? true
-    this.keepPageOpenOnFailure = options.keepPageOpenOnFailure ?? false
-  }
-
-  private async getBrowser(): Promise<Browser> {
-    if (!this.browser) {
-      this.browser = await puppeteer.launch({
-        headless: this.headless,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--disable-gpu',
-          '--window-size=1920x1080'
-        ]
-      })
-    }
-    return this.browser
+    }, options)
   }
 
   async closeBrowser(): Promise<void> {
-    if (this.browser) {
-      await this.browser.close()
-      this.browser = null
-      this.isAuthenticated = false
-      this.lastPage = null
-    }
-  }
-
-  async captureDiagnostics(
-    outputDir: string,
-    baseName: string
-  ): Promise<{ screenshotPath?: string; htmlPath?: string }> {
-    if (!this.lastPage || this.lastPage.isClosed()) {
-      return {}
-    }
-
-    if (!existsSync(outputDir)) {
-      mkdirSync(outputDir, { recursive: true })
-    }
-
-    const screenshotPath = join(outputDir, `${baseName}.png`)
-    const htmlPath = join(outputDir, `${baseName}.html`)
-
-    let savedScreenshot = false
-    let savedHtml = false
-
-    try {
-      await this.lastPage.screenshot({ path: screenshotPath, fullPage: true })
-      savedScreenshot = true
-    } catch (error) {
-      this.log('warn', 'Failed to capture screenshot', {
-        error: error instanceof Error ? error.message : String(error)
-      })
-    }
-
-    try {
-      const html = await this.lastPage.content()
-      writeFileSync(htmlPath, html)
-      savedHtml = true
-    } catch (error) {
-      this.log('warn', 'Failed to capture HTML snapshot', {
-        error: error instanceof Error ? error.message : String(error)
-      })
-    }
-
-    return {
-      screenshotPath: savedScreenshot ? screenshotPath : undefined,
-      htmlPath: savedHtml ? htmlPath : undefined
-    }
+    await super.closeBrowser()
+    this.isAuthenticated = false
   }
 
   /**
@@ -301,28 +230,13 @@ export class TexasScraper extends BaseScraper {
    * authentication credentials to be configured.
    */
   private async performSearch(companyName: string): Promise<ScraperResult> {
-    let page: Page | null = null
-    // Held on an object property (not a let binding): TS control-flow analysis
-    // does not track assignments made through the `finalize` closure, so a
-    // plain `let` still reads as null in the `finally` block.
-    const outcome: { result: ScraperResult | null } = { result: null }
-    const finalize = (next: ScraperResult): ScraperResult => {
-      outcome.result = next
-      return next
-    }
-
-    try {
-      const browser = await this.getBrowser()
-      page = await browser.newPage()
-      this.lastPage = page
-
+    return this.withSearchPage(async (page, finalize) => {
+      // Held on an object property (not a let binding): TS control-flow analysis
+      // does not track assignments made through the `finalize` closure, so a
+      // plain `let` still reads as null in the `finally` block.
       this.log('info', 'Browser page created', { companyName })
 
-      // Set user agent and viewport
-      await page.setUserAgent(
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-      )
-      await page.setViewport({ width: 1920, height: 1080 })
+      await this.initializePage(page)
 
       // Authenticate against SOSDirect (required for TX UCC searches)
       if (!this.isAuthenticated) {
@@ -641,18 +555,7 @@ export class TexasScraper extends BaseScraper {
         timestamp: new Date().toISOString(),
         parsingErrors: validationErrors.length > 0 ? validationErrors : undefined
       })
-    } finally {
-      if (page) {
-        const keepPage = this.keepPageOpenOnFailure && outcome.result && !outcome.result.success
-        if (!keepPage) {
-          await page.close().catch((err) => {
-            this.log('warn', 'Error closing page', {
-              error: err instanceof Error ? err.message : String(err)
-            })
-          })
-        }
-      }
-    }
+    })
   }
 
   /**

@@ -5,18 +5,12 @@
  * Uses Puppeteer for real web scraping with anti-detection measures
  */
 
-import { BaseScraper, ScraperResult, UCCFiling } from '../base-scraper'
-import puppeteer, { Browser, Page } from 'puppeteer'
-import { existsSync, mkdirSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import { ScraperResult, UCCFiling } from '../base-scraper'
+import { BasePuppeteerScraper } from '../base-puppeteer-scraper'
 import type { Frame } from 'puppeteer'
 import { PaginationHandler } from '../pagination-handler'
 
-export class CaliforniaScraper extends BaseScraper {
-  private browser: Browser | null = null
-  private lastPage: Page | null = null
-  private headless: boolean
-  private keepPageOpenOnFailure: boolean
+export class CaliforniaScraper extends BasePuppeteerScraper {
 
   constructor(options: { headless?: boolean; keepPageOpenOnFailure?: boolean } = {}) {
     super({
@@ -25,83 +19,7 @@ export class CaliforniaScraper extends BaseScraper {
       rateLimit: 4, // 4 requests per minute (conservative for state portal)
       timeout: 45000, // Increased timeout for CA SOS portal
       retryAttempts: 2
-    })
-    this.headless = options.headless ?? true
-    this.keepPageOpenOnFailure = options.keepPageOpenOnFailure ?? false
-  }
-
-  /**
-   * Initialize browser instance
-   */
-  private async getBrowser(): Promise<Browser> {
-    if (!this.browser) {
-      this.browser = await puppeteer.launch({
-        headless: this.headless,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--disable-gpu',
-          '--window-size=1920x1080'
-        ]
-      })
-    }
-    return this.browser
-  }
-
-  /**
-   * Close browser instance
-   */
-  async closeBrowser(): Promise<void> {
-    if (this.browser) {
-      await this.browser.close()
-      this.browser = null
-      this.lastPage = null
-    }
-  }
-
-  async captureDiagnostics(
-    outputDir: string,
-    baseName: string
-  ): Promise<{ screenshotPath?: string; htmlPath?: string }> {
-    if (!this.lastPage || this.lastPage.isClosed()) {
-      return {}
-    }
-
-    if (!existsSync(outputDir)) {
-      mkdirSync(outputDir, { recursive: true })
-    }
-
-    const screenshotPath = join(outputDir, `${baseName}.png`)
-    const htmlPath = join(outputDir, `${baseName}.html`)
-
-    let savedScreenshot = false
-    let savedHtml = false
-
-    try {
-      await this.lastPage.screenshot({ path: screenshotPath, fullPage: true })
-      savedScreenshot = true
-    } catch (error) {
-      this.log('warn', 'Failed to capture screenshot', {
-        error: error instanceof Error ? error.message : String(error)
-      })
-    }
-
-    try {
-      const html = await this.lastPage.content()
-      writeFileSync(htmlPath, html)
-      savedHtml = true
-    } catch (error) {
-      this.log('warn', 'Failed to capture HTML snapshot', {
-        error: error instanceof Error ? error.message : String(error)
-      })
-    }
-
-    return {
-      screenshotPath: savedScreenshot ? screenshotPath : undefined,
-      htmlPath: savedHtml ? htmlPath : undefined
-    }
+    }, options)
   }
 
   /**
@@ -161,31 +79,14 @@ export class CaliforniaScraper extends BaseScraper {
    * Offers free searches but may require account for advanced features
    */
   private async performSearch(companyName: string, searchUrl: string): Promise<ScraperResult> {
-    let page: Page | null = null
-    // Held on an object property (not a let binding): TS control-flow analysis
-    // does not track assignments made through the `finalize` closure, so a
-    // plain `let` still reads as null in the `finally` block.
-    const outcome: { result: ScraperResult | null } = { result: null }
-    const finalize = (next: ScraperResult): ScraperResult => {
-      outcome.result = next
-      return next
-    }
-
-    try {
-      const browser = await this.getBrowser()
-      page = await browser.newPage()
-      this.lastPage = page
+    return this.withSearchPage(async (page, finalize) => {
       // Non-null alias for use inside closures below — TS resets the
       // null-narrowing of `page` inside nested functions.
       const activePage = page
 
       this.log('info', 'Browser page created', { companyName })
 
-      // Set user agent and viewport
-      await page.setUserAgent(
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-      )
-      await page.setViewport({ width: 1920, height: 1080 })
+      await this.initializePage(page)
 
       // Navigate to California UCC search page
       this.log('info', 'Navigating to CA UCC search page', { companyName, searchUrl })
@@ -709,19 +610,7 @@ export class CaliforniaScraper extends BaseScraper {
         timestamp: new Date().toISOString(),
         parsingErrors: validationErrors.length > 0 ? validationErrors : undefined
       })
-    } finally {
-      // Cleanup page in all cases
-      if (page) {
-        const keepPage = this.keepPageOpenOnFailure && outcome.result && !outcome.result.success
-        if (!keepPage) {
-          await page.close().catch((err) => {
-            this.log('warn', 'Error closing page', {
-              error: err instanceof Error ? err.message : String(err)
-            })
-          })
-        }
-      }
-    }
+    })
   }
 
   /**
