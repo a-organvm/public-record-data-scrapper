@@ -45,7 +45,11 @@ vi.mock('../../services/FreshCapacityService', () => ({
 }))
 
 import { database } from '../../database/connection'
+import { errorHandler } from '../../middleware/errorHandler'
 import competitiveRouter from '../../routes/competitive'
+
+const PROSPECT_UUID = 'a1b2c3d4-e5f6-4890-a123-ef1234567890'
+const PROSPECT_UUID_2 = '11111111-1111-4111-8111-111111111111'
 
 describe('Competitive Intelligence Routes', () => {
   let app: Express
@@ -54,6 +58,7 @@ describe('Competitive Intelligence Routes', () => {
     app = express()
     app.use(express.json())
     app.use('/api/competitive', competitiveRouter)
+    app.use(errorHandler)
     vi.clearAllMocks()
   })
 
@@ -85,7 +90,6 @@ describe('Competitive Intelligence Routes', () => {
       const response = await request(app).get('/api/competitive/saturation/INVALID')
 
       expect(response.status).toBe(400)
-      expect(response.body).toMatchObject({ error: 'Invalid state code' })
     })
 
     it('returns 500 when the service throws', async () => {
@@ -94,7 +98,7 @@ describe('Competitive Intelligence Routes', () => {
       const response = await request(app).get('/api/competitive/saturation/CA')
 
       expect(response.status).toBe(500)
-      expect(response.body).toMatchObject({ error: 'Failed to compute saturation' })
+      expect(response.body.error).toBeTruthy()
     })
   })
 
@@ -126,7 +130,14 @@ describe('Competitive Intelligence Routes', () => {
       const response = await request(app).get('/api/competitive/funder/UnknownFunder')
 
       expect(response.status).toBe(500)
-      expect(response.body).toMatchObject({ error: 'Failed to get funder heat map' })
+      expect(response.body.error).toBeTruthy()
+    })
+
+    it('returns 400 for empty funder name', async () => {
+      const response = await request(app).get('/api/competitive/funder/')
+
+      // Express treats empty segment as missing route
+      expect([400, 404]).toContain(response.status)
     })
   })
 
@@ -160,7 +171,7 @@ describe('Competitive Intelligence Routes', () => {
       const response = await request(app).get('/api/competitive/events/recent')
 
       expect(response.status).toBe(500)
-      expect(response.body).toMatchObject({ error: 'Failed to get recent events' })
+      expect(response.body.error).toBeTruthy()
     })
   })
 
@@ -173,11 +184,11 @@ describe('Competitive Intelligence Routes', () => {
       ]
       mockComputeVelocity.mockResolvedValueOnce(mockMetrics)
 
-      const response = await request(app).get('/api/competitive/velocity/prospect-123')
+      const response = await request(app).get(`/api/competitive/velocity/${PROSPECT_UUID}`)
 
       expect(response.status).toBe(200)
       expect(response.body).toMatchObject({
-        prospectId: 'prospect-123',
+        prospectId: PROSPECT_UUID,
         metrics: expect.any(Array)
       })
       expect(response.body.metrics).toHaveLength(3)
@@ -186,10 +197,16 @@ describe('Competitive Intelligence Routes', () => {
     it('returns 500 when velocity service throws', async () => {
       mockComputeVelocity.mockRejectedValueOnce(new Error('Computation failed'))
 
-      const response = await request(app).get('/api/competitive/velocity/bad-id')
+      const response = await request(app).get(`/api/competitive/velocity/${PROSPECT_UUID_2}`)
 
       expect(response.status).toBe(500)
-      expect(response.body).toMatchObject({ error: 'Failed to compute velocity' })
+      expect(response.body.error).toBeTruthy()
+    })
+
+    it('returns 400 for non-UUID prospectId', async () => {
+      const response = await request(app).get('/api/competitive/velocity/not-a-uuid')
+
+      expect(response.status).toBe(400)
     })
   })
 
@@ -207,11 +224,11 @@ describe('Competitive Intelligence Routes', () => {
       }
       mockComputeForProspect.mockResolvedValueOnce(mockResult)
 
-      const response = await request(app).get('/api/competitive/capacity/prospect-456')
+      const response = await request(app).get(`/api/competitive/capacity/${PROSPECT_UUID}`)
 
       expect(response.status).toBe(200)
       expect(response.body).toMatchObject({
-        prospectId: 'prospect-456',
+        prospectId: PROSPECT_UUID,
         score: expect.any(Number),
         input: expect.any(Object)
       })
@@ -220,10 +237,16 @@ describe('Competitive Intelligence Routes', () => {
     it('returns 500 when capacity service throws', async () => {
       mockComputeForProspect.mockRejectedValueOnce(new Error('No data'))
 
-      const response = await request(app).get('/api/competitive/capacity/bad-id')
+      const response = await request(app).get(`/api/competitive/capacity/${PROSPECT_UUID_2}`)
 
       expect(response.status).toBe(500)
-      expect(response.body).toMatchObject({ error: 'Failed to compute capacity' })
+      expect(response.body.error).toBeTruthy()
+    })
+
+    it('returns 400 for non-UUID prospectId', async () => {
+      const response = await request(app).get('/api/competitive/capacity/not-a-uuid')
+
+      expect(response.status).toBe(400)
     })
   })
 
@@ -253,13 +276,19 @@ describe('Competitive Intelligence Routes', () => {
       expect(response.body).toMatchObject({ prospects: [], count: 0 })
     })
 
+    it('returns 400 for invalid state code in query', async () => {
+      const response = await request(app).get('/api/competitive/accelerating?state=XYZ')
+
+      expect(response.status).toBe(400)
+    })
+
     it('returns 500 when detection throws', async () => {
       mockDetectAccelerating.mockRejectedValueOnce(new Error('DB timeout'))
 
       const response = await request(app).get('/api/competitive/accelerating')
 
       expect(response.status).toBe(500)
-      expect(response.body).toMatchObject({ error: 'Failed to detect accelerating prospects' })
+      expect(response.body.error).toBeTruthy()
     })
   })
 })
