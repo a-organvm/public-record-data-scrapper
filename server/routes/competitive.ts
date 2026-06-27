@@ -1,4 +1,7 @@
 import { Router } from 'express'
+import { z } from 'zod'
+import { validateRequest } from '../middleware/validateRequest'
+import { asyncHandler } from '../middleware/errorHandler'
 import { CompetitiveHeatMapService } from '../services/CompetitiveHeatMapService'
 import { FilingVelocityService } from '../services/FilingVelocityService'
 import { FreshCapacityService } from '../services/FreshCapacityService'
@@ -6,47 +9,66 @@ import { database } from '../database/connection'
 
 const router = Router()
 
-// GET /api/competitive/saturation/:state — market saturation + HHI for a state
-router.get('/saturation/:state', async (req, res) => {
-  try {
-    const { state } = req.params
-    if (!state || state.length !== 2) {
-      return res.status(400).json({ error: 'Invalid state code' })
-    }
-
-    const service = new CompetitiveHeatMapService(database)
-    const saturation = await service.getCompetitiveSaturation(
-      state.toUpperCase(),
-      req.query.industry as string | undefined
-    )
-    res.json(saturation)
-  } catch (err) {
-    console.error('[competitive] Saturation error:', (err as Error).message)
-    res.status(500).json({ error: 'Failed to compute saturation' })
-  }
+const stateParamSchema = z.object({
+  state: z.string().length(2).transform((s) => s.toUpperCase())
 })
 
+const funderParamSchema = z.object({
+  name: z.string().min(1).max(200)
+})
+
+const prospectIdParamSchema = z.object({
+  prospectId: z.string().uuid()
+})
+
+const sequenceIdParamSchema = z.object({
+  id: z.string().uuid()
+})
+
+const saturationQuerySchema = z.object({
+  industry: z.string().min(1).max(100).optional()
+})
+
+const eventsQuerySchema = z.object({
+  hours: z.coerce.number().int().positive().max(24 * 90).default(168)
+})
+
+const acceleratingQuerySchema = z.object({
+  state: z.string().length(2).transform((s) => s.toUpperCase()).optional()
+})
+
+// GET /api/competitive/saturation/:state — market saturation + HHI for a state
+router.get(
+  '/saturation/:state',
+  validateRequest({ params: stateParamSchema, query: saturationQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const service = new CompetitiveHeatMapService(database)
+    const saturation = await service.getCompetitiveSaturation(
+      req.params.state,
+      (req.query as z.infer<typeof saturationQuerySchema>).industry
+    )
+    res.json(saturation)
+  })
+)
+
 // GET /api/competitive/funder/:name — geographic heat map for a funder
-router.get('/funder/:name', async (req, res) => {
-  try {
+router.get(
+  '/funder/:name',
+  validateRequest({ params: funderParamSchema }),
+  asyncHandler(async (req, res) => {
     const { name } = req.params
     const service = new CompetitiveHeatMapService(database)
     const heatMap = await service.getGeographicHeatMap(name)
     res.json({ funder: name, states: heatMap })
-  } catch (err) {
-    console.error('[competitive] Funder heatmap error:', (err as Error).message)
-    res.status(500).json({ error: 'Failed to get funder heat map' })
-  }
-})
+  })
+)
 
 // GET /api/competitive/events/recent — recent filing events
-router.get('/events/recent', async (req, res) => {
-  try {
-    // Parse with explicit radix, guard NaN/non-positive, and clamp to a sane
-    // upper bound (90 days) so a caller cannot request an unbounded window.
-    const parsedHours = parseInt(req.query.hours as string, 10)
-    const hours =
-      Number.isFinite(parsedHours) && parsedHours > 0 ? Math.min(parsedHours, 24 * 90) : 168 // default 7 days
+router.get(
+  '/events/recent',
+  validateRequest({ query: eventsQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const { hours } = req.query as z.infer<typeof eventsQuerySchema>
     const events = await database.query(
       `SELECT id, prospect_id as "prospectId", event_type as "eventType",
               filing_id as "filingId", event_date as "eventDate",
@@ -58,49 +80,43 @@ router.get('/events/recent', async (req, res) => {
       [hours]
     )
     res.json({ events, count: events.length })
-  } catch (err) {
-    console.error('[competitive] Events error:', (err as Error).message)
-    res.status(500).json({ error: 'Failed to get recent events' })
-  }
-})
+  })
+)
 
 // GET /api/competitive/velocity/:prospectId — velocity metrics for a prospect
-router.get('/velocity/:prospectId', async (req, res) => {
-  try {
+router.get(
+  '/velocity/:prospectId',
+  validateRequest({ params: prospectIdParamSchema }),
+  asyncHandler(async (req, res) => {
     const { prospectId } = req.params
     const velocityService = new FilingVelocityService(database)
     const metrics = await velocityService.computeVelocity(prospectId)
     res.json({ prospectId, metrics })
-  } catch (err) {
-    console.error('[competitive] Velocity error:', (err as Error).message)
-    res.status(500).json({ error: 'Failed to compute velocity' })
-  }
-})
+  })
+)
 
 // GET /api/competitive/capacity/:prospectId — fresh capacity score
-router.get('/capacity/:prospectId', async (req, res) => {
-  try {
+router.get(
+  '/capacity/:prospectId',
+  validateRequest({ params: prospectIdParamSchema }),
+  asyncHandler(async (req, res) => {
     const { prospectId } = req.params
     const capacityService = new FreshCapacityService(database)
     const result = await capacityService.computeForProspect(prospectId)
     res.json({ prospectId, ...result })
-  } catch (err) {
-    console.error('[competitive] Capacity error:', (err as Error).message)
-    res.status(500).json({ error: 'Failed to compute capacity' })
-  }
-})
+  })
+)
 
 // GET /api/competitive/accelerating — prospects with accelerating filing velocity
-router.get('/accelerating', async (req, res) => {
-  try {
-    const state = req.query.state as string | undefined
+router.get(
+  '/accelerating',
+  validateRequest({ query: acceleratingQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const { state } = req.query as z.infer<typeof acceleratingQuerySchema>
     const velocityService = new FilingVelocityService(database)
     const prospects = await velocityService.detectAccelerating(state)
     res.json({ prospects, count: prospects.length })
-  } catch (err) {
-    console.error('[competitive] Accelerating error:', (err as Error).message)
-    res.status(500).json({ error: 'Failed to detect accelerating prospects' })
-  }
-})
+  })
+)
 
 export default router
