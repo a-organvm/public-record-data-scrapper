@@ -47,29 +47,41 @@
 ## Usage
 
 ```bash
-git clone https://github.com/organvm-iii-ergon/public-record-data-scrapper.git
+git clone https://github.com/organvm/public-record-data-scrapper.git
 cd public-record-data-scrapper
-npm install --legacy-peer-deps
+npm ci
 ```
 
-### Development and runtime commands
+The root package is a private npm workspace. It does not declare a top-level `bin`
+or package export; use the npm scripts below.
+
+### Run the app
+
+The web app runs from `apps/web` through the root workspace script:
 
 ```bash
-npm run dev                              # Run web app only (Vite)
-npm run dev:server                       # Run Express API only
-npm run dev:worker                       # Run BullMQ worker only
-npm run dev:full                         # Run web + API + worker together
-npm run build                            # Build distributable web bundle
-npm run build:server                     # Build API worker output bundle
-npm run start                            # Run built API server
-npm run start:worker                     # Run built worker
+npm run dev
 ```
 
-Prerequisites for full stack/API commands:
+Vite is configured to bind `127.0.0.1:5173`.
+
+The API and worker read configuration from process environment variables. The
+server requires `JWT_SECRET` at startup. To use the local Docker database and
+Redis services:
 
 ```bash
-docker-compose up -d db redis             # PostgreSQL + Redis
-npm run db:migrate && npm run seed        # Apply schema + seed data
+docker-compose up -d db redis
+
+export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ucc_mca
+export REDIS_URL=redis://localhost:6379
+export JWT_SECRET=replace-with-local-secret
+
+npm run db:migrate
+npm run seed
+
+npm run dev:server # API only
+npm run dev:worker # Worker only
+npm run dev:full   # Web + API + worker
 ```
 
 Health checks (running API on default `3000`):
@@ -79,7 +91,20 @@ curl -fsS http://localhost:3000/api/health           # Basic liveness
 curl -fsS http://localhost:3000/api/health/detailed   # Dependency status
 ```
 
-### CLI tools (`npm run scrape`)
+Other root run/build entrypoints:
+
+```bash
+npm run preview          # Preview the built web app
+npm run build            # Build apps/web into dist/
+npm run build:server     # Bundle dist/server.cjs and dist/worker.cjs
+npm run build:render     # Build web + server/worker bundles
+npm start                # Run dist/server.cjs
+npm run start:worker     # Run dist/worker.cjs
+npm run dev:desktop      # Run apps/desktop dev script
+npm run dev:mobile       # Run apps/mobile Expo start script
+```
+
+### CLI tools
 
 The CLI is registered in `scripts/cli-scraper.ts` and executed as:
 
@@ -93,6 +118,9 @@ See command-level help with:
 npm run scrape -- --help
 npm run scrape -- scrape-ucc --help
 ```
+
+The CLI supports `CA`, `TX`, `FL`, and `NY` for commands that validate state
+through `SUPPORTED_CLI_STATES`.
 
 ```bash
 # Scrape UCC filings for a company
@@ -114,8 +142,9 @@ npm run scrape -- enrich -c "Company Name" -s CA --tier professional -o ./enrich
 # Batch process CSV input
 npm run scrape -- batch -i ./companies.csv -o ./batch-results
 #   required: -i|--input <file> (CSV header + rows company,state)
-#   optional: -o|--output <dir> (default: ./batch-results), --enrich
-#   max 1,000 rows and input capped at 5MB
+#   optional: -o|--output <dir> (default: ./batch-results)
+#   max 1,000 rows; input file must be 5,242,880 bytes or smaller
+#   note: --enrich is accepted by the parser but the batch loop only scrapes UCC filings
 
 # Export scored leads (database-backed)
 npm run scrape -- lead-export --min-score 70 --max-score 95 --state CA --limit 100 --offset 0 --output-dir ./lead-export
@@ -127,6 +156,50 @@ npm run scrape -- lead-export --min-score 70 --max-score 95 --state CA --limit 1
 
 # List available states with configured UCC collectors
 npm run scrape -- list-states
+```
+
+The scheduled scraper is a separate script:
+
+```bash
+npm run scrape:scheduled              # Hard-coded sample companies for CA, TX, FL, NY, IL
+npm run scrape:scheduled -- --dry-run # Print the batch instead of writing output/
+```
+
+It uses `SCRAPER_IMPLEMENTATION` when set (`mock`, `puppeteer`, or `api`);
+otherwise `scripts/scrapers/scraper-factory.ts` chooses a recommended
+implementation from the current environment.
+
+### API entrypoints
+
+The Express server exposes Swagger UI at `/api/docs` and raw OpenAPI at
+`/api/docs/openapi.json` and `/api/docs/openapi.yaml`.
+
+The on-demand UCC API is mounted behind API-key-or-JWT auth:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/scrape/readiness/CA
+
+curl -X POST http://localhost:3000/api/scrape/ucc \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"company_name":"Company Name","state":"CA","limit":100}'
+```
+
+### Workspace exports
+
+Internal workspace packages expose source entrypoints for other workspace code:
+
+```text
+@public-records/core
+  .              -> packages/core/src/index.ts
+  ./database     -> packages/core/src/database.ts
+  ./identity     -> packages/core/src/identity.ts
+  ./types        -> packages/core/src/types.ts
+  ./enrichment   -> packages/core/src/enrichment/index.ts
+
+@public-records/ui
+  . and component subpaths such as ./button, ./card, ./dialog, ./table,
+  ./tooltip, ./utils, and the other subpaths declared in packages/ui/package.json
 ```
 
 ---
