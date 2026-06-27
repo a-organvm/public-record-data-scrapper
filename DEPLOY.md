@@ -123,7 +123,7 @@ The application is deployment-ready for:
 - ✅ Subscription tier gating
 - ✅ Enhanced CLI scraper with async job queue support
 - ✅ Async scrape job queue (POST /api/scrape/jobs + GET /api/scrape/jobs/:id)
-- ✅ API key auth for paying customers (X-API-Key / Bearer prk_…)
+- ✅ API key auth for paying customers (X-API-Key / Bearer prk\_…)
 - ✅ Per-key rate limiting (100 req/15min)
 - ✅ Error handling middleware (structured errors, logging)
 - ✅ Request validation middleware
