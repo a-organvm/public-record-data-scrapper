@@ -54,9 +54,7 @@ function createProspect(overrides: Partial<Prospect> = {}): Prospect {
   }
 }
 
-function createPortfolioCompany(
-  overrides: Partial<PortfolioCompany> = {}
-): PortfolioCompany {
+function createPortfolioCompany(overrides: Partial<PortfolioCompany> = {}): PortfolioCompany {
   return {
     id: 'portfolio-1',
     companyName: 'Portfolio Co',
@@ -186,9 +184,7 @@ describe('StatusDashboard', () => {
         prospects={[createProspect()]}
         portfolio={[createPortfolioCompany({ currentStatus: 'at-risk' })]}
         competitors={competitors}
-        userActions={[
-          { type: 'refresh-data', timestamp: '2026-06-20T10:00:00.000Z', details: {} }
-        ]}
+        userActions={[{ type: 'refresh-data', timestamp: '2026-06-20T10:00:00.000Z', details: {} }]}
         isLoading={false}
         loadError={null}
         lastDataRefresh="2026-06-20T11:30:00.000Z"
@@ -200,7 +196,7 @@ describe('StatusDashboard', () => {
 
     expect(screen.getByRole('heading', { name: 'Product Status' })).toBeInTheDocument()
     expect(screen.getByText('Online')).toBeInTheDocument()
-    expect(screen.getByText('Preview data')).toBeInTheDocument()
+    expect(screen.getAllByText('Preview data')[0]).toBeInTheDocument()
     expect(screen.getByText('Top States')).toBeInTheDocument()
     expect(screen.getByText('CA')).toBeInTheDocument()
 
