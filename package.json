@@ -200,10 +200,13 @@
       "prettier --write"
     ]
   },
-  "overrides": {
-    "localtunnel": {
-      "axios": "^1.7.4"
-    },
-    "esbuild": "0.28.1"
+  "pnpm": {
+    "overrides": {
+      "localtunnel>axios": "^1.7.4",
+      "esbuild": "0.28.1",
+      "basic-ftp": "^5.3.1",
+      "ws": "^8.21.0",
+      "bullmq>uuid": "^11.1.1"
+    }
   }
 }

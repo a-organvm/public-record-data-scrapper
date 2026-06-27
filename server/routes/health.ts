@@ -1,4 +1,6 @@
 import { Router } from 'express'
+import { z } from 'zod'
+import { validateRequest } from '../middleware/validateRequest'
 import { database } from '../database/connection'
 import { asyncHandler } from '../middleware/errorHandler'
 import { getResolvedDataTier } from '../middleware/dataTier'
@@ -564,9 +566,14 @@ router.get(
   })
 )
 
+const stateCodeParam = z.object({
+  stateCode: z.string().length(2)
+})
+
 // GET /api/health/coverage/:stateCode - state-specific readiness snapshot
 router.get(
   '/coverage/:stateCode',
+  validateRequest({ params: stateCodeParam }),
   asyncHandler(async (req, res) => {
     const dataTier = getResolvedDataTier(req)
     const state = getStateCoverageSnapshot(req.params.stateCode, dataTier)
