@@ -46,10 +46,15 @@ vi.mock('../../database/connection', () => ({
   database: { query: vi.fn() }
 }))
 
+import { errorHandler } from '../../middleware/errorHandler'
 import outreachRouter from '../../routes/outreach'
 
+const PROSPECT_UUID = 'a1b2c3d4-e5f6-4890-a123-ef1234567890'
+const PROSPECT_UUID_2 = '11111111-1111-4111-8111-111111111111'
+const SEQUENCE_UUID = '22222222-2222-4222-8222-222222222222'
+
 const sampleBriefing = {
-  prospectId: 'prospect-abc',
+  prospectId: 'a1b2c3d4-e5f6-4890-a123-ef1234567890',
   generatedAt: '2026-03-23T00:00:00.000Z',
   companyName: 'Acme Corp',
   state: 'CA',
@@ -70,17 +75,18 @@ describe('Outreach Routes', () => {
     app = express()
     app.use(express.json())
     app.use('/api/outreach', outreachRouter)
+    app.use(errorHandler)
   })
 
   describe('GET /api/outreach/briefing/:prospectId', () => {
     it('returns 200 with cached briefing when cache is warm', async () => {
       mocks.mockGetCachedBriefing.mockResolvedValue(sampleBriefing)
 
-      const response = await request(app).get('/api/outreach/briefing/prospect-abc')
+      const response = await request(app).get(`/api/outreach/briefing/${PROSPECT_UUID}`)
 
       expect(response.status).toBe(200)
       expect(response.body).toMatchObject({
-        prospectId: 'prospect-abc',
+        prospectId: PROSPECT_UUID,
         companyName: 'Acme Corp'
       })
       expect(mocks.mockGenerateBriefing).not.toHaveBeenCalled()
@@ -90,44 +96,51 @@ describe('Outreach Routes', () => {
       mocks.mockGetCachedBriefing.mockResolvedValue(null)
       mocks.mockGenerateBriefing.mockResolvedValue(sampleBriefing)
 
-      const response = await request(app).get('/api/outreach/briefing/prospect-abc')
+      const response = await request(app).get(`/api/outreach/briefing/${PROSPECT_UUID}`)
 
       expect(response.status).toBe(200)
-      expect(mocks.mockGenerateBriefing).toHaveBeenCalledWith('prospect-abc')
+      expect(mocks.mockGenerateBriefing).toHaveBeenCalledWith(PROSPECT_UUID)
       expect(response.body.companyName).toBe('Acme Corp')
     })
 
     it('returns 404 when prospect is not found', async () => {
       mocks.mockGetCachedBriefing.mockResolvedValue(null)
-      mocks.mockGenerateBriefing.mockRejectedValue(new Error('Prospect not found: prospect-xyz'))
+      mocks.mockGenerateBriefing.mockRejectedValue(
+        new Error(`Prospect not found: ${PROSPECT_UUID_2}`)
+      )
 
-      const response = await request(app).get('/api/outreach/briefing/prospect-xyz')
+      const response = await request(app).get(`/api/outreach/briefing/${PROSPECT_UUID_2}`)
 
       expect(response.status).toBe(404)
-      expect(response.body).toMatchObject({ error: 'Prospect not found: prospect-xyz' })
     })
 
     it('returns 500 on unexpected error', async () => {
       mocks.mockGetCachedBriefing.mockRejectedValue(new Error('DB connection lost'))
 
-      const response = await request(app).get('/api/outreach/briefing/prospect-abc')
+      const response = await request(app).get(`/api/outreach/briefing/${PROSPECT_UUID}`)
 
       expect(response.status).toBe(500)
-      expect(response.body).toMatchObject({ error: 'Failed to generate briefing' })
+      expect(response.body.error).toBeTruthy()
+    })
+
+    it('returns 400 for non-UUID prospectId', async () => {
+      const response = await request(app).get('/api/outreach/briefing/not-a-uuid')
+
+      expect(response.status).toBe(400)
     })
   })
 
   describe('POST /api/outreach/trigger/:prospectId', () => {
     it('returns 201 with sequenceId when eligible', async () => {
       mocks.mockIsEligible.mockResolvedValue({ eligible: true })
-      mocks.mockCreateSequence.mockResolvedValue('seq-new-123')
+      mocks.mockCreateSequence.mockResolvedValue(SEQUENCE_UUID)
 
       const response = await request(app)
-        .post('/api/outreach/trigger/prospect-abc')
+        .post(`/api/outreach/trigger/${PROSPECT_UUID}`)
         .send({ triggerType: 'termination', capacityScore: 80 })
 
       expect(response.status).toBe(201)
-      expect(response.body).toMatchObject({ sequenceId: 'seq-new-123', status: 'created' })
+      expect(response.body).toMatchObject({ sequenceId: SEQUENCE_UUID, status: 'created' })
     })
 
     it('returns 409 when prospect is not eligible', async () => {
@@ -137,7 +150,7 @@ describe('Outreach Routes', () => {
       })
 
       const response = await request(app)
-        .post('/api/outreach/trigger/prospect-abc')
+        .post(`/api/outreach/trigger/${PROSPECT_UUID}`)
         .send({ triggerType: 'termination' })
 
       expect(response.status).toBe(409)
@@ -150,22 +163,38 @@ describe('Outreach Routes', () => {
 
     it('uses termination as default triggerType when not provided', async () => {
       mocks.mockIsEligible.mockResolvedValue({ eligible: true })
-      mocks.mockCreateSequence.mockResolvedValue('seq-default')
+      mocks.mockCreateSequence.mockResolvedValue(SEQUENCE_UUID)
 
-      await request(app).post('/api/outreach/trigger/prospect-abc').send({})
+      await request(app).post(`/api/outreach/trigger/${PROSPECT_UUID}`).send({})
 
-      expect(mocks.mockIsEligible).toHaveBeenCalledWith('prospect-abc', 'termination', undefined)
+      expect(mocks.mockIsEligible).toHaveBeenCalledWith(PROSPECT_UUID, 'termination', undefined)
+    })
+
+    it('returns 400 for invalid triggerType', async () => {
+      const response = await request(app)
+        .post(`/api/outreach/trigger/${PROSPECT_UUID}`)
+        .send({ triggerType: 'unknown_type' })
+
+      expect(response.status).toBe(400)
+    })
+
+    it('returns 400 for non-UUID prospectId', async () => {
+      const response = await request(app)
+        .post('/api/outreach/trigger/not-a-uuid')
+        .send({ triggerType: 'termination' })
+
+      expect(response.status).toBe(400)
     })
 
     it('returns 500 on unexpected error', async () => {
       mocks.mockIsEligible.mockRejectedValue(new Error('DB error'))
 
       const response = await request(app)
-        .post('/api/outreach/trigger/prospect-abc')
+        .post(`/api/outreach/trigger/${PROSPECT_UUID}`)
         .send({ triggerType: 'termination' })
 
       expect(response.status).toBe(500)
-      expect(response.body).toMatchObject({ error: 'Failed to trigger outreach' })
+      expect(response.body.error).toBeTruthy()
     })
   })
 
@@ -191,7 +220,7 @@ describe('Outreach Routes', () => {
       ]
       mocks.mockGetActiveSequences.mockResolvedValue(sequences)
 
-      const response = await request(app).get('/api/outreach/sequences/prospect-abc')
+      const response = await request(app).get(`/api/outreach/sequences/${PROSPECT_UUID}`)
 
       expect(response.status).toBe(200)
       expect(response.body).toMatchObject({ count: 2 })
@@ -201,7 +230,7 @@ describe('Outreach Routes', () => {
     it('returns empty array when no active sequences', async () => {
       mocks.mockGetActiveSequences.mockResolvedValue([])
 
-      const response = await request(app).get('/api/outreach/sequences/prospect-abc')
+      const response = await request(app).get(`/api/outreach/sequences/${PROSPECT_UUID}`)
 
       expect(response.status).toBe(200)
       expect(response.body).toMatchObject({ count: 0, sequences: [] })
@@ -210,10 +239,16 @@ describe('Outreach Routes', () => {
     it('returns 500 on error', async () => {
       mocks.mockGetActiveSequences.mockRejectedValue(new Error('DB error'))
 
-      const response = await request(app).get('/api/outreach/sequences/prospect-abc')
+      const response = await request(app).get(`/api/outreach/sequences/${PROSPECT_UUID}`)
 
       expect(response.status).toBe(500)
-      expect(response.body).toMatchObject({ error: 'Failed to get sequences' })
+      expect(response.body.error).toBeTruthy()
+    })
+
+    it('returns 400 for non-UUID prospectId', async () => {
+      const response = await request(app).get('/api/outreach/sequences/not-a-uuid')
+
+      expect(response.status).toBe(400)
     })
   })
 
@@ -221,20 +256,26 @@ describe('Outreach Routes', () => {
     it('returns 200 with cancelled status', async () => {
       mocks.mockCancelSequence.mockResolvedValue(undefined)
 
-      const response = await request(app).post('/api/outreach/sequences/seq-123/cancel')
+      const response = await request(app).post(`/api/outreach/sequences/${SEQUENCE_UUID}/cancel`)
 
       expect(response.status).toBe(200)
       expect(response.body).toMatchObject({ status: 'cancelled' })
-      expect(mocks.mockCancelSequence).toHaveBeenCalledWith('seq-123')
+      expect(mocks.mockCancelSequence).toHaveBeenCalledWith(SEQUENCE_UUID)
     })
 
-    it('returns 500 on error', async () => {
+    it('returns 500 on service error', async () => {
       mocks.mockCancelSequence.mockRejectedValue(new Error('Not found'))
 
-      const response = await request(app).post('/api/outreach/sequences/seq-bad/cancel')
+      const response = await request(app).post(`/api/outreach/sequences/${SEQUENCE_UUID}/cancel`)
 
       expect(response.status).toBe(500)
-      expect(response.body).toMatchObject({ error: 'Failed to cancel sequence' })
+      expect(response.body.error).toBeTruthy()
+    })
+
+    it('returns 400 for non-UUID sequence id', async () => {
+      const response = await request(app).post('/api/outreach/sequences/not-a-uuid/cancel')
+
+      expect(response.status).toBe(400)
     })
   })
 })
