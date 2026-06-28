@@ -1,8 +1,8 @@
 # Public Record Data Scraper — Deploy-Ready Build
 
 **Status:** ✅ DEPLOYMENT READY  
-**Build Date:** 2026-06-26  
-**Latest Commit:** 92f6572 "fix(ci): unblock gate — Vitest 4 constructor mock + ESLint v7 react-hooks compat"
+**Build Date:** 2026-06-28  
+**Latest Commit:** 7a67e74 "Security: Zod input validation on competitive and outreach routes"
 
 ## Build Artifacts
 
@@ -31,10 +31,10 @@ Both bundles include source maps for production debugging.
 ### Server Tests
 
 ```
-Test Files:   87 passed
-Tests:        1427 passed | 6 skipped
+Test Files:   88 passed
+Tests:        1453 passed | 6 skipped
 Coverage:     71.49% statements
-Duration:     31s
+Duration:     19s
 ```
 
 **Key Modules Tested:**
@@ -117,7 +117,7 @@ The application is deployment-ready for:
 - **AWS ECS/Lambda** (with custom build steps for RLS validation)
 - **Self-hosted** (Docker Compose or Kubernetes)
 
-## What's Completed (PR #317 / 2026-06-26)
+## What's Completed (2026-06-28 gate run)
 
 - ✅ Status Dashboard component with live system health
 - ✅ Subscription tier gating
@@ -127,8 +127,10 @@ The application is deployment-ready for:
 - ✅ Per-key rate limiting (100 req/15min)
 - ✅ Error handling middleware (structured errors, logging)
 - ✅ Request validation middleware
-- ✅ CI gate green: 87 server test files / 1427 tests pass
-- ✅ ESLint clean (0 errors) after react-hooks v7 compat fix
+- ✅ Zod input validation on `/api/competitive/*` and `/api/outreach/*` routes (PR #331)
+- ✅ OpenAPI spec for `/api/scrape/ucc` endpoint (PR #328)
+- ✅ CI gate green: 88 server test files / 1453 tests pass
+- ✅ ESLint clean (0 errors)
 
 ## Known Limitations & Backlog
 
