@@ -23,16 +23,20 @@ import { ApiKeyService } from '../services/ApiKeyService'
 const router = Router()
 const apiKeyService = new ApiKeyService()
 
-const createKeySchema = z.object({
-  name: z.string().min(1).max(120),
-  role: z.enum(['user', 'admin']).default('user'),
-  // Optional ISO-8601 expiry; rejected if not a valid future-or-any date string.
-  expires_at: z.string().datetime().optional()
-})
+const createKeySchema = z
+  .object({
+    name: z.string().min(1).max(120),
+    role: z.enum(['user', 'admin']).default('user'),
+    // Optional ISO-8601 expiry; rejected if not a valid future-or-any date string.
+    expires_at: z.string().datetime().optional()
+  })
+  .strict()
 
-const keyIdParamSchema = z.object({
-  id: z.string().uuid()
-})
+const keyIdParamSchema = z
+  .object({
+    id: z.string().uuid()
+  })
+  .strict()
 
 // POST /api/keys - mint a new API key for the caller's org
 router.post(

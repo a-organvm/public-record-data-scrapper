@@ -246,23 +246,25 @@ function extractMultipartTextFields(buf: Buffer, boundary: string): Record<strin
  *
  * Twilio sends status updates as the message progresses through delivery.
  */
-const twilioSmsStatusSchema = z.object({
-  MessageSid: z.string().min(1),
-  MessageStatus: z.enum([
-    'queued',
-    'failed',
-    'sent',
-    'delivered',
-    'undelivered',
-    'receiving',
-    'received',
-    'accepted'
-  ]),
-  To: z.string().optional(),
-  From: z.string().optional(),
-  ErrorCode: z.string().optional(),
-  ErrorMessage: z.string().optional()
-})
+const twilioSmsStatusSchema = z
+  .object({
+    MessageSid: z.string().min(1),
+    MessageStatus: z.enum([
+      'queued',
+      'failed',
+      'sent',
+      'delivered',
+      'undelivered',
+      'receiving',
+      'received',
+      'accepted'
+    ]),
+    To: z.string().optional(),
+    From: z.string().optional(),
+    ErrorCode: z.string().optional(),
+    ErrorMessage: z.string().optional()
+  })
+  .strict()
 
 /**
  * POST /api/webhooks/twilio/sms/status
@@ -302,21 +304,23 @@ router.post(
  *
  * Twilio sends inbound messages with full message details.
  */
-const twilioSmsInboundSchema = z.object({
-  MessageSid: z.string().min(1),
-  AccountSid: z.string().min(1),
-  From: z.string().min(1),
-  To: z.string().min(1),
-  Body: z.string(),
-  NumMedia: z.coerce.number().default(0),
-  // Media URLs if present (up to 10)
-  MediaUrl0: z.string().url().optional(),
-  MediaUrl1: z.string().url().optional(),
-  MediaUrl2: z.string().url().optional(),
-  MediaContentType0: z.string().optional(),
-  MediaContentType1: z.string().optional(),
-  MediaContentType2: z.string().optional()
-})
+const twilioSmsInboundSchema = z
+  .object({
+    MessageSid: z.string().min(1),
+    AccountSid: z.string().min(1),
+    From: z.string().min(1),
+    To: z.string().min(1),
+    Body: z.string(),
+    NumMedia: z.coerce.number().default(0),
+    // Media URLs if present (up to 10)
+    MediaUrl0: z.string().url().optional(),
+    MediaUrl1: z.string().url().optional(),
+    MediaUrl2: z.string().url().optional(),
+    MediaContentType0: z.string().optional(),
+    MediaContentType1: z.string().optional(),
+    MediaContentType2: z.string().optional()
+  })
+  .strict()
 
 /**
  * POST /api/webhooks/twilio/sms/inbound
@@ -453,28 +457,30 @@ router.post(
 /**
  * Voice call status webhook schema
  */
-const twilioVoiceStatusSchema = z.object({
-  CallSid: z.string().min(1),
-  AccountSid: z.string().min(1),
-  From: z.string().optional(),
-  To: z.string().optional(),
-  CallStatus: z.enum([
-    'queued',
-    'ringing',
-    'in-progress',
-    'completed',
-    'busy',
-    'no-answer',
-    'canceled',
-    'failed'
-  ]),
-  CallDuration: z.coerce.number().optional(),
-  Duration: z.coerce.number().optional(),
-  RecordingUrl: z.string().url().optional(),
-  RecordingSid: z.string().optional(),
-  Direction: z.enum(['inbound', 'outbound-api', 'outbound-dial']).optional(),
-  AnsweredBy: z.enum(['human', 'machine', 'fax', 'unknown']).optional()
-})
+const twilioVoiceStatusSchema = z
+  .object({
+    CallSid: z.string().min(1),
+    AccountSid: z.string().min(1),
+    From: z.string().optional(),
+    To: z.string().optional(),
+    CallStatus: z.enum([
+      'queued',
+      'ringing',
+      'in-progress',
+      'completed',
+      'busy',
+      'no-answer',
+      'canceled',
+      'failed'
+    ]),
+    CallDuration: z.coerce.number().optional(),
+    Duration: z.coerce.number().optional(),
+    RecordingUrl: z.string().url().optional(),
+    RecordingSid: z.string().optional(),
+    Direction: z.enum(['inbound', 'outbound-api', 'outbound-dial']).optional(),
+    AnsweredBy: z.enum(['human', 'machine', 'fax', 'unknown']).optional()
+  })
+  .strict()
 
 /**
  * POST /api/webhooks/twilio/voice/status
@@ -518,33 +524,35 @@ router.post(
  *
  * SendGrid batches events and sends them as an array.
  */
-const sendgridEventSchema = z.object({
-  email: z.string().email().optional(),
-  timestamp: z.number().optional(),
-  event: z.enum([
-    'processed',
-    'dropped',
-    'delivered',
-    'deferred',
-    'bounce',
-    'open',
-    'click',
-    'spam_report',
-    'unsubscribe',
-    'group_unsubscribe',
-    'group_resubscribe'
-  ]),
-  sg_event_id: z.string().optional(),
-  sg_message_id: z.string().optional(),
-  category: z.union([z.string(), z.array(z.string())]).optional(),
-  url: z.string().optional(),
-  reason: z.string().optional(),
-  status: z.string().optional(),
-  response: z.string().optional(),
-  attempt: z.string().optional(),
-  useragent: z.string().optional(),
-  ip: z.string().optional()
-})
+const sendgridEventSchema = z
+  .object({
+    email: z.string().email().optional(),
+    timestamp: z.number().optional(),
+    event: z.enum([
+      'processed',
+      'dropped',
+      'delivered',
+      'deferred',
+      'bounce',
+      'open',
+      'click',
+      'spam_report',
+      'unsubscribe',
+      'group_unsubscribe',
+      'group_resubscribe'
+    ]),
+    sg_event_id: z.string().optional(),
+    sg_message_id: z.string().optional(),
+    category: z.union([z.string(), z.array(z.string())]).optional(),
+    url: z.string().optional(),
+    reason: z.string().optional(),
+    status: z.string().optional(),
+    response: z.string().optional(),
+    attempt: z.string().optional(),
+    useragent: z.string().optional(),
+    ip: z.string().optional()
+  })
+  .strict()
 
 const sendgridEventsSchema = z.array(sendgridEventSchema)
 
@@ -620,13 +628,15 @@ function extractEmailAddress(raw: string | undefined): string | null {
  * message as multipart form fields; we only require `from`. Everything else is
  * optional/best-effort.
  */
-const sendgridInboundSchema = z.object({
-  from: z.string().min(1),
-  to: z.string().optional(),
-  subject: z.string().optional(),
-  text: z.string().optional(),
-  html: z.string().optional()
-})
+const sendgridInboundSchema = z
+  .object({
+    from: z.string().min(1),
+    to: z.string().optional(),
+    subject: z.string().optional(),
+    text: z.string().optional(),
+    html: z.string().optional()
+  })
+  .strict()
 
 /**
  * POST /api/webhooks/sendgrid/inbound?token=...
@@ -763,26 +773,28 @@ router.post(
 /**
  * Plaid transaction webhook schema
  */
-const plaidTransactionSchema = z.object({
-  webhook_type: z.literal('TRANSACTIONS'),
-  webhook_code: z.enum([
-    'INITIAL_UPDATE',
-    'HISTORICAL_UPDATE',
-    'DEFAULT_UPDATE',
-    'TRANSACTIONS_REMOVED',
-    'SYNC_UPDATES_AVAILABLE'
-  ]),
-  item_id: z.string().min(1),
-  new_transactions: z.number().optional(),
-  removed_transactions: z.array(z.string()).optional(),
-  error: z
-    .object({
-      error_type: z.string(),
-      error_code: z.string(),
-      error_message: z.string()
-    })
-    .optional()
-})
+const plaidTransactionSchema = z
+  .object({
+    webhook_type: z.literal('TRANSACTIONS'),
+    webhook_code: z.enum([
+      'INITIAL_UPDATE',
+      'HISTORICAL_UPDATE',
+      'DEFAULT_UPDATE',
+      'TRANSACTIONS_REMOVED',
+      'SYNC_UPDATES_AVAILABLE'
+    ]),
+    item_id: z.string().min(1),
+    new_transactions: z.number().optional(),
+    removed_transactions: z.array(z.string()).optional(),
+    error: z
+      .object({
+        error_type: z.string(),
+        error_code: z.string(),
+        error_message: z.string()
+      })
+      .optional()
+  })
+  .strict()
 
 /**
  * POST /api/webhooks/plaid/transactions
@@ -856,26 +868,28 @@ router.post(
 /**
  * Plaid item webhook schema
  */
-const plaidItemSchema = z.object({
-  webhook_type: z.literal('ITEM'),
-  webhook_code: z.enum([
-    'ERROR',
-    'PENDING_EXPIRATION',
-    'USER_PERMISSION_REVOKED',
-    'WEBHOOK_UPDATE_ACKNOWLEDGED',
-    'NEW_ACCOUNTS_AVAILABLE'
-  ]),
-  item_id: z.string().min(1),
-  error: z
-    .object({
-      error_type: z.string(),
-      error_code: z.string(),
-      error_message: z.string(),
-      display_message: z.string().optional()
-    })
-    .optional(),
-  consent_expiration_time: z.string().optional()
-})
+const plaidItemSchema = z
+  .object({
+    webhook_type: z.literal('ITEM'),
+    webhook_code: z.enum([
+      'ERROR',
+      'PENDING_EXPIRATION',
+      'USER_PERMISSION_REVOKED',
+      'WEBHOOK_UPDATE_ACKNOWLEDGED',
+      'NEW_ACCOUNTS_AVAILABLE'
+    ]),
+    item_id: z.string().min(1),
+    error: z
+      .object({
+        error_type: z.string(),
+        error_code: z.string(),
+        error_message: z.string(),
+        display_message: z.string().optional()
+      })
+      .optional(),
+    consent_expiration_time: z.string().optional()
+  })
+  .strict()
 
 /**
  * POST /api/webhooks/plaid/item

@@ -93,21 +93,23 @@ const collectionMethodEnum = z.enum([
 // ConsentChannel = CommunicationChannel ('email'|'sms'|'call') | 'mail' | 'all'
 const consentChannelEnum = z.enum(['email', 'sms', 'call', 'mail', 'all'])
 
-const idParamSchema = z.object({ id: z.string().uuid() })
+const idParamSchema = z.object({ id: z.string().uuid() }).strict()
 
 // =============================================================================
 // DISCLOSURES
 // =============================================================================
 
-const listDisclosuresQuerySchema = z.object({
-  org_id: z.string().uuid().optional(),
-  status: disclosureStatusEnum.optional(),
-  state: z.string().length(2).optional(),
-  start_date: z.string().datetime().optional(),
-  end_date: z.string().datetime().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(200).default(20)
-})
+const listDisclosuresQuerySchema = z
+  .object({
+    org_id: z.string().uuid().optional(),
+    status: disclosureStatusEnum.optional(),
+    state: z.string().length(2).optional(),
+    start_date: z.string().datetime().optional(),
+    end_date: z.string().datetime().optional(),
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().positive().max(200).default(20)
+  })
+  .strict()
 
 // GET /api/compliance/disclosures — list disclosures for the org
 router.get(
@@ -148,7 +150,7 @@ router.get(
   })
 )
 
-const byDealParamSchema = z.object({ dealId: z.string().uuid() })
+const byDealParamSchema = z.object({ dealId: z.string().uuid() }).strict()
 
 // GET /api/compliance/disclosures/by-deal/:dealId — all disclosures for a deal
 router.get(
@@ -296,14 +298,16 @@ router.post(
 // CONSENTS
 // =============================================================================
 
-const listConsentsQuerySchema = z.object({
-  org_id: z.string().uuid().optional(),
-  contact_id: z.string().uuid().optional(),
-  include_revoked: z
-    .enum(['true', 'false'])
-    .transform((v) => v === 'true')
-    .optional()
-})
+const listConsentsQuerySchema = z
+  .object({
+    org_id: z.string().uuid().optional(),
+    contact_id: z.string().uuid().optional(),
+    include_revoked: z
+      .enum(['true', 'false'])
+      .transform((v) => v === 'true')
+      .optional()
+  })
+  .strict()
 
 // GET /api/compliance/consents — list consent records for a contact.
 // The ConsentService only supports per-contact listing (getForContact); there
@@ -442,20 +446,22 @@ router.delete(
 // AUDIT LOGS (read-only — logs are immutable)
 // =============================================================================
 
-const searchAuditQuerySchema = z.object({
-  org_id: z.string().uuid().optional(),
-  user_id: z.string().optional(),
-  entity_type: z.string().optional(),
-  entity_id: z.string().optional(),
-  action: z.string().optional(),
-  start_date: z.string().datetime().optional(),
-  end_date: z.string().datetime().optional(),
-  ip_address: z.string().optional(),
-  request_id: z.string().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(200).default(50),
-  sort_order: z.enum(['asc', 'desc']).default('desc')
-})
+const searchAuditQuerySchema = z
+  .object({
+    org_id: z.string().uuid().optional(),
+    user_id: z.string().optional(),
+    entity_type: z.string().optional(),
+    entity_id: z.string().optional(),
+    action: z.string().optional(),
+    start_date: z.string().datetime().optional(),
+    end_date: z.string().datetime().optional(),
+    ip_address: z.string().optional(),
+    request_id: z.string().optional(),
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().positive().max(200).default(50),
+    sort_order: z.enum(['asc', 'desc']).default('desc')
+  })
+  .strict()
 
 // GET /api/compliance/audit — search audit logs (always scoped to caller org)
 router.get(
@@ -504,15 +510,17 @@ router.get(
   })
 )
 
-const exportAuditQuerySchema = z.object({
-  org_id: z.string().uuid().optional(),
-  start_date: z.string().datetime(),
-  end_date: z.string().datetime(),
-  format: z.enum(['json', 'csv']).default('json'),
-  entity_type: z.string().optional(),
-  user_id: z.string().optional(),
-  action: z.string().optional()
-})
+const exportAuditQuerySchema = z
+  .object({
+    org_id: z.string().uuid().optional(),
+    start_date: z.string().datetime(),
+    end_date: z.string().datetime(),
+    format: z.enum(['json', 'csv']).default('json'),
+    entity_type: z.string().optional(),
+    user_id: z.string().optional(),
+    action: z.string().optional()
+  })
+  .strict()
 
 // GET /api/compliance/audit/export — export audit trail (JSON or CSV)
 router.get(
@@ -549,15 +557,19 @@ router.get(
   })
 )
 
-const entityHistoryParamSchema = z.object({
-  entityType: z.string().min(1),
-  entityId: z.string().min(1)
-})
+const entityHistoryParamSchema = z
+  .object({
+    entityType: z.string().min(1),
+    entityId: z.string().min(1)
+  })
+  .strict()
 
-const entityHistoryQuerySchema = z.object({
-  org_id: z.string().uuid().optional(),
-  limit: z.coerce.number().int().positive().max(500).default(100)
-})
+const entityHistoryQuerySchema = z
+  .object({
+    org_id: z.string().uuid().optional(),
+    limit: z.coerce.number().int().positive().max(500).default(100)
+  })
+  .strict()
 
 // GET /api/compliance/audit/entity/:entityType/:entityId — full entity history
 router.get(

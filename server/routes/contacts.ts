@@ -49,92 +49,141 @@ function resolveOrgId(req: AuthenticatedRequest, res: Response): string | null {
 }
 
 // Validation schemas
-const contactRoleEnum = z.enum(['owner', 'ceo', 'cfo', 'controller', 'manager', 'bookkeeper', 'other'])
+const contactRoleEnum = z.enum([
+  'owner',
+  'ceo',
+  'cfo',
+  'controller',
+  'manager',
+  'bookkeeper',
+  'other'
+])
 const contactMethodEnum = z.enum(['email', 'phone', 'mobile', 'sms'])
-const contactRelationshipEnum = z.enum(['owner', 'decision_maker', 'influencer', 'employee', 'advisor', 'other'])
+const contactRelationshipEnum = z.enum([
+  'owner',
+  'decision_maker',
+  'influencer',
+  'employee',
+  'advisor',
+  'other'
+])
 const activityTypeEnum = z.enum([
-  'call_outbound', 'call_inbound', 'call_missed',
-  'email_sent', 'email_received', 'email_opened', 'email_clicked',
-  'sms_sent', 'sms_received',
-  'meeting_scheduled', 'meeting_completed', 'meeting_cancelled',
-  'note', 'task_created', 'task_completed',
-  'status_change', 'document_sent', 'document_signed'
+  'call_outbound',
+  'call_inbound',
+  'call_missed',
+  'email_sent',
+  'email_received',
+  'email_opened',
+  'email_clicked',
+  'sms_sent',
+  'sms_received',
+  'meeting_scheduled',
+  'meeting_completed',
+  'meeting_cancelled',
+  'note',
+  'task_created',
+  'task_completed',
+  'status_change',
+  'document_sent',
+  'document_signed'
 ])
 
-const listContactsQuerySchema = z.object({
-  // org_id is derived from the authenticated token; if present it is only used
-  // to cross-check against the token (see resolveOrgId). Never trusted as-is.
-  org_id: z.string().uuid().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(200).default(20),
-  search: z.string().optional(),
-  role: contactRoleEnum.optional(),
-  tags: z.string().transform(v => v.split(',')).optional(),
-  is_active: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
-  sort_by: z.enum(['first_name', 'last_name', 'created_at', 'last_contacted_at']).default('last_name'),
-  sort_order: z.enum(['asc', 'desc']).default('asc')
-})
+const listContactsQuerySchema = z
+  .object({
+    // org_id is derived from the authenticated token; if present it is only used
+    // to cross-check against the token (see resolveOrgId). Never trusted as-is.
+    org_id: z.string().uuid().optional(),
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().positive().max(200).default(20),
+    search: z.string().optional(),
+    role: contactRoleEnum.optional(),
+    tags: z
+      .string()
+      .transform((v) => v.split(','))
+      .optional(),
+    is_active: z
+      .enum(['true', 'false'])
+      .transform((v) => v === 'true')
+      .optional(),
+    sort_by: z
+      .enum(['first_name', 'last_name', 'created_at', 'last_contacted_at'])
+      .default('last_name'),
+    sort_order: z.enum(['asc', 'desc']).default('asc')
+  })
+  .strict()
 
-const createContactSchema = z.object({
-  org_id: z.string().uuid().optional(),
-  first_name: z.string().min(1, 'First name is required'),
-  last_name: z.string().min(1, 'Last name is required'),
-  email: z.string().email().optional(),
-  phone: z.string().optional(),
-  phone_ext: z.string().optional(),
-  mobile: z.string().optional(),
-  title: z.string().optional(),
-  role: contactRoleEnum.optional(),
-  preferred_contact_method: contactMethodEnum.default('email'),
-  timezone: z.string().default('America/New_York'),
-  notes: z.string().optional(),
-  tags: z.array(z.string()).default([]),
-  source: z.string().optional(),
-  created_by: z.string().uuid().optional()
-}).strict()
+const createContactSchema = z
+  .object({
+    org_id: z.string().uuid().optional(),
+    first_name: z.string().min(1, 'First name is required'),
+    last_name: z.string().min(1, 'Last name is required'),
+    email: z.string().email().optional(),
+    phone: z.string().optional(),
+    phone_ext: z.string().optional(),
+    mobile: z.string().optional(),
+    title: z.string().optional(),
+    role: contactRoleEnum.optional(),
+    preferred_contact_method: contactMethodEnum.default('email'),
+    timezone: z.string().default('America/New_York'),
+    notes: z.string().optional(),
+    tags: z.array(z.string()).default([]),
+    source: z.string().optional(),
+    created_by: z.string().uuid().optional()
+  })
+  .strict()
 
-const updateContactSchema = z.object({
-  first_name: z.string().min(1).optional(),
-  last_name: z.string().min(1).optional(),
-  email: z.string().email().optional().nullable(),
-  phone: z.string().optional().nullable(),
-  phone_ext: z.string().optional().nullable(),
-  mobile: z.string().optional().nullable(),
-  title: z.string().optional().nullable(),
-  role: contactRoleEnum.optional().nullable(),
-  preferred_contact_method: contactMethodEnum.optional(),
-  timezone: z.string().optional(),
-  notes: z.string().optional().nullable(),
-  tags: z.array(z.string()).optional(),
-  is_active: z.boolean().optional()
-}).strict()
+const updateContactSchema = z
+  .object({
+    first_name: z.string().min(1).optional(),
+    last_name: z.string().min(1).optional(),
+    email: z.string().email().optional().nullable(),
+    phone: z.string().optional().nullable(),
+    phone_ext: z.string().optional().nullable(),
+    mobile: z.string().optional().nullable(),
+    title: z.string().optional().nullable(),
+    role: contactRoleEnum.optional().nullable(),
+    preferred_contact_method: contactMethodEnum.optional(),
+    timezone: z.string().optional(),
+    notes: z.string().optional().nullable(),
+    tags: z.array(z.string()).optional(),
+    is_active: z.boolean().optional()
+  })
+  .strict()
 
-const idParamSchema = z.object({
-  id: z.string().uuid()
-})
+const idParamSchema = z
+  .object({
+    id: z.string().uuid()
+  })
+  .strict()
 
-const linkContactParamsSchema = z.object({
-  id: z.string().uuid(),
-  prospectId: z.string().uuid()
-})
+const linkContactParamsSchema = z
+  .object({
+    id: z.string().uuid(),
+    prospectId: z.string().uuid()
+  })
+  .strict()
 
-const linkContactBodySchema = z.object({
-  is_primary: z.boolean().default(false),
-  relationship: contactRelationshipEnum.default('employee')
-}).strict()
+const linkContactBodySchema = z
+  .object({
+    is_primary: z.boolean().default(false),
+    relationship: contactRelationshipEnum.default('employee')
+  })
+  .strict()
 
-const logActivitySchema = z.object({
-  prospect_id: z.string().uuid().optional(),
-  user_id: z.string().uuid().optional(),
-  activity_type: activityTypeEnum,
-  subject: z.string().optional(),
-  description: z.string().optional(),
-  outcome: z.string().optional(),
-  duration_seconds: z.number().int().positive().optional(),
-  metadata: z.record(z.string(), z.unknown()).default({}),
-  scheduled_at: z.string().datetime().optional(),
-  completed_at: z.string().datetime().optional()
-}).strict()
+const logActivitySchema = z
+  .object({
+    prospect_id: z.string().uuid().optional(),
+    user_id: z.string().uuid().optional(),
+    activity_type: activityTypeEnum,
+    subject: z.string().optional(),
+    description: z.string().optional(),
+    outcome: z.string().optional(),
+    duration_seconds: z.number().int().positive().optional(),
+    metadata: z.record(z.string(), z.unknown()).default({}),
+    scheduled_at: z.string().datetime().optional(),
+    completed_at: z.string().datetime().optional()
+  })
+  .strict()
 
 // GET /api/contacts - List contacts with filters (org_id required)
 router.get(
@@ -355,8 +404,7 @@ router.get(
     const { id } = req.params
     // Parse with explicit radix, guard NaN/non-positive, and cap to a sane max.
     const parsedLimit = parseInt(req.query.limit as string, 10)
-    const limit =
-      Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50
     const before = req.query.before as string | undefined
 
     const activities = await contactsService.getActivityTimeline(id, { limit, before })

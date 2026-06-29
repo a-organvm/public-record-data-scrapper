@@ -19,38 +19,48 @@ const router = Router()
 
 // Validation schemas (`.strict()` to reject unknown keys — prevents
 // mass-assignment of arbitrary fields into the queued job payload).
-const triggerIngestionSchema = z.object({
-  state: z.string().length(2).toUpperCase(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  batchSize: z.number().min(100).max(10000).default(1000),
-  force: z.boolean().optional().default(false)
-}).strict()
+const triggerIngestionSchema = z
+  .object({
+    state: z.string().length(2).toUpperCase(),
+    startDate: z.string().optional(),
+    endDate: z.string().optional(),
+    batchSize: z.number().min(100).max(10000).default(1000),
+    force: z.boolean().optional().default(false)
+  })
+  .strict()
 
-const triggerEnrichmentSchema = z.object({
-  prospectIds: z.array(z.string().uuid()).min(1).max(100),
-  force: z.boolean().default(false)
-}).strict()
+const triggerEnrichmentSchema = z
+  .object({
+    prospectIds: z.array(z.string().uuid()).min(1).max(100),
+    force: z.boolean().default(false)
+  })
+  .strict()
 
-const triggerHealthScoreSchema = z.object({
-  portfolioCompanyId: z.string().uuid().optional(),
-  batchSize: z.number().min(10).max(200).default(50)
-}).strict()
+const triggerHealthScoreSchema = z
+  .object({
+    portfolioCompanyId: z.string().uuid().optional(),
+    batchSize: z.number().min(10).max(200).default(50)
+  })
+  .strict()
 
-const jobIdSchema = z.object({
-  jobId: z.string().min(1).max(256)
-})
+const jobIdSchema = z
+  .object({
+    jobId: z.string().min(1).max(256)
+  })
+  .strict()
 
-const queueNameSchema = z.object({
-  queueName: z.enum(['ucc-ingestion', 'data-enrichment', 'health-scores'])
-})
+const queueNameSchema = z
+  .object({
+    queueName: z.enum(['ucc-ingestion', 'data-enrichment', 'health-scores'])
+  })
+  .strict()
 
-const queueListQuerySchema = z.object({
-  status: z
-    .enum(['waiting', 'active', 'completed', 'failed', 'delayed'])
-    .default('waiting'),
-  limit: z.coerce.number().int().positive().max(200).default(20)
-})
+const queueListQuerySchema = z
+  .object({
+    status: z.enum(['waiting', 'active', 'completed', 'failed', 'delayed']).default('waiting'),
+    limit: z.coerce.number().int().positive().max(200).default(20)
+  })
+  .strict()
 
 // Tenant-attribution stamped onto every manually-enqueued job so reads/deletes
 // and per-queue listings can be scoped to the owning org. Derived ONLY from the
@@ -63,10 +73,7 @@ function tenantAttribution(req: unknown): { orgId?: string; requestedBy?: string
 // True when the caller may access a job. Admins see everything (cross-tenant
 // operational access). Non-admins may only touch jobs stamped with their own
 // org. Jobs with no orgId (scheduler/self-heal/system) are admin-only.
-function canAccessJob(
-  req: unknown,
-  jobData: { orgId?: string } | null | undefined
-): boolean {
+function canAccessJob(req: unknown, jobData: { orgId?: string } | null | undefined): boolean {
   const user = (req as AuthenticatedRequest).user
   if (user?.role === 'admin') return true
   const callerOrgId = user?.orgId

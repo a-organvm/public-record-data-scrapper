@@ -53,100 +53,133 @@ function resolveOrgId(req: AuthenticatedRequest, res: Response): string | null {
 // Validation schemas
 const dealPriorityEnum = z.enum(['low', 'normal', 'high', 'urgent'])
 const documentTypeEnum = z.enum([
-  'application', 'bank_statement', 'tax_return', 'voided_check',
-  'drivers_license', 'business_license', 'landlord_letter',
-  'contract', 'signed_contract', 'disclosure', 'signed_disclosure',
+  'application',
+  'bank_statement',
+  'tax_return',
+  'voided_check',
+  'drivers_license',
+  'business_license',
+  'landlord_letter',
+  'contract',
+  'signed_contract',
+  'disclosure',
+  'signed_disclosure',
   'other'
 ])
 const useOfFundsEnum = z.enum([
-  'working_capital', 'inventory', 'equipment', 'expansion',
-  'payroll', 'marketing', 'debt_consolidation', 'real_estate', 'other'
+  'working_capital',
+  'inventory',
+  'equipment',
+  'expansion',
+  'payroll',
+  'marketing',
+  'debt_consolidation',
+  'real_estate',
+  'other'
 ])
 
-const listDealsQuerySchema = z.object({
-  // org_id is derived from the authenticated token; if present it is only used
-  // to cross-check against the token (see resolveOrgId). Never trusted as-is.
-  org_id: z.string().uuid().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(200).default(20),
-  stage_id: z.string().uuid().optional(),
-  assigned_to: z.string().uuid().optional(),
-  prospect_id: z.string().uuid().optional(),
-  priority: dealPriorityEnum.optional(),
-  search: z.string().optional(),
-  sort_by: z.enum(['created_at', 'updated_at', 'amount_requested', 'expected_close_date']).default('created_at'),
-  sort_order: z.enum(['asc', 'desc']).default('desc')
-}).strict()
+const listDealsQuerySchema = z
+  .object({
+    // org_id is derived from the authenticated token; if present it is only used
+    // to cross-check against the token (see resolveOrgId). Never trusted as-is.
+    org_id: z.string().uuid().optional(),
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().positive().max(200).default(20),
+    stage_id: z.string().uuid().optional(),
+    assigned_to: z.string().uuid().optional(),
+    prospect_id: z.string().uuid().optional(),
+    priority: dealPriorityEnum.optional(),
+    search: z.string().optional(),
+    sort_by: z
+      .enum(['created_at', 'updated_at', 'amount_requested', 'expected_close_date'])
+      .default('created_at'),
+    sort_order: z.enum(['asc', 'desc']).default('desc')
+  })
+  .strict()
 
-const createDealSchema = z.object({
-  org_id: z.string().uuid().optional(),
-  prospect_id: z.string().uuid().optional(),
-  contact_id: z.string().uuid().optional(),
-  stage_id: z.string().uuid().optional(),
-  assigned_to: z.string().uuid().optional(),
-  amount_requested: z.number().positive().optional(),
-  term_months: z.number().int().positive().optional(),
-  use_of_funds: useOfFundsEnum.optional(),
-  use_of_funds_details: z.string().optional(),
-  priority: dealPriorityEnum.default('normal'),
-  expected_close_date: z.string().datetime().optional()
-}).strict()
+const createDealSchema = z
+  .object({
+    org_id: z.string().uuid().optional(),
+    prospect_id: z.string().uuid().optional(),
+    contact_id: z.string().uuid().optional(),
+    stage_id: z.string().uuid().optional(),
+    assigned_to: z.string().uuid().optional(),
+    amount_requested: z.number().positive().optional(),
+    term_months: z.number().int().positive().optional(),
+    use_of_funds: useOfFundsEnum.optional(),
+    use_of_funds_details: z.string().optional(),
+    priority: dealPriorityEnum.default('normal'),
+    expected_close_date: z.string().datetime().optional()
+  })
+  .strict()
 
-const updateDealSchema = z.object({
-  prospect_id: z.string().uuid().optional().nullable(),
-  contact_id: z.string().uuid().optional().nullable(),
-  lender_id: z.string().uuid().optional().nullable(),
-  assigned_to: z.string().uuid().optional().nullable(),
-  amount_requested: z.number().positive().optional(),
-  amount_approved: z.number().positive().optional().nullable(),
-  term_months: z.number().int().positive().optional(),
-  factor_rate: z.number().positive().optional().nullable(),
-  daily_payment: z.number().positive().optional().nullable(),
-  weekly_payment: z.number().positive().optional().nullable(),
-  use_of_funds: useOfFundsEnum.optional(),
-  use_of_funds_details: z.string().optional().nullable(),
-  average_daily_balance: z.number().optional().nullable(),
-  monthly_revenue: z.number().positive().optional().nullable(),
-  nsf_count: z.number().int().min(0).optional(),
-  existing_positions: z.number().int().min(0).optional(),
-  priority: dealPriorityEnum.optional(),
-  probability: z.number().min(0).max(100).optional(),
-  expected_close_date: z.string().datetime().optional().nullable(),
-  lost_reason: z.string().optional().nullable(),
-  lost_notes: z.string().optional().nullable()
-})
+const updateDealSchema = z
+  .object({
+    prospect_id: z.string().uuid().optional().nullable(),
+    contact_id: z.string().uuid().optional().nullable(),
+    lender_id: z.string().uuid().optional().nullable(),
+    assigned_to: z.string().uuid().optional().nullable(),
+    amount_requested: z.number().positive().optional(),
+    amount_approved: z.number().positive().optional().nullable(),
+    term_months: z.number().int().positive().optional(),
+    factor_rate: z.number().positive().optional().nullable(),
+    daily_payment: z.number().positive().optional().nullable(),
+    weekly_payment: z.number().positive().optional().nullable(),
+    use_of_funds: useOfFundsEnum.optional(),
+    use_of_funds_details: z.string().optional().nullable(),
+    average_daily_balance: z.number().optional().nullable(),
+    monthly_revenue: z.number().positive().optional().nullable(),
+    nsf_count: z.number().int().min(0).optional(),
+    existing_positions: z.number().int().min(0).optional(),
+    priority: dealPriorityEnum.optional(),
+    probability: z.number().min(0).max(100).optional(),
+    expected_close_date: z.string().datetime().optional().nullable(),
+    lost_reason: z.string().optional().nullable(),
+    lost_notes: z.string().optional().nullable()
+  })
+  .strict()
 
-const moveStageSchema = z.object({
-  stage_id: z.string().uuid(),
-  notes: z.string().optional(),
-  changed_by: z.string().uuid().optional()
-})
+const moveStageSchema = z
+  .object({
+    stage_id: z.string().uuid(),
+    notes: z.string().optional(),
+    changed_by: z.string().uuid().optional()
+  })
+  .strict()
 
-const uploadDocumentSchema = z.object({
-  document_type: documentTypeEnum,
-  file_name: z.string().min(1),
-  file_path: z.string().min(1),
-  file_size: z.number().int().positive().optional(),
-  mime_type: z.string().optional(),
-  is_required: z.boolean().default(false),
-  uploaded_by: z.string().uuid().optional(),
-  metadata: z.record(z.string(), z.unknown()).default({})
-})
+const uploadDocumentSchema = z
+  .object({
+    document_type: documentTypeEnum,
+    file_name: z.string().min(1),
+    file_path: z.string().min(1),
+    file_size: z.number().int().positive().optional(),
+    mime_type: z.string().optional(),
+    is_required: z.boolean().default(false),
+    uploaded_by: z.string().uuid().optional(),
+    metadata: z.record(z.string(), z.unknown()).default({})
+  })
+  .strict()
 
-const idParamSchema = z.object({
-  id: z.string().uuid()
-})
+const idParamSchema = z
+  .object({
+    id: z.string().uuid()
+  })
+  .strict()
 
-const documentParamsSchema = z.object({
-  id: z.string().uuid(),
-  documentId: z.string().uuid()
-})
+const documentParamsSchema = z
+  .object({
+    id: z.string().uuid(),
+    documentId: z.string().uuid()
+  })
+  .strict()
 
 // org_id is optional here: the value is derived from the token by resolveOrgId.
 // When supplied it is validated as a UUID and cross-checked against the token.
-const orgIdQuerySchema = z.object({
-  org_id: z.string().uuid().optional()
-})
+const orgIdQuerySchema = z
+  .object({
+    org_id: z.string().uuid().optional()
+  })
+  .strict()
 
 // GET /api/deals - List deals with pipeline view and stage grouping
 router.get(

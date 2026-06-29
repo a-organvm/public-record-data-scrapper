@@ -92,13 +92,17 @@ const listQuerySchema = z
   })
   .strict()
 
-const idParamSchema = z.object({
-  id: z.string().uuid()
-})
+const idParamSchema = z
+  .object({
+    id: z.string().uuid()
+  })
+  .strict()
 
-const orgIdQuerySchema = z.object({
-  org_id: z.string().uuid().optional()
-})
+const orgIdQuerySchema = z
+  .object({
+    org_id: z.string().uuid().optional()
+  })
+  .strict()
 
 const templatesQuerySchema = z
   .object({
@@ -107,12 +111,14 @@ const templatesQuerySchema = z
   })
   .strict()
 
-const attachmentSchema = z.object({
-  name: z.string().min(1),
-  url: z.string().url(),
-  size: z.number().int().nonnegative(),
-  mimeType: z.string().min(1)
-})
+const attachmentSchema = z
+  .object({
+    name: z.string().min(1),
+    url: z.string().url(),
+    size: z.number().int().nonnegative(),
+    mimeType: z.string().min(1)
+  })
+  .strict()
 
 const sendEmailSchema = z
   .object({
