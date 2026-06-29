@@ -16,23 +16,25 @@ const router = Router()
 // Validation schemas
 const MAX_PAGE_LIMIT = 200
 
-const querySchema = z.object({
-  page: z.string().regex(/^\d+$/).transform(Number).default('1'),
-  // Clamp limit to a sane maximum before it reaches the DB (tier constraints
-  // may reduce it further) to bound query cost.
-  limit: z
-    .string()
-    .regex(/^\d+$/)
-    .transform((v) => Math.min(Math.max(Number(v), 1), MAX_PAGE_LIMIT))
-    .default('20'),
-  state: z.string().length(2).optional(),
-  industry: z.string().optional(),
-  min_score: z.string().regex(/^\d+$/).transform(Number).optional(),
-  max_score: z.string().regex(/^\d+$/).transform(Number).optional(),
-  status: z.enum(['all', 'unclaimed', 'claimed', 'contacted']).optional(),
-  sort_by: z.enum(['priority_score', 'created_at', 'company_name']).default('priority_score'),
-  sort_order: z.enum(['asc', 'desc']).default('desc')
-})
+const querySchema = z
+  .object({
+    page: z.string().regex(/^\d+$/).transform(Number).default('1'),
+    // Clamp limit to a sane maximum before it reaches the DB (tier constraints
+    // may reduce it further) to bound query cost.
+    limit: z
+      .string()
+      .regex(/^\d+$/)
+      .transform((v) => Math.min(Math.max(Number(v), 1), MAX_PAGE_LIMIT))
+      .default('20'),
+    state: z.string().length(2).optional(),
+    industry: z.string().optional(),
+    min_score: z.string().regex(/^\d+$/).transform(Number).optional(),
+    max_score: z.string().regex(/^\d+$/).transform(Number).optional(),
+    status: z.enum(['all', 'unclaimed', 'claimed', 'contacted']).optional(),
+    sort_by: z.enum(['priority_score', 'created_at', 'company_name']).default('priority_score'),
+    sort_order: z.enum(['asc', 'desc']).default('desc')
+  })
+  .strict()
 
 const exportQuerySchema = z
   .object({
@@ -65,16 +67,8 @@ const exportQuerySchema = z
         'unclaimed'
       ])
       .optional(),
-    min_score: z
-      .string()
-      .regex(/^\d+$/)
-      .transform(Number)
-      .default('70'),
-    max_score: z
-      .string()
-      .regex(/^\d+$/)
-      .transform(Number)
-      .optional()
+    min_score: z.string().regex(/^\d+$/).transform(Number).default('70'),
+    max_score: z.string().regex(/^\d+$/).transform(Number).optional()
   })
   .refine((query) => query.min_score >= 0 && query.min_score <= 100, {
     message: 'min_score must be between 0 and 100',
@@ -89,44 +83,54 @@ const exportQuerySchema = z
     path: ['max_score']
   })
 
-const createProspectSchema = z.object({
-  company_name: z.string().min(1),
-  state: z.string().length(2),
-  industry: z.enum([
-    'restaurant',
-    'retail',
-    'construction',
-    'healthcare',
-    'manufacturing',
-    'services',
-    'technology'
-  ]),
-  lien_amount: z.number().positive().optional(),
-  filing_date: z.string().datetime().optional()
-})
+const createProspectSchema = z
+  .object({
+    company_name: z.string().min(1),
+    state: z.string().length(2),
+    industry: z.enum([
+      'restaurant',
+      'retail',
+      'construction',
+      'healthcare',
+      'manufacturing',
+      'services',
+      'technology'
+    ]),
+    lien_amount: z.number().positive().optional(),
+    filing_date: z.string().datetime().optional()
+  })
+  .strict()
 
 const updateProspectSchema = createProspectSchema.partial()
 
-const idParamSchema = z.object({
-  id: z.string().uuid()
-})
+const idParamSchema = z
+  .object({
+    id: z.string().uuid()
+  })
+  .strict()
 
 // A claiming user identifier. The dashboard sends a display name ('Current
 // User') rather than a UUID, so this is a non-empty string, not z.uuid().
-const claimBodySchema = z.object({
-  user: z.string().min(1)
-})
+const claimBodySchema = z
+  .object({
+    user: z.string().min(1)
+  })
+  .strict()
 
 const MAX_BATCH_SIZE = 100
 
-const batchClaimBodySchema = z.object({
-  ids: z.array(z.string().uuid()).min(1).max(MAX_BATCH_SIZE),
-  user: z.string().min(1)
-})
+const batchClaimBodySchema = z
+  .object({
+    ids: z.array(z.string().uuid()).min(1).max(MAX_BATCH_SIZE),
+    user: z.string().min(1)
+  })
+  .strict()
 
-const batchDeleteBodySchema = z.object({
-  ids: z.array(z.string().uuid()).min(1).max(MAX_BATCH_SIZE)
-})
+const batchDeleteBodySchema = z
+  .object({
+    ids: z.array(z.string().uuid()).min(1).max(MAX_BATCH_SIZE)
+  })
+  .strict()
 
 // Optional scoring modifiers. The scoring service falls back to the prospect's
 // own industry/state when these are omitted, so the body is fully optional.
@@ -141,14 +145,16 @@ const scoreBodySchema = z
   .optional()
 
 // Revenue-trend sub-shape required by UnderwritingFeatures.
-const revenueTrendSchema = z.object({
-  direction: z.enum(['increasing', 'stable', 'decreasing', 'volatile']),
-  percentageChange: z.number(),
-  averageMonthlyRevenue: z.number(),
-  medianMonthlyRevenue: z.number(),
-  seasonalityScore: z.number(),
-  monthlyData: z.array(z.unknown()).default([])
-})
+const revenueTrendSchema = z
+  .object({
+    direction: z.enum(['increasing', 'stable', 'decreasing', 'volatile']),
+    percentageChange: z.number(),
+    averageMonthlyRevenue: z.number(),
+    medianMonthlyRevenue: z.number(),
+    seasonalityScore: z.number(),
+    monthlyData: z.array(z.unknown()).default([])
+  })
+  .strict()
 
 // The fields QualificationService.qualify actually reads off UnderwritingFeatures.
 // These are the genuine inputs the engine needs; anything not supplied makes the
@@ -167,21 +173,25 @@ const REQUIRED_BANK_FEATURE_FIELDS = [
   'revenueTrend'
 ] as const
 
-const qualifyBodySchema = z.object({
-  bankFeatures: z.record(z.string(), z.unknown()).optional(),
-  timeInBusinessMonths: z.number().int().nonnegative().optional(),
-  industry: z.string().optional(),
-  state: z.string().length(2).optional()
-})
+const qualifyBodySchema = z
+  .object({
+    bankFeatures: z.record(z.string(), z.unknown()).optional(),
+    timeInBusinessMonths: z.number().int().nonnegative().optional(),
+    industry: z.string().optional(),
+    state: z.string().length(2).optional()
+  })
+  .strict()
 
 // Underwriting (feature extraction) requires a Plaid access token for the
 // prospect's linked bank account. No token => no bank data => fail closed.
-const underwriteBodySchema = z.object({
-  accessToken: z.string().min(1).optional(),
-  monthsToAnalyze: z.number().int().positive().max(24).optional(),
-  timeInBusinessMonths: z.number().int().nonnegative().optional(),
-  qualify: z.boolean().optional()
-})
+const underwriteBodySchema = z
+  .object({
+    accessToken: z.string().min(1).optional(),
+    monthsToAnalyze: z.number().int().positive().max(24).optional(),
+    timeInBusinessMonths: z.number().int().nonnegative().optional(),
+    qualify: z.boolean().optional()
+  })
+  .strict()
 
 type ProspectsQuery = z.infer<typeof querySchema>
 type LeadExportQuery = z.infer<typeof exportQuerySchema>

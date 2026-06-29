@@ -9,29 +9,53 @@ import { database } from '../database/connection'
 
 const router = Router()
 
-const stateParamSchema = z.object({
-  state: z.string().length(2).transform((s) => s.toUpperCase())
-})
+const stateParamSchema = z
+  .object({
+    state: z
+      .string()
+      .length(2)
+      .transform((s) => s.toUpperCase())
+  })
+  .strict()
 
-const funderParamSchema = z.object({
-  name: z.string().min(1).max(200)
-})
+const funderParamSchema = z
+  .object({
+    name: z.string().min(1).max(200)
+  })
+  .strict()
 
-const prospectIdParamSchema = z.object({
-  prospectId: z.string().uuid()
-})
+const prospectIdParamSchema = z
+  .object({
+    prospectId: z.string().uuid()
+  })
+  .strict()
 
-const saturationQuerySchema = z.object({
-  industry: z.string().min(1).max(100).optional()
-})
+const saturationQuerySchema = z
+  .object({
+    industry: z.string().min(1).max(100).optional()
+  })
+  .strict()
 
-const eventsQuerySchema = z.object({
-  hours: z.coerce.number().int().positive().max(24 * 90).default(168)
-})
+const eventsQuerySchema = z
+  .object({
+    hours: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(24 * 90)
+      .default(168)
+  })
+  .strict()
 
-const acceleratingQuerySchema = z.object({
-  state: z.string().length(2).transform((s) => s.toUpperCase()).optional()
-})
+const acceleratingQuerySchema = z
+  .object({
+    state: z
+      .string()
+      .length(2)
+      .transform((s) => s.toUpperCase())
+      .optional()
+  })
+  .strict()
 
 // GET /api/competitive/saturation/:state — market saturation + HHI for a state
 router.get(

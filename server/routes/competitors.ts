@@ -10,22 +10,26 @@ const router = Router()
 // Validation schemas
 const MAX_PAGE_LIMIT = 200
 
-const querySchema = z.object({
-  page: z.string().regex(/^\d+$/).transform(Number).default('1'),
-  // Clamp limit to a sane maximum before it reaches the DB to bound query cost.
-  limit: z
-    .string()
-    .regex(/^\d+$/)
-    .transform((v) => Math.min(Math.max(Number(v), 1), MAX_PAGE_LIMIT))
-    .default('20'),
-  state: z.string().length(2).optional(),
-  sort_by: z.enum(['filing_count', 'total_amount', 'name']).default('filing_count'),
-  sort_order: z.enum(['asc', 'desc']).default('desc')
-})
+const querySchema = z
+  .object({
+    page: z.string().regex(/^\d+$/).transform(Number).default('1'),
+    // Clamp limit to a sane maximum before it reaches the DB to bound query cost.
+    limit: z
+      .string()
+      .regex(/^\d+$/)
+      .transform((v) => Math.min(Math.max(Number(v), 1), MAX_PAGE_LIMIT))
+      .default('20'),
+    state: z.string().length(2).optional(),
+    sort_by: z.enum(['filing_count', 'total_amount', 'name']).default('filing_count'),
+    sort_order: z.enum(['asc', 'desc']).default('desc')
+  })
+  .strict()
 
-const idParamSchema = z.object({
-  id: z.string().uuid()
-})
+const idParamSchema = z
+  .object({
+    id: z.string().uuid()
+  })
+  .strict()
 
 type CompetitorsQuery = z.infer<typeof querySchema>
 

@@ -34,18 +34,25 @@ function extractApiKeyId(userId: string): string | null {
 }
 
 // Validation schemas
-const searchUCCSchema = z.object({
-  company_name: z.string().min(2).max(200),
-  state: z
-    .string()
-    .length(2)
-    .transform((s) => s.toUpperCase()),
-  limit: z.coerce.number().int().positive().max(1000).default(100)
-})
+const searchUCCSchema = z
+  .object({
+    company_name: z.string().min(2).max(200),
+    state: z
+      .string()
+      .length(2)
+      .transform((s) => s.toUpperCase()),
+    limit: z.coerce.number().int().positive().max(1000).default(100)
+  })
+  .strict()
 
-const readinessSchema = z.object({
-  stateCode: z.string().length(2).transform((s) => s.toUpperCase())
-})
+const readinessSchema = z
+  .object({
+    stateCode: z
+      .string()
+      .length(2)
+      .transform((s) => s.toUpperCase())
+  })
+  .strict()
 
 // GET /api/scrape/readiness/:stateCode - Check if a state can be searched right now
 router.get(
@@ -120,18 +127,22 @@ router.post(
   })
 )
 
-const enqueueJobSchema = z.object({
-  company_name: z.string().min(2).max(200),
-  state: z
-    .string()
-    .length(2)
-    .transform((s) => s.toUpperCase()),
-  limit: z.coerce.number().int().positive().max(1000).default(100)
-})
+const enqueueJobSchema = z
+  .object({
+    company_name: z.string().min(2).max(200),
+    state: z
+      .string()
+      .length(2)
+      .transform((s) => s.toUpperCase()),
+    limit: z.coerce.number().int().positive().max(1000).default(100)
+  })
+  .strict()
 
-const jobIdSchema = z.object({
-  jobId: z.string().uuid()
-})
+const jobIdSchema = z
+  .object({
+    jobId: z.string().uuid()
+  })
+  .strict()
 
 // POST /api/scrape/jobs - Enqueue an async scrape, returns 202 + jobId immediately
 router.post(

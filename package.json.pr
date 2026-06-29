@@ -143,5 +143,8 @@
     "*.{json,css,md}": [
       "prettier --write"
     ]
+  },
+  "overrides": {
+    "uuid": "^14.0.1"
   }
 }

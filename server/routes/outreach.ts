@@ -10,18 +10,24 @@ import { database } from '../database/connection'
 
 const router = Router()
 
-const prospectIdParamSchema = z.object({
-  prospectId: z.string().uuid()
-})
+const prospectIdParamSchema = z
+  .object({
+    prospectId: z.string().uuid()
+  })
+  .strict()
 
-const sequenceIdParamSchema = z.object({
-  id: z.string().uuid()
-})
+const sequenceIdParamSchema = z
+  .object({
+    id: z.string().uuid()
+  })
+  .strict()
 
-const triggerBodySchema = z.object({
-  triggerType: z.enum(['termination', 'new_filing', 'acceleration']).default('termination'),
-  capacityScore: z.number().min(0).max(100).optional()
-})
+const triggerBodySchema = z
+  .object({
+    triggerType: z.enum(['termination', 'new_filing', 'acceleration']).default('termination'),
+    capacityScore: z.number().min(0).max(100).optional()
+  })
+  .strict()
 
 // GET /api/outreach/briefing/:prospectId — Generate/return pre-call briefing
 router.get(
